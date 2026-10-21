@@ -1,0 +1,18 @@
+# flutter pub get / 빌드가 만드는 파일 (각 PC에서 다시 생성됨)
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 서버 배포용 비밀 값 (예시 파일 .env.example만 올림)
+.env

@@ -1,0 +1,12 @@
+version: '3.9'
+services:
+  mallangtalk:
+    build: .
+    container_name: mallangtalk_server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env

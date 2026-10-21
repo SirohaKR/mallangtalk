@@ -1,0 +1,32 @@
+name: mallangtalk
+description: UGC 캐릭터 톡 시뮬레이션 플랫폼 (플레이 + 제작 통합 웹앱)
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.6.0
+  dio: ^5.7.0
+  shared_preferences: ^2.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/scenarios/
+  # 한국어 기본 글꼴 (자주 쓰는 한글 2,350자만 담아서 가볍게. 없는 글자는 브라우저가 자동으로 보충)
+  fonts:
+    - family: NotoSansKR
+      fonts:
+        - asset: assets/fonts/NotoSansKR-Regular.ttf
+        - asset: assets/fonts/NotoSansKR-Bold.ttf
+          weight: 700
