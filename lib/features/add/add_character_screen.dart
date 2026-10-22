@@ -113,20 +113,36 @@ class MyCreationsTab extends ConsumerWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
-        child: GridView.builder(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: AppSpacing.md,
-            crossAxisSpacing: AppSpacing.md,
-            childAspectRatio: 0.62,
-          ),
-          itemCount: mine.length,
-          itemBuilder: (context, index) => GalleryCard(
-            character: mine[index].bundle.character,
-            isFriend: false,
-            onTap: () => showCharacterProfile(context, mine[index]),
-          ),
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+              sliver: SliverToBoxAdapter(
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push('/relations'),
+                  icon: const Icon(Icons.hub_outlined, size: 18),
+                  label: const Text('관계도 보기 · 캐릭터끼리 관계 잇기'),
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              sliver: SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: AppSpacing.md,
+                  crossAxisSpacing: AppSpacing.md,
+                  childAspectRatio: 0.62,
+                ),
+                itemCount: mine.length,
+                itemBuilder: (context, index) => GalleryCard(
+                  character: mine[index].bundle.character,
+                  isFriend: false,
+                  onTap: () => showCharacterProfile(context, mine[index]),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
