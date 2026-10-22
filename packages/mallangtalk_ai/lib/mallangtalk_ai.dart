@@ -52,16 +52,20 @@ enum AiProvider {
       AiModelOption('gemini-3.8-flash', 'Gemini 3.8 Flash', '균형 · 무료 한도 있음', 0.75, 3.75),
       AiModelOption('gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', '가장 저렴 · 무료 한도 있음', 0.30, 2.50),
     ],
+    'gemini-3.8-flash',
   );
 
-  const AiProvider(this.label, this.keyHint, this.keyNote, this.models);
+  const AiProvider(this.label, this.keyHint, this.keyNote, this.models, [this._defaultModel]);
 
   final String label;
   final String keyHint;
   final String keyNote;
   final List<AiModelOption> models;
 
-  String get defaultModel => models.first.id;
+  final String? _defaultModel;
+
+  /// 처음 고를 때의 모델. Gemini는 무료 한도가 있는 Flash가 기본
+  String get defaultModel => _defaultModel ?? models.first.id;
 
   static AiProvider byName(String? name) =>
       AiProvider.values.where((p) => p.name == name).firstOrNull ?? AiProvider.claude;
@@ -122,14 +126,26 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
       return await _relay(dio, relay, provider, model, system, user, schema, maxTokens, effort,
           refusalMessage, truncatedMessage, unreadableMessage);
     }
-    final (text, usage) = switch (provider) {
-      AiProvider.claude => await _claude(dio, apiKey, model, system, user, schema, maxTokens, effort,
-          refusalMessage, truncatedMessage, fromBrowser),
-      AiProvider.openai => await _openai(dio, apiKey, model, system, user, schema, maxTokens,
-          refusalMessage, truncatedMessage),
-      AiProvider.gemini => await _gemini(dio, apiKey, model, system, user, schema, maxTokens,
-          refusalMessage, truncatedMessage),
-    };
+    Future<(String, AiUsage)> once() async => switch (provider) {
+          AiProvider.claude => await _claude(dio, apiKey, model, system, user, schema, maxTokens, effort,
+              refusalMessage, truncatedMessage, fromBrowser),
+          AiProvider.openai => await _openai(dio, apiKey, model, system, user, schema, maxTokens,
+              refusalMessage, truncatedMessage),
+          AiProvider.gemini => await _gemini(dio, apiKey, model, system, user, schema, maxTokens,
+              refusalMessage, truncatedMessage),
+        };
+    // 분당 한도(429)나 잠깐 붐빔(503)이면 회사가 알려 준 시간만큼 기다렸다가 몇 번 더 해 봄
+    (String, AiUsage)? result;
+    for (var attempt = 0; result == null; attempt++) {
+      try {
+        result = await once();
+      } on DioException catch (e) {
+        final wait = attempt < aiMaxRetries ? retryWaitOf(e, attempt) : null;
+        if (wait == null) rethrow;
+        await aiRetrySleep(wait);
+      }
+    }
+    final (text, usage) = result;
     final json = jsonDecode(text);
     if (json is! Map<String, dynamic>) throw const FormatException('not an object');
     return (json, usage);
@@ -153,7 +169,12 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
       _ when badKey => 'API 키가 올바르지 않아요. 설정에서 다시 확인해 주세요.',
       401 || 403 => 'API 키가 올바르지 않아요. 설정에서 다시 확인해 주세요.',
       404 => '모델 "$model"을 찾지 못했어요. 설정에서 모델 이름을 확인해 주세요.',
-      429 => '요청이 너무 많거나 크레딧이 부족해요. 잠시 후 다시 시도해 주세요.',
+      429 when _isZeroQuota(body) =>
+        '"$model"은 무료 등급 키로는 쓸 수 없는 모델이에요. 설정에서 Flash 모델로 바꾸거나 결제를 연결해 주세요.',
+      429 when _isDailyQuota(body) =>
+        '오늘 쓸 수 있는 무료 한도를 다 썼어요. 내일 다시 하거나, 결제를 연결한 키·다른 모델로 바꿔 주세요.',
+      429 => '요청이 너무 많거나 크레딧이 부족해요. 1~2분 뒤에 다시 시도해 주세요.',
+      503 => 'AI 회사 서버가 지금 붐벼요. 잠시 후 다시 시도해 주세요.',
       _ => 'AI 호출 실패${status != null ? ' ($status)' : ''}: ${apiMessage ?? e.message ?? '네트워크 오류'}',
     });
   }
@@ -162,6 +183,54 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
 /// 안전 분류기가 거절하면 서버가 알맞은 다른 Claude 모델로 대신 답하게 함 (Haiku는 미지원)
 bool claudeSupportsFallback(String model) =>
     model == 'claude-opus-5-5' || model == 'claude-sonnet-5-5';
+
+/// 한도에 걸렸을 때 다시 해 볼 최대 횟수
+const aiMaxRetries = 3;
+
+/// 다시 하기 전에 기다리는 함수 (테스트에서는 바로 넘어가게 바꿈)
+Future<void> Function(Duration) aiRetrySleep = Future<void>.delayed;
+
+/// 다시 해 볼 만한 오류면 기다릴 시간, 아니면 null
+/// - 429(분당 한도)·503(붐빔)만 다시 함. 하루 한도를 다 쓴 경우는 기다려도 안 풀리니 바로 실패
+/// - Gemini는 오류 안에 retryDelay("37s")를, Claude·OpenAI는 retry-after 헤더를 알려 줌
+Duration? retryWaitOf(DioException e, int attempt) {
+  final status = e.response?.statusCode;
+  if (status != 429 && status != 503) return null;
+  final body = e.response?.data;
+  if (status == 429 && (_isDailyQuota(body) || _isZeroQuota(body))) return null;
+  Duration? hinted;
+  final error = body is Map ? body['error'] : null;
+  final details = error is Map ? error['details'] : null;
+  if (details is List) {
+    for (final d in details) {
+      final delay = d is Map ? d['retryDelay'] : null;
+      final seconds = delay is String ? double.tryParse(delay.replaceAll('s', '')) : null;
+      if (seconds != null) hinted = Duration(milliseconds: (seconds * 1000).ceil() + 500);
+    }
+  }
+  final header = int.tryParse(e.response?.headers.value('retry-after') ?? '');
+  if (hinted == null && header != null) hinted = Duration(seconds: header);
+  final wait = hinted ?? Duration(seconds: 5 * (attempt + 1) * (attempt + 1)); // 5초, 20초, 45초
+  return wait > const Duration(seconds: 90) ? const Duration(seconds: 90) : wait;
+}
+
+/// 무료 등급에서 아예 쓸 수 없는 모델인지 (Gemini가 "limit: 0"이라고 알려 줌)
+bool _isZeroQuota(Object? body) {
+  final error = body is Map ? body['error'] : null;
+  final message = error is Map ? '${error['message']}' : '';
+  return RegExp(r'limit:\s*0\b').hasMatch(message);
+}
+
+/// Gemini 무료 등급의 '하루 요청 수' 한도에 걸렸는지
+bool _isDailyQuota(Object? body) {
+  final error = body is Map ? body['error'] : null;
+  final details = error is Map ? error['details'] : null;
+  if (details is! List) return false;
+  return details.any((d) =>
+      d is Map &&
+      (d['violations'] as List? ?? const [])
+          .any((v) => v is Map && '${v['quotaId']}'.contains('PerDay')));
+}
 
 /// 서버에 대신 불러 달라고 요청. 서버도 callJsonModel로 같은 검사를 하니 여기서는 결과만 받음
 Future<(Map<String, dynamic>, AiUsage)> _relay(Dio dio, AiRelay relay, AiProvider provider, String model,
@@ -280,7 +349,8 @@ Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String s
         },
       ],
       'generationConfig': {
-        'maxOutputTokens': maxTokens,
+        // Gemini는 속으로 생각하는 토큰도 출력 한도에 포함돼서, 대본이 중간에 끊기지 않게 넉넉히 줌
+        'maxOutputTokens': maxTokens * 2 > 65536 ? 65536 : maxTokens * 2,
         'responseMimeType': 'application/json',
         'responseJsonSchema': schema,
       },
