@@ -5,8 +5,9 @@ import '../../core/storage/local_store.dart';
 class UserProfile {
   final String nickname;
   final String intro; // 나에 대한 한줄 소개 (AI 자유대화에서 캐릭터가 참고)
+  final String avatarUrl; // 친구창 맨 위 내 프로필 사진 (비우면 기본 아이콘)
 
-  const UserProfile({this.nickname = '', this.intro = ''});
+  const UserProfile({this.nickname = '', this.intro = '', this.avatarUrl = ''});
 
   bool get hasNickname => nickname.trim().isNotEmpty;
 }
@@ -19,14 +20,17 @@ class UserProfileNotifier extends Notifier<UserProfile> {
     return UserProfile(
       nickname: raw['nickname'] as String? ?? '',
       intro: raw['intro'] as String? ?? '',
+      avatarUrl: raw['avatar_url'] as String? ?? '',
     );
   }
 
-  Future<void> save({required String nickname, required String intro}) async {
-    state = UserProfile(nickname: nickname.trim(), intro: intro.trim());
+  /// [avatarUrl]을 안 주면 사진은 그대로
+  Future<void> save({required String nickname, required String intro, String? avatarUrl}) async {
+    state = UserProfile(nickname: nickname.trim(), intro: intro.trim(), avatarUrl: avatarUrl ?? state.avatarUrl);
     await ref.read(localStoreProvider).saveMyProfile({
       'nickname': state.nickname,
       'intro': state.intro,
+      if (state.avatarUrl.isNotEmpty) 'avatar_url': state.avatarUrl,
     });
   }
 }

@@ -226,6 +226,12 @@ class LocalStore {
   Future<void> saveMyProfile(Map<String, dynamic> profile) =>
       _write(_profileKey, jsonEncode(profile));
 
+  /// 친구창 즐겨찾기한 캐릭터 ID
+  List<String> get favorites => _getStringList('favorites_v1') ?? const [];
+
+  Future<void> saveFavorites(List<String> characterIds) =>
+      _write('favorites_v1', List<String>.of(characterIds));
+
   /// 이 캐릭터와의 대화에서 쓰는 내 별명 (없으면 기본 프로필 별명)
   String? chatNickname(String characterId) => _getString('nickname_$characterId');
 

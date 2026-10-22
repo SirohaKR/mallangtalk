@@ -31,6 +31,21 @@ enum CharacterSource {
   created, // 내가 만든 캐릭터 (엑셀 대본 또는 AI 생성)
 }
 
+/// 친구창에서 즐겨찾기한 캐릭터 ID (이 브라우저에 저장)
+class FavoritesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => ref.watch(localStoreProvider).favorites.toSet();
+
+  bool isFavorite(String id) => state.contains(id);
+
+  Future<void> toggle(String id) async {
+    state = state.contains(id) ? ({...state}..remove(id)) : {...state, id};
+    await ref.read(localStoreProvider).saveFavorites(state.toList());
+  }
+}
+
+final favoritesProvider = NotifierProvider<FavoritesNotifier, Set<String>>(FavoritesNotifier.new);
+
 class LibraryEntry {
   final ScenarioBundle bundle;
   final CharacterSource source;

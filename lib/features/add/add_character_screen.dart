@@ -6,18 +6,19 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
+import '../home/friends_screen.dart';
 import '../library/character_library.dart';
 import '../studio/studio_screen.dart';
 import '../../shared/utils/korean.dart';
 
-/// [초보자 노트] '캐릭터 추가' 탭: 받아오기(기본 캐릭터·파일) / 만들기(엑셀 대본·AI 생성)
+/// [초보자 노트] '캐릭터 추가' 탭: 받아오기(갤러리) / 내가 만든(내 작품 모아 보기) / 만들기(직접·AI 생성)
 class AddCharacterScreen extends StatelessWidget {
   const AddCharacterScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('캐릭터 추가'),
@@ -26,11 +27,11 @@ class AddCharacterScreen extends StatelessWidget {
             unselectedLabelStyle: AppTextStyles.choiceButton
                 .copyWith(color: AppColors.textSecondary),
             indicatorColor: AppColors.primaryPink,
-            tabs: const [Tab(text: '받아오기'), Tab(text: '만들기')],
+            tabs: const [Tab(text: '받아오기'), Tab(text: '내가 만든'), Tab(text: '만들기')],
           ),
         ),
         body: const TabBarView(
-          children: [ImportCharacterTab(), StudioScreen()],
+          children: [ImportCharacterTab(), MyCreationsTab(), StudioScreen()],
         ),
       ),
     );
@@ -72,6 +73,59 @@ class ImportCharacterTab extends ConsumerWidget {
                     context.push('/gallery/${item.bundle.character.id}'),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 내가 만든: 내가 만든 캐릭터만 모아 봄. 누르면 프로필(대화, 고치기, 파일로 내보내기)
+class MyCreationsTab extends ConsumerWidget {
+  const MyCreationsTab({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mine = ref
+        .watch(characterLibraryProvider)
+        .where((e) => e.source == CharacterSource.created)
+        .toList();
+    if (mine.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: AppSpacing.screenPadding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.brush_outlined, size: 48, color: AppColors.textMuted),
+              const SizedBox(height: AppSpacing.md),
+              const Text('아직 만든 캐릭터가 없어요', style: AppTextStyles.appBarTitle),
+              const SizedBox(height: AppSpacing.lg),
+              ElevatedButton(
+                onPressed: () => DefaultTabController.of(context).animateTo(2),
+                child: const Text('만들러 가기'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+        child: GridView.builder(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: AppSpacing.md,
+            crossAxisSpacing: AppSpacing.md,
+            childAspectRatio: 0.62,
+          ),
+          itemCount: mine.length,
+          itemBuilder: (context, index) => GalleryCard(
+            character: mine[index].bundle.character,
+            isFriend: false,
+            onTap: () => showCharacterProfile(context, mine[index]),
           ),
         ),
       ),

@@ -15,43 +15,197 @@ import '../library/character_library.dart';
 import '../settings/user_profile.dart';
 import '../../shared/utils/korean.dart';
 
-/// [초보자 노트] '내 캐릭터' 탭: 받아오거나 만든 캐릭터 목록. 누르면 프로필이 뜨고 거기서 1:1 채팅을 시작합니다.
+/// [초보자 노트] '내 캐릭터' 탭은 카톡 친구창처럼: 맨 위 내 프로필, 그 아래 즐겨찾기, 그 아래 캐릭터 목록.
+/// 캐릭터를 누르면 프로필이 뜨고, 거기서 1:1 채팅·즐겨찾기를 해요.
 class FriendsScreen extends ConsumerWidget {
   const FriendsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final entries = ref.watch(characterLibraryProvider);
+    final favorites = ref.watch(favoritesProvider);
+    final starred = entries.where((e) => favorites.contains(e.id)).toList();
+    final others = entries.where((e) => !favorites.contains(e.id)).toList();
+
+    Widget section(String title) => Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 4),
+          child: Text(title, style: AppTextStyles.messageTime),
+        );
 
     return Scaffold(
-      appBar: AppBar(title: Text('내 캐릭터 ${entries.length}')),
+      appBar: AppBar(title: const Text('친구')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
-          child: entries.isEmpty
-              ? _EmptyFriends(onAdd: () => context.go('/add'))
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                  itemCount: entries.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
-                  itemBuilder: (context, index) {
-                    final entry = entries[index];
-                    final c = entry.bundle.character;
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
-                      leading: CharacterAvatar(character: c, radius: 24),
-                      title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
-                      subtitle: Text(
-                        c.statusMessage.isEmpty ? entry.sourceLabel : CharacterModel.fillUserName(c.statusMessage, '너', charName: c.name),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.systemNotice,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            children: [
+              const _MyProfileTile(),
+              const Divider(height: 1),
+              if (entries.isEmpty) _EmptyFriends(onAdd: () => context.go('/add')),
+              if (starred.isNotEmpty) ...[
+                section('즐겨찾기 ${starred.length}'),
+                for (final e in starred) _FriendTile(entry: e),
+              ],
+              if (others.isNotEmpty) ...[
+                section('친구 ${entries.length}'),
+                for (final e in others) _FriendTile(entry: e),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FriendTile extends StatelessWidget {
+  const _FriendTile({required this.entry});
+
+  final LibraryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = entry.bundle.character;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 2),
+      leading: CharacterAvatar(character: c, radius: 24),
+      title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+      subtitle: Text(
+        c.statusMessage.isEmpty ? entry.sourceLabel : CharacterModel.fillUserName(c.statusMessage, '너', charName: c.name),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.systemNotice,
+      ),
+      trailing: Text(entry.sourceLabel, style: AppTextStyles.messageTime),
+      onTap: () => showCharacterProfile(context, entry),
+    );
+  }
+}
+
+/// 친구창 맨 위 내 프로필. 누르면 사진·별명·한줄 소개를 고침
+class _MyProfileTile extends ConsumerWidget {
+  const _MyProfileTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      leading: MyProfileAvatar(url: profile.avatarUrl, radius: 30),
+      title: Text(
+        profile.hasNickname ? profile.nickname : '내 프로필',
+        style: AppTextStyles.appBarTitle.copyWith(fontSize: 17),
+      ),
+      subtitle: Text(
+        profile.intro.isEmpty ? '눌러서 사진과 소개를 정해요' : profile.intro,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.systemNotice,
+      ),
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.surfaceWhite,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => const _MyProfileEditor(),
+      ),
+    );
+  }
+}
+
+/// 내 프로필 사진 (없으면 기본 사람 아이콘)
+class MyProfileAvatar extends StatelessWidget {
+  const MyProfileAvatar({super.key, required this.url, this.radius = 24});
+
+  final String url;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = CharacterImage.providerFor(url);
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.borderLight,
+      backgroundImage: image,
+      child: image == null ? Icon(Icons.person_rounded, size: radius, color: AppColors.surfaceWhite) : null,
+    );
+  }
+}
+
+class _MyProfileEditor extends ConsumerStatefulWidget {
+  const _MyProfileEditor();
+
+  @override
+  ConsumerState<_MyProfileEditor> createState() => _MyProfileEditorState();
+}
+
+class _MyProfileEditorState extends ConsumerState<_MyProfileEditor> {
+  late final _profile = ref.read(userProfileProvider);
+  late final _nickname = TextEditingController(text: _profile.nickname);
+  late final _intro = TextEditingController(text: _profile.intro);
+  late String _avatar = _profile.avatarUrl;
+
+  @override
+  void dispose() {
+    _nickname.dispose();
+    _intro.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 24, 20, 12 + MediaQuery.viewInsetsOf(context).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: GestureDetector(
+                onTap: () async {
+                  final image = await pickProfileImage();
+                  if (image != null) setState(() => _avatar = image);
+                },
+                child: Stack(
+                  children: [
+                    MyProfileAvatar(url: _avatar, radius: 40),
+                    const Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: CircleAvatar(
+                        radius: 13,
+                        backgroundColor: AppColors.primaryPink,
+                        child: Icon(Icons.photo_camera_rounded, size: 15, color: AppColors.surfaceWhite),
                       ),
-                      trailing: Text(entry.sourceLabel, style: AppTextStyles.messageTime),
-                      onTap: () => showCharacterProfile(context, entry),
-                    );
-                  },
+                    ),
+                  ],
                 ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _nickname,
+              maxLength: 12,
+              decoration: const InputDecoration(labelText: '기본 별명', hintText: '캐릭터가 나를 부를 이름'),
+            ),
+            TextField(
+              controller: _intro,
+              maxLength: 60,
+              decoration: const InputDecoration(labelText: '한줄 소개', hintText: 'AI 자유대화에서 캐릭터가 참고해요'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            ElevatedButton(
+              onPressed: () async {
+                await ref
+                    .read(userProfileProvider.notifier)
+                    .save(nickname: _nickname.text, intro: _intro.text, avatarUrl: _avatar);
+                if (context.mounted) Navigator.of(context).pop();
+              },
+              child: const Text('저장'),
+            ),
+          ],
         ),
       ),
     );
@@ -121,7 +275,21 @@ class _CharacterProfileSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(child: CharacterAvatar(character: c, radius: 40)),
+            Row(
+              children: [
+                const SizedBox(width: 48),
+                Expanded(child: Center(child: CharacterAvatar(character: c, radius: 40))),
+                IconButton(
+                  tooltip: ref.watch(favoritesProvider).contains(c.id) ? '즐겨찾기 빼기' : '즐겨찾기',
+                  onPressed: () => ref.read(favoritesProvider.notifier).toggle(c.id),
+                  icon: Icon(
+                    ref.watch(favoritesProvider).contains(c.id) ? Icons.star_rounded : Icons.star_outline_rounded,
+                    color: AppColors.primaryPink,
+                    size: 28,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(c.name, textAlign: TextAlign.center, style: AppTextStyles.appBarTitle.copyWith(fontSize: 20)),
             if (c.statusMessage.isNotEmpty) ...[
