@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/app.dart';
+import 'package:mallangtalk/core/network/ai_provider.dart';
+import 'package:mallangtalk/core/network/server_info.dart';
 import 'package:mallangtalk/core/router/app_router.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
+import 'package:mallangtalk/features/studio/template_scenario.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -128,6 +131,164 @@ void main() {
     expect(container.read(chatRoomsProvider), contains('char_example_seo_ijun'));
   });
 
+  testWidgets('내 캐릭터 프로필에서 1:1 채팅을 누르면 별명을 정하고 대화방으로 이동', (tester) async {
+    SharedPreferences.setMockInitialValues({'tempo_$dohaId': '0.2'});
+    appRouter.go('/friends');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+
+    // 처음: 프로필 시트가 닫힌 뒤에도 별명 창이 뜨고, 정하면 대화방이 열림
+    await tester.tap(find.text('윤도하'));
+    await settle(tester);
+    await tester.tap(find.text('1:1 채팅'));
+    await settle(tester);
+    expect(find.text('윤도하와 대화 시작'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '말랑');
+    await tester.tap(find.text('대화 시작'));
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsOneWidget);
+
+    // 두 번째: 별명이 이미 있으면 바로 대화방
+    appRouter.go('/friends');
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsNothing);
+    await tester.tap(find.text('윤도하'));
+    await settle(tester);
+    await tester.tap(find.text('1:1 채팅'));
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsOneWidget);
+
+    // 프로필 시트의 대화 속도도 시트가 닫힌 뒤 제대로 열림
+    appRouter.go('/friends');
+    await settle(tester);
+    await tester.tap(find.text('윤도하'));
+    await settle(tester);
+    await tester.tap(find.text('대화 속도'));
+    await settle(tester);
+    expect(find.text('윤도하 대화 속도'), findsOneWidget);
+  });
+
+  testWidgets('설정: 드롭다운으로 AI 회사를 고르고 키와 모델을 저장', (tester) async {
+    SharedPreferences.setMockInitialValues({'byok_claude_api_key': 'sk-ant-old-key-123456'});
+    appRouter.go('/settings');
+    await tester.binding.setSurfaceSize(const Size(420, 1400));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    expect(find.text('Claude (Anthropic)'), findsOneWidget);
+    expect(find.textContaining('저장된 키'), findsOneWidget);
+
+    await tester.tap(find.text('Claude (Anthropic)'));
+    await settle(tester);
+    await tester.tap(find.text('Gemini (Google)').last);
+    await settle(tester);
+    expect(find.textContaining('저장된 키'), findsNothing); // Gemini 키는 아직 없음
+    await tester.enterText(find.widgetWithText(TextField, 'AIza로 시작하는 Gemini API 키'), 'AIza-new-key-0000');
+
+    await tester.tap(find.textContaining('Gemini 4 Argon'));
+    await settle(tester);
+    await tester.tap(find.textContaining('Gemini 3.8 Flash').last);
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
+    await settle(tester);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('byok_provider'), 'gemini');
+    expect(prefs.getString('byok_key_gemini'), 'AIza-new-key-0000');
+    expect(prefs.getString('byok_model_gemini'), 'gemini-3.8-flash');
+    expect(prefs.getString('byok_claude_api_key'), 'sk-ant-old-key-123456'); // Claude 키는 그대로
+  });
+
+  testWidgets('설정: 말랑톡 서버에서 열면 서버 키 안내와 접속 코드 칸이 보이고, 내 키 없이 저장됨', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    appRouter.go('/settings');
+    await tester.binding.setSurfaceSize(const Size(420, 1600));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+        serverInfoProvider.overrideWith((ref) async => const ServerInfo(
+              baseUrl: 'http://localhost:5200',
+              providers: {AiProvider.claude},
+              needsAccessCode: true,
+            )),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    expect(find.textContaining('Claude (Anthropic)는 서버 .env 키로'), findsOneWidget);
+    expect(find.text('API 키 (안 넣어도 됨)'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, '서버 .env의 ACCESS_CODE'), 'mallang');
+    await tester.tap(find.widgetWithText(OutlinedButton, '저장'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
+    await settle(tester);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('server_access_code'), 'mallang');
+    expect(prefs.getString('byok_provider'), 'claude'); // 키 없이도 저장됨
+    expect(prefs.getString('byok_claude_model'), 'claude-opus-5-5');
+  });
+
+  testWidgets('만들기: 카이엔 설정을 불러오고, 쓰던 초안은 새로 열어도 남아 있음', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    Future<void> openStudio() async {
+      appRouter.go('/add');
+      await tester.pumpWidget(ProviderScope(
+        key: UniqueKey(),
+        overrides: [
+          builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+          sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+          clockProvider.overrideWithValue(testNow),
+        ],
+        child: const MallangTalkApp(),
+      ));
+      await settle(tester);
+      await tester.tap(find.text('만들기'));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await openStudio();
+    await tester.tap(find.byTooltip('더 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('예시: 카이엔 (설정만)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('불러오기'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, '카이엔'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, '카이엔'), '카이엔 루벨리아');
+    await tester.pump(const Duration(seconds: 4)); // 자동 저장
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('studio_draft_v1'), contains('카이엔 루벨리아'));
+
+    // 앱을 새로 띄워도(새 버전·새로고침) 쓰던 초안이 그대로
+    await openStudio();
+    expect(find.widgetWithText(TextFormField, '카이엔 루벨리아'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, '루벨리아 제국 제2황자'), findsOneWidget);
+    appRouter.go('/friends'); // 만들기 화면을 닫아 자동 저장 타이머 정리
+    await settle(tester);
+  });
+
   testWidgets('만들기: 예시를 불러와 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
     SharedPreferences.setMockInitialValues({});
     appRouter.go('/add');
@@ -153,6 +314,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
+    // 캐릭터 탭은 한 항목씩 화살표로 넘김: 기본 정보 → 캐릭터 정보 → 캐릭터 설정(넓은 칸 + 글자 수)
+    expect(find.text('1/8'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('2/8'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '시각디자인과 4학년'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('3/8'), findsOneWidget);
+    final setting = templateScenario().character.worldviewPrompt;
+    expect(find.text('${setting.characters.length}자'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, setting), '$setting 커피는 늘 블랙.');
+    await tester.pump();
+    expect(find.text('${setting.characters.length + 10}자'), findsOneWidget);
+
     // 대사 탭: 첫 대화의 첫 말풍선을 고침
     await tester.tap(find.text('대사'));
     await tester.pumpAndSettle();
@@ -171,6 +347,7 @@ void main() {
     expect(made.bundle.events, hasLength(5));
     final first = made.bundle.firstNodeOf(made.bundle.events.first.id)!;
     expect(first.characterBubbles.map((b) => b.text), contains('내일 출사 가는데 같이 갈래.'));
+    expect(made.bundle.character.worldviewPrompt, endsWith('커피는 늘 블랙.'));
     // 저장하면 새 캐릭터를 만들 수 있게 빈 칸으로 돌아감
     expect(find.widgetWithText(TextFormField, '서이준'), findsNothing);
   });

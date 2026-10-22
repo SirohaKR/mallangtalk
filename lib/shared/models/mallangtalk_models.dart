@@ -318,22 +318,34 @@ class CharacterModel {
         '주변 인물:\n${extraCast.map((e) => '- ${e.name}${e.role.isNotEmpty ? ' (${e.role})' : ''}${e.speech.isNotEmpty ? ' 말투: ${e.speech}' : ''}').join('\n')}',
       if (secret.isNotEmpty) '비밀(유저는 아직 모름, 서서히 드러냄): $secret',
     ];
-    return lines.where((l) => l.isNotEmpty).join('\n');
+    return fillCharName(lines.where((l) => l.isNotEmpty).join('\n'));
   }
 
-  /// 대사 속 {이름} 자리에 내 별명을 넣음 (제작자가 대본에 {이름}이라고 쓰면 플레이어마다 다르게 불림)
-  /// 바로 뒤 조사는 별명 받침에 맞게 바꿈: {이름}아 → 쨋뀨야 / 서연아, {이름}이 → 쨋뀨가 / 서연이
-  static String fillUserName(String text, String nickname) => text.replaceAllMapped(
-        _namePattern,
-        (m) {
-          final particle = m.group(1);
-          if (particle == null) return nickname;
-          final pair = _particlePairs.firstWhere((p) => p.contains(particle));
-          return josa(nickname, pair[0], pair[1]);
-        },
-      );
+  /// 대사·설정 속 이름 자리를 채움 (AI 챗 플랫폼과 같은 표기도 씀)
+  /// - {{user}} 또는 {이름} → 내 별명 (제작자가 {{user}}라고 쓰면 플레이어마다 다르게 불림)
+  /// - {{char}} → 캐릭터 이름 (charName을 줄 때만)
+  /// 바로 뒤 조사는 이름 받침에 맞게 바꿈: {{user}}아 → 쨋뀨야 / 서연아, {{char}}이 → 카이엔이 / 도하가
+  static String fillUserName(String text, String nickname, {String? charName}) {
+    var out = text.replaceAllMapped(_userPattern, (m) => _withParticle(nickname, m.group(1)));
+    if (charName != null) {
+      out = out.replaceAllMapped(_charPattern, (m) => _withParticle(charName, m.group(1)));
+    }
+    return out;
+  }
 
-  static final _namePattern = RegExp(r'\{이름\}(이랑|랑|이야|아|야|이|가|은|는|을|를|과|와)?');
+  /// {{char}}만 이 캐릭터 이름으로 채움 ({{user}}는 그대로 둠, AI에게 넘기는 설정용)
+  String fillCharName(String text) =>
+      text.replaceAllMapped(_charPattern, (m) => _withParticle(name, m.group(1)));
+
+  static String _withParticle(String name, String? particle) {
+    if (particle == null) return name;
+    final pair = _particlePairs.firstWhere((p) => p.contains(particle));
+    return josa(name, pair[0], pair[1]);
+  }
+
+  static const _particles = r'(이랑|랑|이야|아|야|이|가|은|는|을|를|과|와)?';
+  static final _userPattern = RegExp(r'(?:\{\{\s*user\s*\}\}|\{이름\})' + _particles, caseSensitive: false);
+  static final _charPattern = RegExp(r'\{\{\s*char\s*\}\}' + _particles, caseSensitive: false);
   static const _particlePairs = [
     ['아', '야'], ['이랑', '랑'], ['이야', '야'], ['이', '가'], ['은', '는'], ['을', '를'], ['과', '와'],
   ];

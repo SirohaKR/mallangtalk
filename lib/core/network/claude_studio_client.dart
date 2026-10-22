@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/mallangtalk_models.dart';
@@ -37,20 +36,24 @@ final claudeStudioClientProvider = Provider<ClaudeStudioClient>((ref) => ClaudeS
 ///    비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목 등)도 이때 채움
 /// 2. 대사 쓰기: 대화 하나마다 장면·말풍선·선택지 (대화 수만큼 호출, 3개씩 동시에). 이벤트 하나만 따로 쓸 수도 있음
 /// 3. 균형 맞추기: 좋은 선택을 하면 끝까지 갈 수 있게 호감도 점수를 자동 보정
-/// 키는 지금은 설정 화면의 내 키(BYOK)를 쓰고, 나중에 앱 토큰 충전 방식이 생기면 apiKey 자리만 서버 중계로 바꾸면 됩니다.
+/// 말랑톡 서버에서 열었으면 [relay]로 서버의 .env 키를 쓰고, 아니면 설정 화면의 내 키(BYOK)를 씁니다.
 class ClaudeStudioClient {
   ClaudeStudioClient({Dio? dio})
       : _dio = dio ??
             Dio(BaseOptions(
-              baseUrl: 'https://api.anthropic.com',
               connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(minutes: 4),
+              receiveTimeout: const Duration(minutes: 6),
             ));
 
   final Dio _dio;
 
+  /// 부를 때마다 쓴 토큰 수를 알려 줌 (사용량·금액 측정용)
+  void Function(AiUsage usage)? onUsage;
+
   Future<ScenarioBundle> generate({
-    required String apiKey,
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required StudioBrief brief,
     StudioProgress? onProgress,
@@ -58,7 +61,7 @@ class ClaudeStudioClient {
     final total = brief.totalTalks + 1;
     onProgress?.call('이야기 목차를 짜는 중', 0, total);
 
-    final (outline, character) = await _outline(apiKey: apiKey, model: model, brief: brief);
+    final (outline, character) = await _outline(provider: provider, apiKey: apiKey, relay: relay, model: model, brief: brief);
     final characterId = character.id;
     onProgress?.call('대사를 쓰는 중', 1, total);
 
@@ -104,7 +107,7 @@ class ClaudeStudioClient {
       final batch = events.sublist(start, (start + 3).clamp(0, events.length));
       final results = await Future.wait([
         for (final event in batch)
-          writeScript(apiKey: apiKey, model: model, character: character, event: event, outline: events),
+          writeScript(provider: provider, apiKey: apiKey, relay: relay, model: model, character: character, event: event, outline: events),
       ]);
       for (var j = 0; j < batch.length; j++) {
         final (eventNodes, cutsceneStep) = results[j];
@@ -133,12 +136,14 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
 너는 메신저 연애 시뮬레이션 게임 "말랑톡"의 시나리오 작가다. 유저는 카톡으로 캐릭터와 대화하며 호감도를 쌓는다.
 - 대사는 실제 카톡처럼 짧게 끊어 친다. 괄호 지문, 행동 묘사, 나레이션은 쓰지 않는다. 이모지는 거의 안 쓴다.
 - 캐릭터의 말투·습관·취미가 대사마다 살아 있어야 한다. 단계보다 앞서 나가는 고백이나 스킨십은 쓰지 않는다.
-- 유저는 평소 "너"라고 부르고, 이름을 부를 때만 {이름} 이라고 쓴다(앱이 플레이어 별명으로 바꿔 넣는다). 유저 성별은 정하지 않는다.
+- 유저는 평소 "너"라고 부르고, 이름을 부를 때만 {{user}} 라고 쓴다(앱이 플레이어 별명으로 바꿔 넣는다). 유저 성별은 정하지 않는다.
 - 플레이어가 언제 접속할지 모르므로 대사에 "지금 밤 11시" 같은 정확한 시각을 쓰지 않는다.''';
 
   /// 목차 + 비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목·대표 대사·성격 막대·대사 예시)를 한 번에 만듦
   Future<(List<Map<String, dynamic>>, CharacterModel)> _outline({
-    required String apiKey,
+    required AiProvider provider,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required StudioBrief brief,
   }) async {
@@ -226,7 +231,7 @@ ${_characterSheet(base)}
 - 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 장면이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
 
-    final json = await _call(apiKey: apiKey, model: model, user: user, schema: schema, maxTokens: 9000);
+    final json = await _call(provider: provider, apiKey: apiKey, relay: relay, model: model, user: user, schema: schema, maxTokens: 9000);
     final talks = [for (final t in json['talks'] as List? ?? const []) t as Map<String, dynamic>];
     if (talks.where((t) => t['kind'] == 'event').isEmpty) {
       throw const ClaudeChatException('AI가 이벤트 목차를 만들지 못했어요. 다시 시도해 주세요.');
@@ -284,7 +289,9 @@ ${_characterSheet(base)}
   /// 대화 하나의 대사(장면·말풍선·선택지)를 씀. 돌려주는 값: (대사 노드, 컷씬이 뜨는 단계)
   /// outline은 앞뒤 흐름을 알려 주려고 넘기는 전체 대화 목록 (지금 쓸 대화 포함)
   Future<(List<ScriptNodeModel>, int?)> writeScript({
-    required String apiKey,
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required CharacterModel character,
     required ScenarioEventModel event,
@@ -338,12 +345,19 @@ ${_characterSheet(base)}
       'additionalProperties': false,
     };
 
-    final kindText = switch (event.eventType) {
-      ScenarioEventType.daily => '일상 대화 (가벼운 잡담, 장면 1~2개)',
-      ScenarioEventType.ending => '엔딩 (장면 1~2개, 마지막 장면은 선택지 1개 또는 없음)',
-      ScenarioEventType.special => '특별 이벤트 (그 시간대 분위기의 짧은 톡, 장면 1~2개)',
-      _ => '호감도 이벤트 (장면 2~4개, 선택에 따라 갈림길 1개 정도)',
+    // [초보자 노트] 대화 분량: 호감도 이벤트·엔딩은 캐릭터 말풍선 20개쯤(쨋뀨 요청), 일상·특별은 그 절반쯤
+    final (kindText, bubbleRange) = switch (event.eventType) {
+      ScenarioEventType.daily => ('일상 대화 (가벼운 잡담, 장면 2~3개)', '8~12'),
+      ScenarioEventType.ending => ('엔딩 (장면 4~5개, 마지막 장면은 선택지 1개 또는 없음)', '18~22'),
+      ScenarioEventType.special => ('특별 이벤트 (그 시간대 분위기의 톡, 장면 2~3개)', '8~12'),
+      _ => ('호감도 이벤트 (장면 4~6개, 선택에 따라 갈림길 1~2개)', '18~22'),
     };
+    // 좋은 선택만 골랐을 때 이 대화에서 오를 호감도: 단계 점수 폭을 그 단계의 호감도 이벤트 수로 나눈 만큼
+    final stage = character.stageNamed(event.stageLabel);
+    final storyInStage = outline.where((o) => o.isAffectionEvent && o.stageLabel == event.stageLabel).length;
+    final affectionBudget = event.isAffectionEvent && stage != null
+        ? ((stage.maxScore - stage.minScore + 1) / (storyInStage == 0 ? 1 : storyInStage)).round().clamp(4, 30)
+        : null;
     final storySoFar = outline
         .map((o) => '- [${o.stageLabel ?? ''}] ${o.title}${o.id == event.id ? '  ← 지금 쓸 대화' : ''}')
         .join('\n');
@@ -363,17 +377,19 @@ ${event.isSpecial ? '실제 시간: ${event.realTime?.label ?? ''} 에 대화방
 ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTitle} → 이 장면이 떠오르는 단계를 cutscene_step으로. 좋은 선택을 하면 반드시 지나가는 단계여야 한다.' : '앨범 장면 없음 → cutscene_step은 0'}
 
 규칙:
-- 캐릭터가 먼저 톡을 보내며 시작한다. 장면마다 캐릭터 말풍선 2~5개.
+- 캐릭터가 먼저 톡을 보내며 시작한다. 장면마다 캐릭터 말풍선 3~5개.
+- 분량: 좋은 선택을 따라 끝까지 읽었을 때 캐릭터 말풍선이 모두 합쳐 $bubbleRange개가 되게 쓴다. 짧게 끊어 치는 카톡처럼, 한 말풍선은 한두 문장.
 - 선택지는 2~3개. user_messages는 유저가 보내는 짧은 톡 1~3개.
-- affection: 캐릭터 마음에 쏙 드는 답 +4~+6, 무난한 답 +1~+3, 서운한 답 0. 음수는 쓰지 않는다.
+- affection: 캐릭터 마음에 쏙 드는 답 +2~+4, 무난한 답 +1, 서운한 답 0. 음수는 쓰지 않는다.${affectionBudget != null ? '\n- 좋은 답만 골랐을 때 이 대화에서 오르는 호감도 합이 약 $affectionBudget점이 되게 맞춘다.' : ''}
 - 선택지가 없는 장면에서 대화가 끝난다. next_scene은 이 대화 안의 장면 이름만 쓴다.''';
 
     final json = await _call(
-      apiKey: apiKey,
+      provider: provider,
+      apiKey: apiKey, relay: relay,
       model: model,
       user: user,
       schema: schema,
-      maxTokens: 12000,
+      maxTokens: 24000, // 말풍선 20개 + 보이지 않는 생각까지 넉넉히
     );
     final scenes = [for (final s in json['scenes'] as List? ?? const []) s as Map<String, dynamic>];
     String nodeId(String scene) => '${event.id}_${scene.trim()}';
@@ -432,60 +448,28 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
   }
 
   Future<Map<String, dynamic>> _call({
-    required String apiKey,
+    required AiProvider provider,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required String user,
     required Map<String, dynamic> schema,
     required int maxTokens,
   }) async {
-    final fallback = model == 'claude-opus-5-5' || model == 'claude-sonnet-5-5';
-    try {
-      final response = await _dio.post<Map<String, dynamic>>(
-        '/v1/messages',
-        options: Options(headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-          if (fallback) 'anthropic-beta': 'server-side-fallback-2026-07-01',
-        }),
-        data: {
-          'model': model,
-          'max_tokens': maxTokens,
-          if (fallback) 'fallbacks': 'default',
-          'system': _system,
-          'messages': [
-            {'role': 'user', 'content': user},
-          ],
-          'output_config': {
-            'effort': 'medium',
-            'format': {'type': 'json_schema', 'schema': schema},
-          },
-        },
-      );
-      final data = response.data ?? const {};
-      if (data['stop_reason'] == 'refusal') {
-        throw const ClaudeChatException('AI가 이 설정으로는 대본을 만들지 않았어요. 설정을 바꿔 보세요.');
-      }
-      if (data['stop_reason'] == 'max_tokens') {
-        throw const ClaudeChatException('대본이 너무 길어서 중간에 끊겼어요. 대화 수를 줄여서 다시 해 보세요.');
-      }
-      final text = [
-        for (final block in data['content'] as List? ?? const [])
-          if (block is Map && block['type'] == 'text') block['text'] as String,
-      ].join();
-      return jsonDecode(text) as Map<String, dynamic>;
-    } on FormatException {
-      throw const ClaudeChatException('AI 응답을 읽지 못했어요. 다시 시도해 주세요.');
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      final body = e.response?.data;
-      final apiMessage = body is Map ? (body['error']?['message'] as String?) : null;
-      throw ClaudeChatException(switch (status) {
-        401 => 'API 키가 올바르지 않아요. 설정에서 다시 확인해 주세요.',
-        429 => '요청이 너무 많거나 크레딧이 부족해요. 잠시 후 다시 시도해 주세요.',
-        _ => 'AI 호출 실패${status != null ? ' ($status)' : ''}: ${apiMessage ?? e.message ?? '네트워크 오류'}',
-      });
-    }
+    final (json, usage) = await callJsonModel(
+      _dio,
+      provider: provider,
+      apiKey: apiKey, relay: relay,
+      model: model,
+      system: _system,
+      user: user,
+      schema: schema,
+      maxTokens: maxTokens,
+      refusalMessage: 'AI가 이 설정으로는 대본을 만들지 않았어요. 설정을 바꿔 보세요.',
+      truncatedMessage: '대본이 너무 길어서 중간에 끊겼어요. 대화 수를 줄여서 다시 해 보세요.',
+    );
+    onUsage?.call(usage);
+    return json;
   }
 }
 

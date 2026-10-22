@@ -25,7 +25,7 @@ class CharacterSheetView extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = character;
     final fields = c.profileFields.where((f) => !f.isSecret && f.value.trim().isNotEmpty).toList();
-    String fill(String text) => CharacterModel.fillUserName(text, nickname);
+    String fill(String text) => CharacterModel.fillUserName(text, nickname, charName: character.name);
     Widget body(String text) => Text(fill(text.trim()), style: AppTextStyles.chatBubbleBody);
 
     return Column(

@@ -218,3 +218,56 @@ class StudioPill extends StatelessWidget {
     );
   }
 }
+
+/// 긴 설정용 큰 입력칸: 남는 화면을 꽉 채우고, 아래에 글자 수를 보여 줌 (설정이 천 자를 넘어도 편하게)
+class BigTextField extends StatefulWidget {
+  const BigTextField({
+    super.key,
+    required this.fieldKey,
+    required this.value,
+    required this.onChanged,
+    this.hint,
+  });
+
+  final Object fieldKey;
+  final String value;
+  final ValueChanged<String> onChanged;
+  final String? hint;
+
+  @override
+  State<BigTextField> createState() => _BigTextFieldState();
+}
+
+class _BigTextFieldState extends State<BigTextField> {
+  late int _length = widget.value.characters.length;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: TextFormField(
+            key: ValueKey(widget.fieldKey),
+            initialValue: widget.value,
+            expands: true,
+            minLines: null,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
+            textAlignVertical: TextAlignVertical.top,
+            style: AppTextStyles.chatBubbleBody.copyWith(height: 1.6),
+            decoration: InputDecoration(hintText: widget.hint, hintMaxLines: 6, alignLabelWithHint: true),
+            onChanged: (v) {
+              widget.onChanged(v);
+              setState(() => _length = v.characters.length);
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('$_length자', textAlign: TextAlign.right, style: AppTextStyles.messageTime),
+        ),
+      ],
+    );
+  }
+}

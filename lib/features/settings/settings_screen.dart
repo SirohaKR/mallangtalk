@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/network/claude_chat_client.dart';
+import '../../core/network/ai_provider.dart';
+import '../../core/network/server_info.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'byok_settings.dart';
 import 'user_profile.dart';
 
-/// [초보자 노트] 내 Claude API 키(BYOK)를 넣고 자유대화에 쓸 모델을 고르는 설정 화면입니다.
+/// [초보자 노트] 쓸 AI 회사(Claude·ChatGPT·Gemini)를 드롭다운으로 고르고, 그 회사 키를 넣고 모델을 고르는 설정 화면입니다.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -16,18 +17,48 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  static const _custom = '__custom__';
   final _keyController = TextEditingController();
-  late String _model = ref.read(byokSettingsProvider).model;
+  late AiProvider _provider = ref.read(byokSettingsProvider).provider;
+  late String _model = _modelChoiceOf(ref.read(byokSettingsProvider));
+  late final _customModel = TextEditingController(
+    text: _model == _custom ? ref.read(byokSettingsProvider).model : '',
+  );
+
+  /// 드롭다운에 보일 값: 목록에 있는 모델이면 그 id, 직접 입력한 모델이면 '직접 입력'
+  String _modelChoiceOf(ByokSettings s) => s.modelOption != null ? s.model : _custom;
+
+  void _pickProvider(AiProvider provider) {
+    final saved = ref.read(byokSettingsProvider.notifier).peek(provider);
+    setState(() {
+      _provider = provider;
+      _model = _modelChoiceOf(saved);
+      _customModel.text = _model == _custom ? saved.model : '';
+      _keyController.clear();
+    });
+  }
+  final _accessCode = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _accessCode.text = ref.read(byokSettingsProvider).accessCode ?? '';
+  }
+
   late final _nickname = TextEditingController(text: ref.read(userProfileProvider).nickname);
   late final _intro = TextEditingController(text: ref.read(userProfileProvider).intro);
 
   @override
   void dispose() {
     _keyController.dispose();
+    _customModel.dispose();
+    _accessCode.dispose();
     _nickname.dispose();
     _intro.dispose();
     super.dispose();
   }
+
+  static String _usd(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
   void _toast(String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -35,8 +66,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(byokSettingsProvider);
+    ref.watch(byokSettingsProvider);
     final notifier = ref.read(byokSettingsProvider.notifier);
+    // 지금 드롭다운에서 고른 회사에 저장해 둔 키 (아직 저장 전이면 다른 회사 키일 수 있음)
+    final settings = notifier.peek(_provider);
+    final server = settings.server;
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -78,14 +112,64 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: AppSpacing.xl),
               const Divider(),
               const SizedBox(height: AppSpacing.md),
-              const Text('내 AI 키', style: AppTextStyles.appBarTitle),
+              Text(server != null ? 'AI 설정' : '내 AI 키', style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
-                '채팅방 자유대화와 캐릭터 추가 > 만들기 > AI로 만들기에서 이 키로 Claude를 불러요. '
-                '요금은 이 키의 계정에 청구돼요. 키는 이 브라우저에만 저장돼요.',
+                '채팅방 자유대화와 캐릭터 추가 > 만들기 > AI로 만들기에서 여기서 고른 AI를 불러요. '
+                '요금은 그 키의 계정에 청구돼요. 내 키는 이 브라우저에만 저장돼요.',
                 style: AppTextStyles.systemNotice,
               ),
+              if (server != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                _ServerCard(server: server),
+                if (server.needsAccessCode) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  const Text('서버 접속 코드', style: AppTextStyles.speakerName),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _accessCode,
+                          obscureText: true,
+                          autocorrect: false,
+                          decoration: const InputDecoration(hintText: '서버 .env의 ACCESS_CODE'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () async {
+                          await notifier.saveAccessCode(_accessCode.text);
+                          _toast('접속 코드를 저장했어요');
+                        },
+                        child: const Text('저장'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
               const SizedBox(height: AppSpacing.lg),
+              const Text('AI 회사', style: AppTextStyles.speakerName),
+              const SizedBox(height: 4),
+              DropdownButtonFormField<AiProvider>(
+                key: ValueKey('provider_${_provider.name}'),
+                initialValue: _provider,
+                isExpanded: true,
+                items: [
+                  for (final p in AiProvider.values) DropdownMenuItem(value: p, child: Text(p.label)),
+                ],
+                onChanged: (p) {
+                  if (p != null && p != _provider) _pickProvider(p);
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                settings.usesServer ? '서버 키로 불러요. 내 키는 넣지 않아도 돼요.' : _provider.keyNote,
+                style: AppTextStyles.messageTime,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(settings.usesServer ? 'API 키 (안 넣어도 됨)' : 'API 키', style: AppTextStyles.speakerName),
+              const SizedBox(height: 4),
               if (settings.hasKey) ...[
                 Row(
                   children: [
@@ -97,14 +181,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     TextButton(
                       onPressed: () async {
-                        await notifier.removeKey();
+                        await notifier.removeKey(_provider);
+                        setState(() {});
                         _toast('키를 지웠어요');
                       },
                       child: const Text('지우기'),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.md),
               ],
               TextField(
                 controller: _keyController,
@@ -112,41 +196,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 autocorrect: false,
                 enableSuggestions: false,
                 decoration: InputDecoration(
-                  hintText: settings.hasKey ? '새 키로 바꾸려면 입력' : 'sk-ant-로 시작하는 Claude API 키',
+                  hintText: settings.hasKey ? '새 키로 바꾸려면 입력' : _provider.keyHint,
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
               const Text('모델', style: AppTextStyles.speakerName),
               const SizedBox(height: 4),
-              // 구버전 Flutter에서도 돌도록 Radio 대신 체크 아이콘 목록으로 고름
-              for (final option in ClaudeModelOption.all)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  onTap: () => setState(() => _model = option.id),
-                  leading: Icon(
-                    _model == option.id
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.radio_button_off_rounded,
-                    color: _model == option.id
-                        ? AppColors.aiActivePurple
-                        : AppColors.textMuted,
-                  ),
-                  title: Text(option.label),
-                  subtitle: Text(option.note, style: AppTextStyles.systemNotice),
+              DropdownButtonFormField<String>(
+                key: ValueKey('model_${_provider.name}'),
+                initialValue: _model,
+                isExpanded: true,
+                items: [
+                  for (final m in _provider.models)
+                    DropdownMenuItem(
+                      value: m.id,
+                      child: Text('${m.label} · ${m.note}', overflow: TextOverflow.ellipsis),
+                    ),
+                  const DropdownMenuItem(value: _custom, child: Text('직접 입력')),
+                ],
+                onChanged: (id) {
+                  if (id != null) setState(() => _model = id);
+                },
+              ),
+              if (_model == _custom) ...[
+                const SizedBox(height: AppSpacing.sm),
+                TextField(
+                  controller: _customModel,
+                  autocorrect: false,
+                  decoration: const InputDecoration(hintText: '모델 이름 그대로 (예: 새로 나온 모델)'),
                 ),
+              ],
+              if (_provider.option(_model) case final m?) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '요금: 입력 100만 토큰당 \$${_usd(m.inputUsdPerMTok)}, 출력 \$${_usd(m.outputUsdPerMTok)} (2026년 10월 기준)',
+                  style: AppTextStyles.messageTime,
+                ),
+              ],
               const SizedBox(height: AppSpacing.md),
               ElevatedButton(
                 onPressed: () async {
                   final key = _keyController.text.trim().isNotEmpty
                       ? _keyController.text.trim()
                       : settings.apiKey;
-                  if (key == null || key.isEmpty) {
+                  if ((key == null || key.isEmpty) && !settings.usesServer) {
                     _toast('API 키를 입력해 주세요');
                     return;
                   }
-                  await notifier.save(apiKey: key, model: _model);
+                  final model = _model == _custom ? _customModel.text.trim() : _model;
+                  if (model.isEmpty) {
+                    _toast('모델 이름을 적어 주세요');
+                    return;
+                  }
+                  await notifier.save(provider: _provider, apiKey: key ?? '', model: model);
                   _keyController.clear();
-                  _toast('저장했어요');
+                  _toast('${_provider.label}로 저장했어요');
                 },
                 child: const Text('저장'),
               ),
@@ -158,6 +262,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 말랑톡 서버에서 열었을 때 보이는 안내 (어느 회사 키가 서버에 있는지)
+class _ServerCard extends StatelessWidget {
+  const _ServerCard({required this.server});
+
+  final ServerInfo server;
+
+  @override
+  Widget build(BuildContext context) {
+    final names = [for (final p in AiProvider.values) if (server.providers.contains(p)) p.label];
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.aiActivePurple.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.dns_rounded, size: 20, color: AppColors.aiActivePurple),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              names.isEmpty
+                  ? '말랑톡 서버에서 열었어요. 서버 .env에 AI 키가 없어서 내 키를 써야 해요.'
+                  : '말랑톡 서버에서 열었어요. ${names.join(', ')}는 서버 .env 키로 불러서 내 키가 없어도 돼요.',
+              style: AppTextStyles.chatBubbleBody,
+            ),
+          ),
+        ],
       ),
     );
   }

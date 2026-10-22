@@ -130,7 +130,11 @@ class GalleryCard extends StatelessWidget {
                   Text(character.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
                   const SizedBox(height: 2),
                   Text(
-                    character.tagline.isNotEmpty ? character.tagline : character.statusMessage,
+                    CharacterModel.fillUserName(
+                      character.tagline.isNotEmpty ? character.tagline : character.statusMessage,
+                      '너',
+                      charName: character.name,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.systemNotice,

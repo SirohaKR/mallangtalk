@@ -106,7 +106,7 @@ class _ChatRoomTile extends ConsumerWidget {
             ),
         ],
       ),
-      onTap: () => openChat(context, ref, room.character),
+      onTap: () => openChat(context, room.character),
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/character_sheet_view.dart';
 import '../chat/start_chat.dart';
@@ -51,7 +52,7 @@ class CharacterDetailScreen extends ConsumerWidget {
                     Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 22)),
                     if (c.tagline.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text(c.tagline, style: AppTextStyles.chatBubbleBody),
+                      Text(CharacterModel.fillUserName(c.tagline, '너', charName: c.name), style: AppTextStyles.chatBubbleBody),
                     ],
                     if (c.tags.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.sm),
@@ -78,7 +79,7 @@ class CharacterDetailScreen extends ConsumerWidget {
                           ? ElevatedButton.icon(
                               icon: const Icon(Icons.chat_bubble_rounded, size: 18),
                               label: const Text('친구 · 1:1 채팅'),
-                              onPressed: () => openChat(context, ref, c),
+                              onPressed: () => openChat(context, c),
                             )
                           : ElevatedButton.icon(
                               icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),

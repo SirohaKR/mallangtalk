@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/claude_chat_client.dart';
 import '../../core/network/claude_studio_client.dart';
+import '../../core/storage/local_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -72,13 +74,44 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   @override
   void initState() {
     super.initState();
-    _draft = widget.initial != null ? ScenarioDraft.fromBundle(widget.initial!) : ScenarioDraft.blank();
+    _draft = widget.initial != null ? ScenarioDraft.fromBundle(widget.initial!) : _savedDraft() ?? ScenarioDraft.blank();
+    // 새 캐릭터를 만드는 중이면 몇 초마다 브라우저에 초안을 저장 (새로고침해도 이어 쓰기)
+    if (widget.initial == null) {
+      _autosave = Timer.periodic(const Duration(seconds: 3), (_) => _saveDraftNow());
+    }
   }
 
   @override
   void dispose() {
+    _autosave?.cancel();
+    if (widget.initial == null) _saveDraftNow();
     _tabs.dispose();
     super.dispose();
+  }
+
+  Timer? _autosave;
+  String? _lastSavedDraft;
+
+  ScenarioDraft? _savedDraft() {
+    final raw = ref.read(localStoreProvider).loadStudioDraft();
+    if (raw == null) return null;
+    try {
+      _lastSavedDraft = raw;
+      return ScenarioDraft.fromBundle(ScenarioBundle.fromJson(jsonDecode(raw) as Map<String, dynamic>));
+    } catch (_) {
+      return null; // 형식이 바뀐 옛 초안은 무시
+    }
+  }
+
+  void _saveDraftNow() {
+    try {
+      final json = jsonEncode(_draft.toBundle().toJson());
+      if (json == _lastSavedDraft) return;
+      _lastSavedDraft = json;
+      ref.read(localStoreProvider).saveStudioDraft(json);
+    } catch (_) {
+      // 쓰다 만 초안이라 묶지 못해도 다음 저장 때 다시 시도
+    }
   }
 
   void _toast(String text) =>
@@ -88,6 +121,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         _draft = draft;
         _version++;
         _scriptEvent = null;
+        _charPage = 0;
       });
 
   String _k(Object owner, String field) => '$_version-${identityHashCode(owner)}-$field';
@@ -119,6 +153,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         if (await _confirm('예시 불러오기', '예시 캐릭터 서이준으로 채워요. 지금 적은 내용은 지워져요.', '불러오기')) {
           _replaceDraft(ScenarioDraft.fromBundle(templateScenario())..id = 'char_${DateTime.now().millisecondsSinceEpoch}');
         }
+      case 'example_kaien':
+        if (await _confirm('카이엔 불러오기', '로판 아카데미 황자님 카이엔의 캐릭터 설정(8쪽)과 호감도 단계 5개로 채워요. 지금 적은 내용은 지워져요.', '불러오기')) {
+          _replaceDraft(ScenarioDraft.fromBundle(kaienScenario()));
+        }
       case 'import':
         final file = await FileIO.pick(extensions: ['json']);
         if (file == null) return;
@@ -144,11 +182,13 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     if (_draft.name.trim().isEmpty) {
       _toast('캐릭터 탭에서 이름을 먼저 적어 주세요');
       _tabs.animateTo(0);
+      _goCharPage(0);
       return false;
     }
     if (_draft.setting.trim().length < 10) {
       _toast('캐릭터 설정(성격·말투·취미)을 조금 더 자세히 적어 주세요');
       _tabs.animateTo(0);
+      _goCharPage(2);
       return false;
     }
     final stageProblems = _draft.problems().where((p) => p.startsWith('[호감도 단계]')).toList();
@@ -157,8 +197,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       _tabs.animateTo(1);
       return false;
     }
-    if (!ref.read(byokSettingsProvider).hasKey) {
-      _toast('설정에서 Claude API 키를 먼저 넣어 주세요');
+    if (!ref.read(byokSettingsProvider).canUseAi) {
+      _toast('설정에서 AI 키를 먼저 넣어 주세요');
       return false;
     }
     return true;
@@ -242,7 +282,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     });
     try {
       final bundle = await ref.read(claudeStudioClientProvider).generate(
-            apiKey: byok.apiKey!,
+            provider: byok.provider,
+            apiKey: byok.apiKey ?? '',
+            relay: byok.relay,
             model: byok.model,
             brief: StudioBrief(
               character: _draft.buildCharacter(),
@@ -290,7 +332,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       final all = [for (var i = 0; i < _draft.events.length; i++) _draft.buildEvent(_draft.events[i], i)];
       final model = all[_draft.events.indexOf(event)];
       final (nodes, step) = await ref.read(claudeStudioClientProvider).writeScript(
-            apiKey: byok.apiKey!,
+            provider: byok.provider,
+            apiKey: byok.apiKey ?? '',
+            relay: byok.relay,
             model: byok.model,
             character: character,
             event: model,
@@ -391,6 +435,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'new', child: Text('새로 만들기')),
                     PopupMenuItem(value: 'example', child: Text('예시 캐릭터 불러오기')),
+                    PopupMenuItem(value: 'example_kaien', child: Text('예시: 카이엔 (설정만)')),
                     PopupMenuItem(value: 'import', child: Text('캐릭터 파일(.json) 불러오기')),
                     PopupMenuItem(value: 'export', child: Text('캐릭터 파일로 내보내기')),
                   ],
@@ -459,89 +504,186 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
 
   // ───────────────────────── 캐릭터 탭 ─────────────────────────
 
-  Widget _characterTab() {
-    final d = _draft;
-    final preview = d.buildCharacter();
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      children: [
-        Row(
-          children: [
-            CharacterAvatar(character: preview, radius: 34),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                    label: Text(d.avatarUrl.isEmpty ? '프로필 사진 고르기' : '사진 바꾸기'),
-                    onPressed: () async {
-                      final image = await pickProfileImage();
-                      if (image != null) setState(() => d.avatarUrl = image);
-                    },
-                  ),
-                  const Text('갤러리 썸네일과 채팅방에 보여요', style: AppTextStyles.messageTime),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        EditField(fieldKey: _k(d, 'name'), value: d.name, label: '이름', hint: '예: 윤도하', maxLength: 20,
-            onChanged: (v) => setState(() => d.name = v)),
-        EditField(fieldKey: _k(d, 'tagline'), value: d.tagline, label: '한줄 소개',
-            hint: '갤러리 카드에 보여요. 비우면 AI가 지어 줘요', onChanged: (v) => d.tagline = v),
-        EditField(fieldKey: _k(d, 'tags'), value: d.tags, label: '태그',
-            hint: '쉼표로 구분. 예: 남사친, 장난꾸러기, 고양이집사', onChanged: (v) => d.tags = v),
-        EditField(fieldKey: _k(d, 'status'), value: d.statusMessage, label: '상태메시지',
-            hint: '채팅방 이름 아래 보여요', onChanged: (v) => d.statusMessage = v),
+  /// 캐릭터 탭은 한 화면에 한 항목씩, 화살표로 넘김 (긴 설정을 넓은 칸에 쓰도록)
+  int _charPage = 0;
 
-        const StudioSection(title: '플레이어에게 보이는 설정', note: '갤러리 상세 화면과 프로필에 이 순서로 보여요'),
-        _fieldsEditor(),
-        EditField(
+  static const _charPages = [
+    ('기본 정보', '갤러리 카드와 채팅방에 보이는 것들'),
+    ('캐릭터 정보', '나이, 직업, 생일처럼 짧은 항목. 자물쇠를 켜면 플레이어에겐 숨겨요'),
+    ('캐릭터 설정', '성격, 말투 습관(ㅋㅋ를 자주 씀 등), 취미, 관심사, 나와의 사이. 자세할수록 AI가 잘 따라 해요. 상세 화면에 그대로 보여요'),
+    ('세계관 설정', '이야기의 배경이 되는 곳·시대·분위기. 상세 화면에 보여요. 비우면 AI가 채워 줘요'),
+    ('나는 이 이야기에서', '플레이어가 누구인지. {{user}}는 플레이어 별명, {{char}}는 캐릭터 이름으로 바뀌어요. 상세 화면에 보여요'),
+    ('주변 인물', '대화에 이름이 나오는 친구·가족·반려동물. 상세 화면에 보여요'),
+    ('비밀 설정', '플레이어에겐 안 보이고, 이야기와 AI 자유대화가 서서히 드러내요'),
+    ('말투와 타자 스타일', '제작자와 AI만 보는 말투 참고용'),
+  ];
+
+  void _goCharPage(int page) {
+    FocusScope.of(context).unfocus();
+    setState(() => _charPage = page.clamp(0, _charPages.length - 1));
+  }
+
+  Widget _characterTab() {
+    final (title, note) = _charPages[_charPage];
+    final last = _charPages.length - 1;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('${_charPage + 1}/${_charPages.length}', style: AppTextStyles.messageTime),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(title, style: AppTextStyles.appBarTitle.copyWith(fontSize: 17))),
+              if (_charPage >= 1 && _charPage <= 5)
+                const Text('플레이어에게 보임', style: AppTextStyles.messageTime),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(note, style: AppTextStyles.systemNotice),
+          const SizedBox(height: AppSpacing.sm),
+          // 몇 번째 항목인지 점으로 (눌러서 바로 이동)
+          Row(
+            children: [
+              for (var i = 0; i < _charPages.length; i++)
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _goCharPage(i),
+                    child: Container(
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        color: i <= _charPage ? AppColors.primaryPink : AppColors.borderLight,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Expanded(child: _charPageBody(_charPage)),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: Text(_charPage == 0 ? '이전' : _charPages[_charPage - 1].$1, overflow: TextOverflow.ellipsis),
+                  onPressed: _charPage == 0 ? null : () => _goCharPage(_charPage - 1),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _charPage == last ? _tabs.animateTo(1) : _goCharPage(_charPage + 1),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _charPage == last ? '호감도 단계로' : _charPages[_charPage + 1].$1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.arrow_forward_rounded, size: 18),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _charPageBody(int page) {
+    final d = _draft;
+    switch (page) {
+      case 0:
+        final preview = d.buildCharacter();
+        return ListView(
+          children: [
+            Row(
+              children: [
+                CharacterAvatar(character: preview, radius: 34),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                        label: Text(d.avatarUrl.isEmpty ? '프로필 사진 고르기' : '사진 바꾸기'),
+                        onPressed: () async {
+                          final image = await pickProfileImage();
+                          if (image != null) setState(() => d.avatarUrl = image);
+                        },
+                      ),
+                      const Text('갤러리 썸네일과 채팅방에 보여요', style: AppTextStyles.messageTime),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            EditField(fieldKey: _k(d, 'name'), value: d.name, label: '이름', hint: '예: 윤도하', maxLength: 20,
+                onChanged: (v) => setState(() => d.name = v)),
+            EditField(fieldKey: _k(d, 'tagline'), value: d.tagline, label: '한줄 소개',
+                hint: '갤러리 카드에 보여요. 비우면 AI가 지어 줘요', lines: 2, onChanged: (v) => d.tagline = v),
+            EditField(fieldKey: _k(d, 'tags'), value: d.tags, label: '태그',
+                hint: '쉼표로 구분. 예: 남사친, 장난꾸러기, 고양이집사', onChanged: (v) => d.tags = v),
+            EditField(fieldKey: _k(d, 'status'), value: d.statusMessage, label: '상태메시지',
+                hint: '채팅방 이름 아래 보여요', onChanged: (v) => d.statusMessage = v),
+          ],
+        );
+      case 1:
+        return ListView(children: [_fieldsEditor()]);
+      case 2:
+        return BigTextField(
           fieldKey: _k(d, 'setting'),
           value: d.setting,
-          label: '캐릭터 설정',
-          hint: '성격, 말투 습관(ㅋㅋ를 자주 씀 등), 취미, 관심사, 나와의 사이. 자세할수록 AI가 잘 따라 해요',
-          lines: 5,
+          hint: '예) 1년 전 교양 수업 팀플에서 만나 거의 매일 연락하는 남사친. 장난기 많고 ㅋㅋ를 달고 산다. '
+              '진지해지면 말이 짧아지고 띄어쓰기가 정확해진다. 주말 새벽엔 한강을 뛰고…',
           onChanged: (v) => d.setting = v,
-        ),
-        EditField(
+        );
+      case 3:
+        return BigTextField(
           fieldKey: _k(d, 'world'),
           value: d.world,
-          label: '세계관 설정',
-          hint: '이야기의 배경 요약. 예: 지금의 서울, 홍대 근처 대학가. 비우면 AI가 채워 줘요',
-          lines: 3,
+          hint: '예) 지금의 서울. 홍대 근처 대학가에서 자취하는 대학생들의 평범한 봄~여름…',
           onChanged: (v) => d.world = v,
-        ),
-        EditField(
+        );
+      case 4:
+        return BigTextField(
           fieldKey: _k(d, 'role'),
           value: d.userRole,
-          label: '나는 이 이야기에서',
-          hint: '플레이어가 누구인지. 예: {이름} · 1년 전 팀플에서 만난 친구',
-          lines: 2,
+          hint: '예) {{user}} · 1년 전 교양 수업 팀플에서 {{char}}와 만난 친구. 거의 매일 연락하는 사이',
           onChanged: (v) => d.userRole = v,
-        ),
-        _castEditor(),
-
-        const StudioSection(title: '제작자와 AI만 보는 설정', note: '플레이어 화면엔 안 나와요'),
-        EditField(
+        );
+      case 5:
+        return ListView(children: [_castEditor()]);
+      case 6:
+        return BigTextField(
           fieldKey: _k(d, 'secret'),
           value: d.secret,
-          label: '비밀 설정',
-          hint: '이야기 속에서 서서히 드러날 것. 예: 사실 처음 만난 날부터 좋아했음',
-          lines: 2,
+          hint: '예) 사실 처음 만난 날부터 좋아했다. 친구 사이가 깨질까 봐 장난으로 넘겨 왔다…',
           onChanged: (v) => d.secret = v,
-        ),
-        EditField(fieldKey: _k(d, 'quote'), value: d.quote, label: '대표 대사 (말투 참고용)',
-            hint: '비우면 AI가 지어 줘요', onChanged: (v) => d.quote = v),
-        const Text('타자 스타일', style: AppTextStyles.speakerName),
-        const SizedBox(height: 6),
-        TypingStylePicker(value: d.typing, onChanged: (v) => setState(() => d.typing = v)),
-        const SizedBox(height: AppSpacing.xl),
-      ],
-    );
+        );
+      default:
+        return ListView(
+          children: [
+            EditField(fieldKey: _k(d, 'quote'), value: d.quote, label: '대표 대사',
+                hint: '이 캐릭터다운 한 마디. 비우면 AI가 지어 줘요', lines: 2, onChanged: (v) => d.quote = v),
+            const Text('타자 스타일', style: AppTextStyles.speakerName),
+            const SizedBox(height: 6),
+            TypingStylePicker(value: d.typing, onChanged: (v) => setState(() => d.typing = v)),
+          ],
+        );
+    }
   }
 
   Widget _fieldsEditor() {
@@ -550,9 +692,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('캐릭터 정보', style: AppTextStyles.speakerName),
-          const Text('나이, 직업, 생일처럼 짧은 항목. 자물쇠를 켜면 플레이어에겐 숨겨요', style: AppTextStyles.messageTime),
-          const SizedBox(height: 6),
           for (final f in d.fields)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -601,9 +740,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('주변 인물', style: AppTextStyles.speakerName),
-          const Text('대화에 이름이 나오는 친구·가족·반려동물', style: AppTextStyles.messageTime),
-          const SizedBox(height: 6),
           for (final e in d.cast)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -993,7 +1129,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             const Expanded(
               child: Text(
                 '장면마다 캐릭터 말풍선을 쓰고, 끝에 내가 고를 선택지를 달아요. 선택지가 없는 장면에서 대화가 끝나요. '
-                '{이름}이라고 쓰면 플레이어 별명으로 바뀌어요.',
+                '{{user}}는 플레이어 별명, {{char}}는 캐릭터 이름으로 바뀌어요. 뒤에 붙는 조사도 맞춰 줘요.',
                 style: AppTextStyles.messageTime,
               ),
             ),

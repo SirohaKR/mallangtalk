@@ -454,7 +454,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     await Future.delayed(Duration(milliseconds: (500 * pace * _jitter()).round()));
     if (!stillValid()) return false;
 
-    final chars = Characters(CharacterModel.fillUserName(bubble.text, _nickname)).length;
+    final chars = Characters(CharacterModel.fillUserName(bubble.text, _nickname, charName: state.character.name)).length;
     final typingMs = ((700 + chars * 150) * bubble.speedFactor * pace * _jitter())
         .clamp(450 * pace, 9000 * pace)
         .round();
@@ -482,7 +482,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       isUser: false,
       speakerCharacterId: state.character.id,
       speakerName: state.character.name,
-      text: CharacterModel.fillUserName(bubble.text, _nickname),
+      text: CharacterModel.fillUserName(bubble.text, _nickname, charName: state.character.name),
       photoLabel: bubble.photoLabel,
       timestamp: DateTime.now(),
     );
@@ -532,7 +532,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         isUser: true,
         speakerCharacterId: 'user',
         speakerName: _nickname,
-        text: CharacterModel.fillUserName(piece.text, _nickname),
+        text: CharacterModel.fillUserName(piece.text, _nickname, charName: state.character.name),
         photoLabel: piece.photoLabel,
         isUnread: true,
         timestamp: DateTime.now(),
@@ -625,11 +625,13 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final List<ScriptBubblePiece> replyPieces;
     var affectionDelta = 0;
     final byok = ref.read(byokSettingsProvider);
-    if (byok.hasKey) {
+    if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
       try {
         final reply = await ref.read(claudeChatClientProvider).reply(
-              apiKey: byok.apiKey!,
+              provider: byok.provider,
+              apiKey: byok.apiKey ?? '',
+              relay: byok.relay,
               model: byok.model,
               character: state.character,
               stageLabel: _currentStageLabel(),
