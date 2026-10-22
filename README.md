@@ -51,12 +51,14 @@ mallangtalk/
 ├── web/
 │   ├── index.html                    # PWA 메타태그 및 모바일 당겨서 새로고침 방지 CSS
 │   └── manifest.json                 # Standalone 웹앱 설정
-├── server/                           # NAS 백엔드 서버 (Dart)
-│   ├── bin/server.dart
-│   └── lib/
-│       ├── api/                      # 유저, 캐릭터 허브, 채팅, 스튜디오 라우터
-│       ├── services/                 # AI 생성기, 관계도 상태 참조기, 선톡 스케줄러
-│       └── db/                       # 데이터베이스 스키마 및 스토리지 매니저
+├── .env.example                      # 서버 설정 예시 (AI 키, 접속 코드). .env로 복사해서 사용
+├── packages/
+│   └── mallangtalk_ai/               # 앱·서버가 같이 쓰는 AI 호출 코드 (Claude·ChatGPT·Gemini)
+├── server/                           # NAS 백엔드 서버 (Dart, shelf)
+│   ├── bin/server.dart               # 서버 켜기 (.env 읽기)
+│   ├── lib/mallangtalk_server.dart   # AI 중계(/api/ai/json), 상태 확인(/api/health), 앱 화면 띄우기
+│   └── test/                         # 서버 테스트 (dart test)
+│   # 다음 단계: 캐릭터·진행 상황 DB 저장, 선톡 스케줄러
 └── lib/                              # Flutter 클라이언트 (플레이 + 제작 통합 웹앱)
     ├── main.dart                     # 앱 진입점 및 ProviderScope 초기화
     ├── app.dart                      # MaterialApp.router 및 글로벌 테마 연결
@@ -95,11 +97,24 @@ cd mallangtalk
 flutter pub get
 
 # 2. Flutter Web 로컬 개발 서버 실행
-flutter run -d chrome --web-port=8080
+flutter run -d chrome --web-port=5201
 
 # 3. 테스트 (샘플 전체 플레이, 일상 대화 순서, 진행 저장, 편집기 초안 변환, 특별 이벤트, AI 생성·자유대화 요청 형식, 하단 탭 흐름)
 flutter test
+(cd server && dart test)
 ```
+
+### 서버로 켜 보기 (내 PC)
+서버가 앱 화면도 같이 띄우고, `.env`에 넣은 키로 AI를 대신 불러 줘요. 브라우저에 키를 넣지 않아도 됩니다.
+
+```bash
+cp .env.example .env            # 쓸 AI 회사 키와 ACCESS_CODE(선택)를 채움
+flutter build web --no-web-resources-cdn
+cd server && dart pub get && dart run bin/server.dart
+# → http://localhost:5200 접속. 설정 탭에 '말랑톡 서버에서 열었어요'가 보이면 성공
+```
+
+ACCESS_CODE를 정했으면 앱 설정 탭의 `서버 접속 코드`에 같은 값을 넣어 주세요. claude.ai 플레이 링크는 바깥 주소 호출이 막혀 있어서 서버를 쓸 수 없고, 거기서는 계속 내 키(BYOK)로만 AI를 부를 수 있어요(Claude 키만 동작).
 
 ### 앱 화면 구성 (하단 탭)
 | 탭 | 하는 일 |
@@ -125,7 +140,7 @@ flutter test
 `flutter test tool/measure_usage_test.dart`를 돌리면 50개 대화짜리 캐릭터를 AI로 만들 때의 모델별 토큰·금액과 예상 플레이 시간을 `build/usage_report.md`로 뽑아 줍니다. 실제 API는 부르지 않고, 예시 캐릭터 대사로 응답 길이를 어림합니다.
 
 ### 자유대화(BYOK) 써 보기
-설정 탭에서 AI 회사(Claude·ChatGPT·Gemini)를 고르고 그 회사 API 키를 넣고 모델을 고른 뒤, 채팅방의 `자유대화` 스위치를 켜고 직접 입력하면 캐릭터가 AI로 답장합니다. 엔터로 보낸 뒤에도 입력창에 커서가 남아 짧게 여러 번 이어서 보낼 수 있습니다. 키는 브라우저 저장소에만 남고, 키는 회사마다 따로 저장돼요. 지금은 서버가 없어서 브라우저에서 각 회사 API를 바로 호출합니다(`lib/core/network/ai_provider.dart`)(4단계 Dart 서버가 생기면 서버 중계로 전환 예정).
+설정 탭에서 AI 회사(Claude·ChatGPT·Gemini)를 고르고 그 회사 API 키를 넣고 모델을 고른 뒤, 채팅방의 `자유대화` 스위치를 켜고 직접 입력하면 캐릭터가 AI로 답장합니다. 엔터로 보낸 뒤에도 입력창에 커서가 남아 짧게 여러 번 이어서 보낼 수 있습니다. 키는 브라우저 저장소에만 남고, 키는 회사마다 따로 저장돼요. 말랑톡 서버에서 열었고 서버 `.env`에 그 회사 키가 있으면 내 키 없이 서버가 대신 부릅니다(서버는 키·대화 내용을 기록하지 않음). 그 밖에는 브라우저에서 각 회사 API를 바로 호출합니다(`packages/mallangtalk_ai`).
 
 ### 샘플 시나리오
 `assets/scenarios/sample_character.json`에 샘플 캐릭터 **윤도하**(1년 된 남사친)의 캐릭터 설정, 호감도 이벤트 6개, 단계별 일상 대화 6개, 특별 이벤트 2개(새벽, 밤), 엔딩이 들어 있습니다. 갤러리에는 예시 캐릭터 **서이준**(`example_seo_ijun.json`, `lib/features/studio/template_scenario.dart`를 고친 뒤 `dart run tool/make_example.dart`로 다시 만듦)도 있습니다. 이 파일 형식이 그대로 캐릭터 파일(.json) 내보내기/받아오기와 서버 데이터 형식의 기준입니다.
@@ -138,11 +153,13 @@ GitHub에 푸시된 소스를 Synology NAS에서 클론한 뒤 Docker Compose로
 # 1. NAS SSH 접속 후 프로젝트 폴더 이동
 cd /volume1/docker/mallangtalk
 
-# 2. 환경 변수 파일(.env) 생성 및 서버용 기본 AI 키 설정
+# 2. 환경 변수 파일(.env) 생성 후 AI 키·ACCESS_CODE 채우기
 cp .env.example .env
 
 # 3. Docker 컨테이너 빌드 및 백그라운드 실행
 docker compose up -d --build
 ```
 
-배포 후 Synology DSM의 **역방향 프록시(Reverse Proxy)** 설정에서 외부 HTTPS 도메인을 컨테이너 포트(기본 `8080`)로 연결하면 모바일 및 PC 브라우저에서 즉시 접속할 수 있습니다.
+이미지 안에서 Flutter(3.47.7)로 앱 화면을 빌드하고 서버를 실행 파일 하나로 만들어서, 처음 빌드는 10분 넘게 걸릴 수 있어요. 집 밖에서도 열리게 할 거면 `.env`의 `ACCESS_CODE`를 꼭 정해 주세요(안 정하면 주소를 아는 누구나 내 키로 AI를 부를 수 있어요).
+
+배포 후 Synology DSM의 **역방향 프록시(Reverse Proxy)** 설정에서 외부 HTTPS 도메인을 컨테이너 포트(기본 `5200`, `.env`의 PORT로 변경)로 연결하면 모바일 및 PC 브라우저에서 즉시 접속할 수 있습니다.

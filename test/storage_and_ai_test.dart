@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/core/network/claude_chat_client.dart';
+import 'package:mallangtalk/core/network/server_info.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,12 +84,44 @@ void main() {
     expect(fake.lastProvider, AiProvider.gemini);
     expect(fake.lastModel, 'gemini-3.8-flash');
   });
+
+  testWidgets('말랑톡 서버에서 열면 내 키 없이 서버 키로 자유대화를 부름', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'byok_provider': 'gemini',
+      'server_access_code': 'mallang',
+    });
+    final fake = _FakeClaude();
+    final container = await openChat(
+      tester,
+      extra: [
+        claudeChatClientProvider.overrideWithValue(fake),
+        serverInfoProvider.overrideWith((ref) async => const ServerInfo(
+              baseUrl: 'http://nas.local:5200',
+              providers: {AiProvider.gemini},
+              needsAccessCode: true,
+            )),
+      ],
+    );
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    notifier.toggleDirectInputMode(true);
+    notifier.sendUserMessage(text: '안녕');
+    await settle(tester);
+
+    expect(fake.lastProvider, AiProvider.gemini);
+    expect(fake.lastApiKey, '');
+    expect(fake.lastRelay?.baseUrl, 'http://nas.local:5200');
+    expect(fake.lastRelay?.accessCode, 'mallang');
+    expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
+  });
 }
 
 class _FakeClaude extends ClaudeChatClient {
   _FakeClaude() : super(dio: Dio());
 
   AiProvider? lastProvider;
+  String? lastApiKey;
+  AiRelay? lastRelay;
   String? lastModel;
   String? lastUserName;
   String? lastSystemSheet;
@@ -98,7 +131,8 @@ class _FakeClaude extends ClaudeChatClient {
   @override
   Future<FreeChatReply> reply({
     AiProvider provider = AiProvider.claude,
-    required String apiKey,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required CharacterModel character,
     required String stageLabel,
@@ -109,6 +143,8 @@ class _FakeClaude extends ClaudeChatClient {
     String userIntro = '',
   }) async {
     lastProvider = provider;
+    lastApiKey = apiKey;
+    lastRelay = relay;
     lastModel = model;
     lastUserName = userName;
     lastSystemSheet = character.aiCharacterSheet;

@@ -625,12 +625,13 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final List<ScriptBubblePiece> replyPieces;
     var affectionDelta = 0;
     final byok = ref.read(byokSettingsProvider);
-    if (byok.hasKey) {
+    if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
       try {
         final reply = await ref.read(claudeChatClientProvider).reply(
               provider: byok.provider,
-              apiKey: byok.apiKey!,
+              apiKey: byok.apiKey ?? '',
+              relay: byok.relay,
               model: byok.model,
               character: state.character,
               stageLabel: _currentStageLabel(),

@@ -1,0 +1,13 @@
+name: mallangtalk_ai
+description: 말랑톡 앱과 서버가 같이 쓰는 AI 호출 코드 (Claude·ChatGPT·Gemini를 JSON 하나 받아오기로 통일)
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  dio: ^5.7.0
+
+dev_dependencies:
+  test: ^1.25.0

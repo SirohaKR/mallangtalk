@@ -22,11 +22,13 @@ void main() {
     _FakeAdapter adapter, {
     String model = 'claude-opus-5-5',
     AiProvider provider = AiProvider.claude,
+    AiRelay? relay,
   }) {
     final dio = Dio()..httpClientAdapter = adapter;
     return ClaudeChatClient(dio: dio).reply(
       provider: provider,
-      apiKey: 'sk-ant-xyz',
+      apiKey: relay == null ? 'sk-ant-xyz' : '',
+      relay: relay,
       model: model,
       character: character,
       stageLabel: '편한 친구',
@@ -132,6 +134,34 @@ void main() {
     await expectLater(
       call(_FakeAdapter(200, {'stop_reason': 'refusal', 'content': []})),
       throwsA(isA<ClaudeChatException>()),
+    );
+  });
+
+  test('말랑톡 서버로 부르면 키 없이 서버 주소로 요청하고 결과를 받음', () async {
+    final adapter = _FakeAdapter(200, {
+      'json': {'replies': ['서버에서 왔어'], 'affection_delta': 1},
+      'usage': {'input': 10, 'output': 5},
+    });
+    final reply = await call(adapter,
+        provider: AiProvider.gemini, relay: const AiRelay('http://nas.local:5200', accessCode: 'mallang'));
+
+    expect(reply.bubbles, ['서버에서 왔어']);
+    final req = adapter.lastRequest!;
+    expect(req.uri.toString(), 'http://nas.local:5200/api/ai/json');
+    expect(req.headers['x-access-code'], 'mallang');
+    expect(req.headers.containsKey('x-goog-api-key'), isFalse);
+    final body = adapter.lastBody!;
+    expect(body['provider'], 'gemini');
+    expect(body['effort'], 'low');
+    expect(body['user'], contains('나도 뛸래'));
+    expect(body.toString(), isNot(contains('sk-ant')));
+  });
+
+  test('서버가 돌려준 오류 문장을 그대로 보여 줌', () async {
+    final adapter = _FakeAdapter(401, {'error': '접속 코드가 맞지 않아요. 설정에서 서버 접속 코드를 확인해 주세요.'});
+    await expectLater(
+      call(adapter, relay: const AiRelay('http://nas.local:5200')),
+      throwsA(isA<ClaudeChatException>().having((e) => e.message, 'message', contains('접속 코드'))),
     );
   });
 }
