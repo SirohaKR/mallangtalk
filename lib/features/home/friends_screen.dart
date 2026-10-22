@@ -241,23 +241,46 @@ class _EmptyFriends extends StatelessWidget {
 }
 
 /// 캐릭터 프로필 (1:1 채팅, 앨범, 내보내기, 다시 하기, 삭제)
-Future<void> showCharacterProfile(BuildContext context, LibraryEntry entry) {
+/// 시트는 끌어 올리면 커지고, 맨 위에서 아래로 밀면 닫혀요 (폰에서 내용이 길어도 스크롤과 안 엉키게)
+/// [inChat]: 그 캐릭터 대화방에서 열었으면 '1:1 채팅'은 시트만 닫음
+Future<void> showCharacterProfile(BuildContext context, LibraryEntry entry, {bool inChat = false}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    showDragHandle: true,
+    useSafeArea: true,
     backgroundColor: AppColors.surfaceWhite,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (sheetContext) => _CharacterProfileSheet(entry: entry, parentContext: context),
+    builder: (sheetContext) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 1,
+      snap: true,
+      builder: (_, scrollController) => _CharacterProfileSheet(
+        entry: entry,
+        parentContext: context,
+        scrollController: scrollController,
+        inChat: inChat,
+      ),
+    ),
   );
 }
 
 class _CharacterProfileSheet extends ConsumerWidget {
-  const _CharacterProfileSheet({required this.entry, required this.parentContext});
+  const _CharacterProfileSheet({
+    required this.entry,
+    required this.parentContext,
+    required this.scrollController,
+    this.inChat = false,
+  });
 
   final LibraryEntry entry;
   final BuildContext parentContext;
+  final ScrollController scrollController;
+  final bool inChat;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -270,7 +293,8 @@ class _CharacterProfileSheet extends ConsumerWidget {
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -302,7 +326,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
               label: const Text('1:1 채팅'),
               onPressed: () {
                 close();
-                openChat(parentContext, c);
+                if (!inChat) openChat(parentContext, c);
               },
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -311,7 +335,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.photo_library_outlined, size: 18),
-                    label: const Text('앨범'),
+                    label: const FittedBox(fit: BoxFit.scaleDown, child: Text('앨범', maxLines: 1)),
                     onPressed: () {
                       close();
                       router.push('/chat/${c.id}/album');
@@ -322,7 +346,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.speed_rounded, size: 18),
-                    label: const Text('대화 속도'),
+                    label: const FittedBox(fit: BoxFit.scaleDown, child: Text('대화 속도', maxLines: 1)),
                     onPressed: () {
                       close();
                       pickChatTempo(parentContext, c);
@@ -333,7 +357,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.replay_rounded, size: 18),
-                    label: const Text('처음부터'),
+                    label: const FittedBox(fit: BoxFit.scaleDown, child: Text('처음부터', maxLines: 1)),
                     onPressed: () {
                       close();
                       ref.read(chatRoomProvider(c.id).notifier).restart();

@@ -52,6 +52,32 @@ void main() {
     expect(prefs.getStringList('favorites_v1'), [dohaId]);
   });
 
+  testWidgets('대화방 위 캐릭터 사진을 누르면 프로필, 1:1 채팅은 시트만 닫고 대화방은 그대로', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo, 'chat_rooms_v1': [dohaId]});
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    appRouter.go('/chat/$dohaId');
+    await settle(tester);
+
+    await tester.tap(find.byTooltip('프로필 보기'));
+    await tester.pumpAndSettle();
+    expect(find.text('캐릭터 파일'), findsOneWidget);
+    await tester.tap(find.text('1:1 채팅'));
+    await tester.pumpAndSettle();
+    expect(find.text('캐릭터 파일'), findsNothing);
+    expect(find.byType(ChatScreen), findsOneWidget);
+    appRouter.go('/friends');
+    await settle(tester);
+  });
+
   testWidgets('채팅 탭에서 안 읽은 톡을 보고, 대화방에 들어가면 읽음 처리', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
