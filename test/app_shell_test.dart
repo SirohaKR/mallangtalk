@@ -10,6 +10,7 @@ import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
+import 'package:mallangtalk/features/studio/template_scenario.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -153,6 +154,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
+    // 캐릭터 탭은 한 항목씩 화살표로 넘김: 기본 정보 → 캐릭터 정보 → 캐릭터 설정(넓은 칸 + 글자 수)
+    expect(find.text('1/8'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('2/8'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '시각디자인과 4학년'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('3/8'), findsOneWidget);
+    final setting = templateScenario().character.worldviewPrompt;
+    expect(find.text('${setting.characters.length}자'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, setting), '$setting 커피는 늘 블랙.');
+    await tester.pump();
+    expect(find.text('${setting.characters.length + 10}자'), findsOneWidget);
+
     // 대사 탭: 첫 대화의 첫 말풍선을 고침
     await tester.tap(find.text('대사'));
     await tester.pumpAndSettle();
@@ -171,6 +187,7 @@ void main() {
     expect(made.bundle.events, hasLength(5));
     final first = made.bundle.firstNodeOf(made.bundle.events.first.id)!;
     expect(first.characterBubbles.map((b) => b.text), contains('내일 출사 가는데 같이 갈래.'));
+    expect(made.bundle.character.worldviewPrompt, endsWith('커피는 늘 블랙.'));
     // 저장하면 새 캐릭터를 만들 수 있게 빈 칸으로 돌아감
     expect(find.widgetWithText(TextFormField, '서이준'), findsNothing);
   });
