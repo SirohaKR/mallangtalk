@@ -159,6 +159,11 @@ class LocalStore {
 
   Future<void> clearApiKey(String provider) => _write(_keyKey(provider), null);
 
+  /// 말랑톡 서버의 접속 코드 (서버 .env에 ACCESS_CODE가 있을 때만 필요)
+  String? get serverAccessCode => _getString('server_access_code');
+  Future<void> saveServerAccessCode(String? code) =>
+      _write('server_access_code', code == null || code.isEmpty ? null : code);
+
   /// 만들기 화면에서 쓰던 새 캐릭터 초안 (새로고침·새 버전이 떠도 이어 쓰게)
   String? loadStudioDraft() => _getString('studio_draft_v1');
   Future<void> saveStudioDraft(String json) => _write('studio_draft_v1', json);

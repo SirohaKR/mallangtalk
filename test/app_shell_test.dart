@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/app.dart';
+import 'package:mallangtalk/core/network/ai_provider.dart';
+import 'package:mallangtalk/core/network/server_info.dart';
 import 'package:mallangtalk/core/router/app_router.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
@@ -209,6 +211,39 @@ void main() {
     expect(prefs.getString('byok_key_gemini'), 'AIza-new-key-0000');
     expect(prefs.getString('byok_model_gemini'), 'gemini-3.8-flash');
     expect(prefs.getString('byok_claude_api_key'), 'sk-ant-old-key-123456'); // Claude 키는 그대로
+  });
+
+  testWidgets('설정: 말랑톡 서버에서 열면 서버 키 안내와 접속 코드 칸이 보이고, 내 키 없이 저장됨', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    appRouter.go('/settings');
+    await tester.binding.setSurfaceSize(const Size(420, 1600));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+        serverInfoProvider.overrideWith((ref) async => const ServerInfo(
+              baseUrl: 'http://localhost:8080',
+              providers: {AiProvider.claude},
+              needsAccessCode: true,
+            )),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    expect(find.textContaining('Claude (Anthropic)는 서버 .env 키로'), findsOneWidget);
+    expect(find.text('API 키 (안 넣어도 됨)'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, '서버 .env의 ACCESS_CODE'), 'mallang');
+    await tester.tap(find.widgetWithText(OutlinedButton, '저장'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
+    await settle(tester);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('server_access_code'), 'mallang');
+    expect(prefs.getString('byok_provider'), 'claude'); // 키 없이도 저장됨
+    expect(prefs.getString('byok_claude_model'), 'claude-opus-5-5');
   });
 
   testWidgets('만들기: 카이엔 설정을 불러오고, 쓰던 초안은 새로 열어도 남아 있음', (tester) async {

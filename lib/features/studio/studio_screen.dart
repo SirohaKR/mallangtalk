@@ -197,8 +197,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       _tabs.animateTo(1);
       return false;
     }
-    if (!ref.read(byokSettingsProvider).hasKey) {
-      _toast('설정에서 Claude API 키를 먼저 넣어 주세요');
+    if (!ref.read(byokSettingsProvider).canUseAi) {
+      _toast('설정에서 AI 키를 먼저 넣어 주세요');
       return false;
     }
     return true;
@@ -283,7 +283,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     try {
       final bundle = await ref.read(claudeStudioClientProvider).generate(
             provider: byok.provider,
-            apiKey: byok.apiKey!,
+            apiKey: byok.apiKey ?? '',
+            relay: byok.relay,
             model: byok.model,
             brief: StudioBrief(
               character: _draft.buildCharacter(),
@@ -332,7 +333,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       final model = all[_draft.events.indexOf(event)];
       final (nodes, step) = await ref.read(claudeStudioClientProvider).writeScript(
             provider: byok.provider,
-            apiKey: byok.apiKey!,
+            apiKey: byok.apiKey ?? '',
+            relay: byok.relay,
             model: byok.model,
             character: character,
             event: model,

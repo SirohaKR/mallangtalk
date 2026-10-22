@@ -153,7 +153,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final id = widget.characterId;
     final chatState = ref.watch(chatRoomProvider(id));
     final notifier = ref.read(chatRoomProvider(id).notifier);
-    final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.hasKey));
+    final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.canUseAi));
 
     ref.listen<ChatRoomState>(chatRoomProvider(id), (prev, next) {
       if (prev?.messages.length != next.messages.length ||
@@ -327,7 +327,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           child: const Padding(
                             padding: EdgeInsets.only(bottom: 6),
                             child: Text(
-                              '설정에서 내 Claude API 키를 넣으면 진짜 AI가 답해요 →',
+                              '설정에서 AI 키를 넣으면 진짜 AI가 답해요 →',
                               textAlign: TextAlign.center,
                               style: AppTextStyles.systemNotice,
                             ),

@@ -36,7 +36,7 @@ final claudeStudioClientProvider = Provider<ClaudeStudioClient>((ref) => ClaudeS
 ///    비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목 등)도 이때 채움
 /// 2. 대사 쓰기: 대화 하나마다 장면·말풍선·선택지 (대화 수만큼 호출, 3개씩 동시에). 이벤트 하나만 따로 쓸 수도 있음
 /// 3. 균형 맞추기: 좋은 선택을 하면 끝까지 갈 수 있게 호감도 점수를 자동 보정
-/// 키는 지금은 설정 화면의 내 키(BYOK)를 쓰고, 나중에 앱 토큰 충전 방식이 생기면 apiKey 자리만 서버 중계로 바꾸면 됩니다.
+/// 말랑톡 서버에서 열었으면 [relay]로 서버의 .env 키를 쓰고, 아니면 설정 화면의 내 키(BYOK)를 씁니다.
 class ClaudeStudioClient {
   ClaudeStudioClient({Dio? dio})
       : _dio = dio ??
@@ -52,7 +52,8 @@ class ClaudeStudioClient {
 
   Future<ScenarioBundle> generate({
     AiProvider provider = AiProvider.claude,
-    required String apiKey,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required StudioBrief brief,
     StudioProgress? onProgress,
@@ -60,7 +61,7 @@ class ClaudeStudioClient {
     final total = brief.totalTalks + 1;
     onProgress?.call('이야기 목차를 짜는 중', 0, total);
 
-    final (outline, character) = await _outline(provider: provider, apiKey: apiKey, model: model, brief: brief);
+    final (outline, character) = await _outline(provider: provider, apiKey: apiKey, relay: relay, model: model, brief: brief);
     final characterId = character.id;
     onProgress?.call('대사를 쓰는 중', 1, total);
 
@@ -106,7 +107,7 @@ class ClaudeStudioClient {
       final batch = events.sublist(start, (start + 3).clamp(0, events.length));
       final results = await Future.wait([
         for (final event in batch)
-          writeScript(provider: provider, apiKey: apiKey, model: model, character: character, event: event, outline: events),
+          writeScript(provider: provider, apiKey: apiKey, relay: relay, model: model, character: character, event: event, outline: events),
       ]);
       for (var j = 0; j < batch.length; j++) {
         final (eventNodes, cutsceneStep) = results[j];
@@ -141,7 +142,8 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
   /// 목차 + 비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목·대표 대사·성격 막대·대사 예시)를 한 번에 만듦
   Future<(List<Map<String, dynamic>>, CharacterModel)> _outline({
     required AiProvider provider,
-    required String apiKey,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required StudioBrief brief,
   }) async {
@@ -229,7 +231,7 @@ ${_characterSheet(base)}
 - 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 장면이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
 
-    final json = await _call(provider: provider, apiKey: apiKey, model: model, user: user, schema: schema, maxTokens: 9000);
+    final json = await _call(provider: provider, apiKey: apiKey, relay: relay, model: model, user: user, schema: schema, maxTokens: 9000);
     final talks = [for (final t in json['talks'] as List? ?? const []) t as Map<String, dynamic>];
     if (talks.where((t) => t['kind'] == 'event').isEmpty) {
       throw const ClaudeChatException('AI가 이벤트 목차를 만들지 못했어요. 다시 시도해 주세요.');
@@ -288,7 +290,8 @@ ${_characterSheet(base)}
   /// outline은 앞뒤 흐름을 알려 주려고 넘기는 전체 대화 목록 (지금 쓸 대화 포함)
   Future<(List<ScriptNodeModel>, int?)> writeScript({
     AiProvider provider = AiProvider.claude,
-    required String apiKey,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required CharacterModel character,
     required ScenarioEventModel event,
@@ -382,7 +385,7 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
 
     final json = await _call(
       provider: provider,
-      apiKey: apiKey,
+      apiKey: apiKey, relay: relay,
       model: model,
       user: user,
       schema: schema,
@@ -446,7 +449,8 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
 
   Future<Map<String, dynamic>> _call({
     required AiProvider provider,
-    required String apiKey,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required String user,
     required Map<String, dynamic> schema,
@@ -455,7 +459,7 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
     final (json, usage) = await callJsonModel(
       _dio,
       provider: provider,
-      apiKey: apiKey,
+      apiKey: apiKey, relay: relay,
       model: model,
       system: _system,
       user: user,

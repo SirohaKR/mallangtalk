@@ -17,8 +17,8 @@ final claudeChatClientProvider = Provider<ClaudeChatClient>((ref) => ClaudeChatC
 
 /// [초보자 노트] 내 AI 키(BYOK)로 고른 AI(Claude·ChatGPT·Gemini)에게 캐릭터 답장을 받아오는 클라이언트입니다.
 /// Dart용 공식 SDK가 없어서 dio로 각 회사 API를 직접 부릅니다 (ai_provider.dart의 callJsonModel).
-/// 지금은 서버가 없어서 브라우저에서 바로 호출하지만, 4단계에서 Dart 서버가 생기면
-/// 기획(README)대로 서버가 중계하도록 주소만 서버로 바꾸면 됩니다. (서버는 키를 저장·로그하지 않음)
+/// 말랑톡 서버에서 열었으면 [relay]로 서버가 .env 키로 대신 불러 주고(서버는 대화 내용을 기록하지 않음),
+/// 아니면 내 키로 브라우저에서 바로 부릅니다.
 class ClaudeChatClient {
   ClaudeChatClient({Dio? dio})
       : _dio = dio ??
@@ -49,7 +49,8 @@ class ClaudeChatClient {
 
   Future<FreeChatReply> reply({
     AiProvider provider = AiProvider.claude,
-    required String apiKey,
+    String apiKey = '',
+    AiRelay? relay,
     required String model,
     required CharacterModel character,
     required String stageLabel,
@@ -99,7 +100,7 @@ ${newUserMessages.join('\n')}''';
     final (json, _) = await callJsonModel(
       _dio,
       provider: provider,
-      apiKey: apiKey,
+      apiKey: apiKey, relay: relay,
       model: model,
       system: system,
       user: user,
