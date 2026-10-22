@@ -105,6 +105,9 @@ class LocalStore {
   }
 
   static const _apiKeyKey = 'byok_claude_api_key';
+  static const _libraryKey = 'library_v1';
+  static const _chatRoomsKey = 'chat_rooms_v1';
+  static const _profileKey = 'my_profile';
   static const _modelKey = 'byok_claude_model';
 
   String _runKey(String characterId) => 'run_$characterId';
@@ -131,6 +134,13 @@ class LocalStore {
   Future<void> saveAlbum(String characterId, List<String> eventIds) =>
       _write(_albumKey(characterId), List<String>.of(eventIds));
 
+  /// 이미 본 특별 이벤트 (실제 시간 1회성, '다시 하기'를 해도 다시 안 옴)
+  List<String> loadSeenSpecials(String characterId) =>
+      _getStringList('specials_$characterId') ?? const [];
+
+  Future<void> saveSeenSpecials(String characterId, List<String> eventIds) =>
+      _write('specials_$characterId', List<String>.of(eventIds));
+
   String? get apiKey => _getString(_apiKeyKey);
   String? get model => _getString(_modelKey);
 
@@ -140,4 +150,60 @@ class LocalStore {
   }
 
   Future<void> clearApiKey() => _write(_apiKeyKey, null);
+
+  /// 내 캐릭터 목록 (받아온·만든 캐릭터의 시나리오 전체를 JSON으로). 처음 실행이면 null
+  List<Map<String, dynamic>>? loadLibrary() {
+    final raw = _getString(_libraryKey);
+    if (raw == null) return null;
+    try {
+      return [for (final e in jsonDecode(raw) as List) e as Map<String, dynamic>];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveLibrary(List<Map<String, dynamic>> entries) =>
+      _write(_libraryKey, jsonEncode(entries));
+
+  /// 채팅방 목록 (최근 대화한 순서대로 캐릭터 ID). 처음 실행이면 null
+  List<String>? loadChatRooms() => _getStringList(_chatRoomsKey);
+
+  Future<void> saveChatRooms(List<String> characterIds) =>
+      _write(_chatRoomsKey, List<String>.of(characterIds));
+
+  /// 캐릭터를 지울 때 진행 기록과 앨범도 같이 지움
+  Future<void> forgetCharacter(String characterId) async {
+    await clearRun(characterId);
+    await _write(_albumKey(characterId), null);
+    await _write('tempo_$characterId', null);
+    await _write('nickname_$characterId', null);
+    await _write('specials_$characterId', null);
+  }
+
+  /// 캐릭터별 대화 속도 배율 (1.0 = 리얼하게, 작을수록 빠름)
+  double? chatTempo(String characterId) =>
+      double.tryParse(_getString('tempo_$characterId') ?? '');
+
+  Future<void> saveChatTempo(String characterId, double tempo) =>
+      _write('tempo_$characterId', tempo.toString());
+
+  /// 설정의 내 기본 프로필 {nickname, intro}
+  Map<String, dynamic>? get myProfile {
+    final raw = _getString(_profileKey);
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveMyProfile(Map<String, dynamic> profile) =>
+      _write(_profileKey, jsonEncode(profile));
+
+  /// 이 캐릭터와의 대화에서 쓰는 내 별명 (없으면 기본 프로필 별명)
+  String? chatNickname(String characterId) => _getString('nickname_$characterId');
+
+  Future<void> saveChatNickname(String characterId, String nickname) =>
+      _write('nickname_$characterId', nickname);
 }
