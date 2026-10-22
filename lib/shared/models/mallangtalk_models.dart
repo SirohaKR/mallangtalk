@@ -151,8 +151,10 @@ class CharacterModel {
   final String tagline;
   /// 갤러리 태그 (예: 남사친, 고양이집사)
   final List<String> tags;
-  /// 상세 설명 (성격·말투·습관·취미·세계관). AI 생성과 자유대화의 핵심 설정
+  /// 캐릭터 설정 (성격·말투·습관·취미). 상세 화면에 보이고 AI 생성과 자유대화의 핵심 설정
   final String worldviewPrompt;
+  /// 세계관 설정 요약 (배경이 되는 곳·시대·분위기). 상세 화면에 보임
+  final String worldSetting;
   /// 대표 대사 한 줄 (상세 화면 맨 위)
   final String quote;
   /// 프로필 항목 (나이, 직업, 생일, MBTI 등)
@@ -183,6 +185,7 @@ class CharacterModel {
     this.tagline = '',
     this.tags = const [],
     required this.worldviewPrompt,
+    this.worldSetting = '',
     this.quote = '',
     this.profileFields = const [],
     this.traits = const [],
@@ -206,6 +209,7 @@ class CharacterModel {
       tagline: json['tagline'] as String? ?? '',
       tags: [for (final t in json['tags'] as List? ?? const []) t as String],
       worldviewPrompt: json['worldview_prompt'] as String? ?? '',
+      worldSetting: json['world_setting'] as String? ?? '',
       quote: json['quote'] as String? ?? '',
       profileFields: [
         for (final f in json['profile_fields'] as List? ?? const [])
@@ -245,6 +249,7 @@ class CharacterModel {
         if (tagline.isNotEmpty) 'tagline': tagline,
         if (tags.isNotEmpty) 'tags': tags,
         'worldview_prompt': worldviewPrompt,
+        if (worldSetting.isNotEmpty) 'world_setting': worldSetting,
         if (quote.isNotEmpty) 'quote': quote,
         if (profileFields.isNotEmpty) 'profile_fields': [for (final f in profileFields) f.toJson()],
         if (traits.isNotEmpty) 'traits': [for (final t in traits) t.toJson()],
@@ -281,6 +286,7 @@ class CharacterModel {
       tagline: tagline ?? this.tagline,
       tags: tags ?? this.tags,
       worldviewPrompt: worldviewPrompt,
+      worldSetting: worldSetting,
       quote: quote ?? this.quote,
       profileFields: profileFields ?? this.profileFields,
       traits: traits ?? this.traits,
@@ -299,6 +305,7 @@ class CharacterModel {
   String get aiCharacterSheet {
     final lines = <String>[
       worldviewPrompt.trim(),
+      if (worldSetting.trim().isNotEmpty) '세계관: ${worldSetting.trim()}',
       if (profileFields.isNotEmpty)
         '프로필: ${profileFields.map((f) => '${f.label} ${f.value}${f.isSecret ? '(비밀)' : ''}').join(', ')}',
       if (traits.isNotEmpty)
@@ -379,6 +386,60 @@ class ScenarioEventType {
   static const String ending = 'ending'; // 공략 완료 후 재생되는 엔딩
   /// 호감도 이벤트 사이사이에 끼는 일상 대화 (공략 완료 판정에는 안 들어감)
   static const String daily = 'daily';
+  /// 실제 시각(밤 11시~새벽 2시, 12월 25일 등)에 대화방에 있을 때만 한 번 오는 특별한 톡 (공략 조건 아님)
+  static const String special = 'special';
+}
+
+/// 특별 이벤트가 열리는 실제 시간 (시각 구간, 날짜는 둘 중 하나만 있어도 됨)
+class RealTimeWindow {
+  /// 시작 시각 (0~23). toHour와 같이 씀. 22 → 2 처럼 자정을 넘겨도 됨
+  final int? fromHour;
+  /// 끝 시각 (이 시각 전까지, 0~24)
+  final int? toHour;
+  /// 날짜 'MM-DD' (예: 12-25)
+  final String? date;
+
+  const RealTimeWindow({this.fromHour, this.toHour, this.date});
+
+  bool get hasHours => fromHour != null && toHour != null && fromHour != toHour;
+
+  bool contains(DateTime now) {
+    if (date != null && date!.isNotEmpty) {
+      final md = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      if (md != date) return false;
+    }
+    if (!hasHours) return date != null && date!.isNotEmpty;
+    final h = now.hour;
+    return fromHour! < toHour! ? h >= fromHour! && h < toHour! : h >= fromHour! || h < toHour!;
+  }
+
+  /// 화면·편집기용 설명 (예: 12월 25일 밤 10시~새벽 2시)
+  String get label {
+    String hour(int h) {
+      final hh = h % 24;
+      final part = hh < 5 ? '새벽' : hh < 12 ? '오전' : hh < 18 ? '오후' : '밤';
+      final shown = hh == 0 ? 12 : (hh > 12 ? hh - 12 : hh);
+      return '$part $shown시';
+    }
+    final parts = <String>[
+      if (date != null && date!.isNotEmpty)
+        '${int.tryParse(date!.split('-').first) ?? date}월 ${int.tryParse(date!.split('-').last) ?? ''}일',
+      if (hasHours) '${hour(fromHour!)}~${hour(toHour!)}',
+    ];
+    return parts.isEmpty ? '시간 미정' : parts.join(' ');
+  }
+
+  factory RealTimeWindow.fromJson(Map<String, dynamic> json) => RealTimeWindow(
+        fromHour: (json['from_hour'] as num?)?.toInt(),
+        toHour: (json['to_hour'] as num?)?.toInt(),
+        date: json['date'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (fromHour != null) 'from_hour': fromHour,
+        if (toHour != null) 'to_hour': toHour,
+        if (date != null && date!.isNotEmpty) 'date': date,
+      };
 }
 
 /// 4. 시나리오 이벤트 모델 (DB 테이블: scenario_events)
@@ -388,8 +449,13 @@ class ScenarioEventModel {
   final int chapterOrder;
   final String eventType;
   final String title;
-  /// 이벤트 시작 전에 대화방 가운데 뜨는 시간 안내 (예: '그날 밤', '다음 날 점심')
+  /// 이벤트 시작 전에 대화방 가운데 뜨는 장면 전환 문구 (예: '그날 밤', '다음 날 점심', '며칠 뒤').
+  /// 실제 시계와 어긋나지 않게 '목요일 밤 9:15' 같은 정확한 시각은 쓰지 않습니다.
   final String? timeNotice;
+  /// 제작자만 보는 줄거리 메모 (AI가 대사를 쓸 때 참고)
+  final String synopsis;
+  /// 특별 이벤트가 열리는 실제 시간
+  final RealTimeWindow? realTime;
   final int requiredAffection;
   final List<String> requiredFlags;
   final String? cutscenePhotoTitle;
@@ -417,11 +483,34 @@ class ScenarioEventModel {
     this.participantCharacterIds = const [],
     this.stageLabel,
     this.maxAffection,
+    this.synopsis = '',
+    this.realTime,
   });
 
   bool get hasCutscene => cutsceneTriggerStep != null;
+
+  /// 컷씬 단계만 바꾼 사본
+  ScenarioEventModel withCutsceneStep(int? step) => ScenarioEventModel(
+        id: id,
+        characterId: characterId,
+        chapterOrder: chapterOrder,
+        eventType: eventType,
+        title: title,
+        timeNotice: timeNotice,
+        requiredAffection: requiredAffection,
+        requiredFlags: requiredFlags,
+        cutscenePhotoTitle: cutscenePhotoTitle,
+        cutsceneImageUrl: cutsceneImageUrl,
+        cutsceneTriggerStep: step,
+        participantCharacterIds: participantCharacterIds,
+        stageLabel: stageLabel,
+        maxAffection: maxAffection,
+        synopsis: synopsis,
+        realTime: realTime,
+      );
   bool get isEnding => eventType == ScenarioEventType.ending;
   bool get isDaily => eventType == ScenarioEventType.daily;
+  bool get isSpecial => eventType == ScenarioEventType.special;
 
   /// 공략 완료 판정에 들어가는 '호감도 이벤트'인지 (엔딩·난입 이벤트는 제외)
   bool get isAffectionEvent =>
@@ -450,6 +539,10 @@ class ScenarioEventModel {
       ],
       stageLabel: json['stage'] as String?,
       maxAffection: unlock['max_affection'] as int?,
+      synopsis: json['synopsis'] as String? ?? '',
+      realTime: json['real_time'] is Map
+          ? RealTimeWindow.fromJson(json['real_time'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -470,6 +563,8 @@ class ScenarioEventModel {
         if (cutsceneImageUrl != null) 'cutscene_image_url': cutsceneImageUrl,
         if (cutsceneTriggerStep != null) 'cutscene_trigger_step': cutsceneTriggerStep,
         if (participantCharacterIds.isNotEmpty) 'participants': participantCharacterIds,
+        if (synopsis.isNotEmpty) 'synopsis': synopsis,
+        if (realTime != null) 'real_time': realTime!.toJson(),
       };
 }
 

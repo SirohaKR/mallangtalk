@@ -134,6 +134,13 @@ class LocalStore {
   Future<void> saveAlbum(String characterId, List<String> eventIds) =>
       _write(_albumKey(characterId), List<String>.of(eventIds));
 
+  /// 이미 본 특별 이벤트 (실제 시간 1회성, '다시 하기'를 해도 다시 안 옴)
+  List<String> loadSeenSpecials(String characterId) =>
+      _getStringList('specials_$characterId') ?? const [];
+
+  Future<void> saveSeenSpecials(String characterId, List<String> eventIds) =>
+      _write('specials_$characterId', List<String>.of(eventIds));
+
   String? get apiKey => _getString(_apiKeyKey);
   String? get model => _getString(_modelKey);
 
@@ -170,6 +177,7 @@ class LocalStore {
     await _write(_albumKey(characterId), null);
     await _write('tempo_$characterId', null);
     await _write('nickname_$characterId', null);
+    await _write('specials_$characterId', null);
   }
 
   /// 캐릭터별 대화 속도 배율 (1.0 = 리얼하게, 작을수록 빠름)

@@ -3,13 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/character_sheet_view.dart';
 import '../chat/start_chat.dart';
 import '../library/character_library.dart';
 import '../settings/user_profile.dart';
-import '../studio/character_import.dart';
 import '../../shared/utils/korean.dart';
 
 /// [초보자 노트] 갤러리에서 캐릭터를 누르면 뜨는 상세 화면입니다.
@@ -31,7 +29,6 @@ class CharacterDetailScreen extends ConsumerWidget {
     }
     final c = bundle.character;
     final isFriend = ref.watch(characterLibraryProvider).any((e) => e.id == c.id);
-    final summary = ScenarioSummary.of(bundle);
 
     return Scaffold(
       backgroundColor: AppColors.surfaceWhite,
@@ -99,51 +96,12 @@ class CharacterDetailScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     CharacterSheetView(character: c, nickname: ref.watch(chatNicknameProvider(c.id))),
-                    _Section(title: '상태메시지', body: c.statusMessage),
-                    _Section(title: '캐릭터 설정', body: c.worldviewPrompt),
-                    _Section(
-                      title: '관계 단계',
-                      body: c.affectionStages.map((s) => s.stageLabel).join('  →  '),
-                    ),
-                    _Section(
-                      title: '이야기 분량',
-                      body: '호감도 이벤트 ${summary.storyEvents}개 · 일상 대화 ${summary.dailyTalks}개'
-                          '${summary.hasEnding ? ' · 엔딩' : ''} · 모을 수 있는 장면 ${summary.cutscenes}장',
-                    ),
-                    _Section(
-                      title: '타자 스타일',
-                      body: '${TypingStyle.closest(c.typingSpeedMultiplier).label} · '
-                          '${TypingStyle.closest(c.typingSpeedMultiplier).note}',
-                    ),
                   ],
                 ),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.body});
-
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    if (body.trim().isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: AppTextStyles.speakerName),
-          const SizedBox(height: 4),
-          Text(body, style: AppTextStyles.chatBubbleBody),
-        ],
       ),
     );
   }

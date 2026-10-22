@@ -12,7 +12,8 @@
       "고양이집사",
       "인디밴드"
     ],
-    "worldview_prompt": "윤도하, 24살, 경영학과 3학년. 1년 전 교양 수업 팀플에서 처음 만나 매일 연락하는 남사친. 장난기 많고 수다스럽지만 진지해지면 말이 짧아지고 띄어쓰기가 정확해진다. ㅋㅋ를 많이 쓰고 짧게 끊어 친다. 취미: 주말 새벽 한강 러닝, 인디밴드 공연 보러 다니기(최애 밴드 '새벽녘 라디오'), 통기타(독학 2년). 관심사: 동네 카페 주말 알바에서 배운 라떼아트, 회색 고양이 '두부'(3살) 자랑. 유저에게 마음이 있지만 1년 된 친구 사이가 깨질까 봐 티를 덜 내려고 한다.",
+    "worldview_prompt": "1년 전 교양 수업 팀플에서 만나 거의 매일 연락하는 남사친. 장난기 많고 수다스러워서 ㅋㅋ를 달고 살고, 톡은 짧게 여러 번 끊어 친다. 그런데 진지해지면 말이 짧아지고 띄어쓰기가 정확해진다. 주말 새벽엔 한강을 뛰고, 인디밴드 '새벽녘 라디오' 공연이라면 어디든 간다. 독학 2년 차 통기타, 주말 카페 알바에서 배운 라떼아트, 회색 고양이 두부 자랑이 일상의 전부. 요즘 들어 가끔 말을 꺼내다 마는 버릇이 생겼다.",
+    "world_setting": "지금의 서울. 홍대 근처 대학가에서 자취하는 대학생들의 평범한 봄~여름. 수업, 알바, 공연, 한강 러닝 사이로 매일 시시콜콜한 카톡이 오가는 1년 차 친구 사이에서 시작하는 이야기.",
     "quote": "야 {이름}, 나 진짜 궁금한 거 있는데… 아 아니다 ㅋㅋ",
     "profile_fields": [
       {
@@ -117,7 +118,7 @@
       "chapter_order": 10,
       "event_type": "custom",
       "title": "두부 실종 사건",
-      "time_notice": "토요일 오전 10:24",
+      "time_notice": "어느 토요일 아침",
       "unlock_condition": {
         "min_affection": 0
       },
@@ -133,7 +134,7 @@
       "chapter_order": 15,
       "event_type": "daily",
       "title": "점심 메뉴 결정 장애",
-      "time_notice": "월요일 오후 12:10",
+      "time_notice": "며칠 뒤 점심",
       "stage": "편한 친구",
       "unlock_condition": {
         "min_affection": 0
@@ -148,7 +149,7 @@
       "chapter_order": 20,
       "event_type": "custom",
       "title": "새벽 러닝",
-      "time_notice": "화요일 오전 6:40",
+      "time_notice": "다음 날 새벽",
       "unlock_condition": {
         "min_affection": 3
       },
@@ -162,7 +163,7 @@
       "chapter_order": 25,
       "event_type": "daily",
       "title": "두부 근황",
-      "time_notice": "수요일 밤 10:42",
+      "time_notice": "그날 밤",
       "stage": "편한 친구",
       "unlock_condition": {
         "min_affection": 0
@@ -177,7 +178,7 @@
       "chapter_order": 30,
       "event_type": "custom",
       "title": "공연 티켓 두 장",
-      "time_notice": "목요일 밤 9:15",
+      "time_notice": "며칠 뒤 저녁",
       "unlock_condition": {
         "min_affection": 8
       },
@@ -188,19 +189,22 @@
       ]
     },
     {
-      "id": "daily_playlist",
+      "id": "special_playlist",
       "character_id": "char_yoon_doha",
       "chapter_order": 35,
-      "event_type": "daily",
+      "event_type": "special",
       "title": "새벽 플레이리스트",
-      "time_notice": "목요일 새벽 1:15",
       "stage": "편한 친구",
       "unlock_condition": {
         "min_affection": 0
       },
       "participants": [
         "char_yoon_doha"
-      ]
+      ],
+      "real_time": {
+        "from_hour": 0,
+        "to_hour": 5
+      }
     },
     {
       "id": "evt_latte_art",
@@ -208,7 +212,7 @@
       "chapter_order": 40,
       "event_type": "custom",
       "title": "라떼아트 연습",
-      "time_notice": "일요일 오후 3:02",
+      "time_notice": "주말 오후",
       "unlock_condition": {
         "min_affection": 11
       },
@@ -222,7 +226,7 @@
       "chapter_order": 45,
       "event_type": "daily",
       "title": "갑자기 비",
-      "time_notice": "금요일 오후 5:48",
+      "time_notice": "며칠 뒤 저녁",
       "stage": "편한 친구",
       "unlock_condition": {
         "min_affection": 0
@@ -237,7 +241,7 @@
       "chapter_order": 50,
       "event_type": "custom",
       "title": "생일 전날 밤",
-      "time_notice": "금요일 밤 11:58",
+      "time_notice": "생일 전날 밤",
       "unlock_condition": {
         "min_affection": 15
       },
@@ -253,7 +257,7 @@
       "chapter_order": 55,
       "event_type": "daily",
       "title": "기타 줄",
-      "time_notice": "화요일 밤 9:30",
+      "time_notice": "며칠 뒤 밤",
       "stage": "신경 쓰이는 친구",
       "unlock_condition": {
         "min_affection": 0
@@ -268,7 +272,7 @@
       "chapter_order": 60,
       "event_type": "custom",
       "title": "1년 전 그날",
-      "time_notice": "일요일 저녁 7:30",
+      "time_notice": "그 주 일요일 저녁",
       "unlock_condition": {
         "min_affection": 20
       },
@@ -284,7 +288,7 @@
       "chapter_order": 65,
       "event_type": "daily",
       "title": "시험 기간",
-      "time_notice": "수요일 새벽 2:03",
+      "time_notice": "시험 기간 새벽",
       "stage": "신경 쓰이는 친구",
       "unlock_condition": {
         "min_affection": 0
@@ -299,7 +303,7 @@
       "chapter_order": 75,
       "event_type": "daily",
       "title": "이상한 꿈",
-      "time_notice": "토요일 오전 9:12",
+      "time_notice": "어느 아침",
       "stage": "친구 이상",
       "unlock_condition": {
         "min_affection": 0
@@ -309,19 +313,22 @@
       ]
     },
     {
-      "id": "daily_goodnight",
+      "id": "special_goodnight",
       "character_id": "char_yoon_doha",
       "chapter_order": 85,
-      "event_type": "daily",
+      "event_type": "special",
       "title": "잘 자",
-      "time_notice": "일요일 밤 11:47",
       "stage": "친구 이상",
       "unlock_condition": {
         "min_affection": 0
       },
       "participants": [
         "char_yoon_doha"
-      ]
+      ],
+      "real_time": {
+        "from_hour": 22,
+        "to_hour": 2
+      }
     },
     {
       "id": "evt_ending_confession",
@@ -329,7 +336,7 @@
       "chapter_order": 999,
       "event_type": "ending",
       "title": "친구 말고",
-      "time_notice": "그날 밤 8:10",
+      "time_notice": "그날 늦은 밤",
       "unlock_condition": {
         "min_affection": 0
       },
@@ -1295,8 +1302,8 @@
       "choices": []
     },
     {
-      "id": "daily_playlist_1",
-      "event_id": "daily_playlist",
+      "id": "special_playlist_1",
+      "event_id": "special_playlist",
       "step_order": 1,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1314,7 +1321,7 @@
       ],
       "choices": [
         {
-          "choice_id": "daily_playlist_c1",
+          "choice_id": "special_playlist_c1",
           "label": "들어보고 좋다고 하기",
           "user_messages": [
             {
@@ -1325,10 +1332,10 @@
             }
           ],
           "affection_delta": 2,
-          "next_node_id": "daily_playlist_2_1"
+          "next_node_id": "special_playlist_2_1"
         },
         {
-          "choice_id": "daily_playlist_c2",
+          "choice_id": "special_playlist_c2",
           "label": "내일 들어본다고 하기",
           "user_messages": [
             {
@@ -1339,10 +1346,10 @@
             }
           ],
           "affection_delta": 1,
-          "next_node_id": "daily_playlist_2_2"
+          "next_node_id": "special_playlist_2_2"
         },
         {
-          "choice_id": "daily_playlist_c3",
+          "choice_id": "special_playlist_c3",
           "label": "졸리다고 하기",
           "user_messages": [
             {
@@ -1350,13 +1357,13 @@
             }
           ],
           "affection_delta": 0,
-          "next_node_id": "daily_playlist_2_3"
+          "next_node_id": "special_playlist_2_3"
         }
       ]
     },
     {
-      "id": "daily_playlist_2_1",
-      "event_id": "daily_playlist",
+      "id": "special_playlist_2_1",
+      "event_id": "special_playlist",
       "step_order": 2,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1376,8 +1383,8 @@
       "choices": []
     },
     {
-      "id": "daily_playlist_2_2",
-      "event_id": "daily_playlist",
+      "id": "special_playlist_2_2",
+      "event_id": "special_playlist",
       "step_order": 2,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1393,8 +1400,8 @@
       "choices": []
     },
     {
-      "id": "daily_playlist_2_3",
-      "event_id": "daily_playlist",
+      "id": "special_playlist_2_3",
+      "event_id": "special_playlist",
       "step_order": 2,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1850,8 +1857,8 @@
       "choices": []
     },
     {
-      "id": "daily_goodnight_1",
-      "event_id": "daily_goodnight",
+      "id": "special_goodnight_1",
+      "event_id": "special_goodnight",
       "step_order": 1,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1869,7 +1876,7 @@
       ],
       "choices": [
         {
-          "choice_id": "daily_goodnight_c1",
+          "choice_id": "special_goodnight_c1",
           "label": "나도 재밌었다고 하기",
           "user_messages": [
             {
@@ -1880,10 +1887,10 @@
             }
           ],
           "affection_delta": 2,
-          "next_node_id": "daily_goodnight_2_1"
+          "next_node_id": "special_goodnight_2_1"
         },
         {
-          "choice_id": "daily_goodnight_c2",
+          "choice_id": "special_goodnight_c2",
           "label": "다음엔 어디 갈지 묻기",
           "user_messages": [
             {
@@ -1891,10 +1898,10 @@
             }
           ],
           "affection_delta": 1,
-          "next_node_id": "daily_goodnight_2_2"
+          "next_node_id": "special_goodnight_2_2"
         },
         {
-          "choice_id": "daily_goodnight_c3",
+          "choice_id": "special_goodnight_c3",
           "label": "짧게 잘 자라고 하기",
           "user_messages": [
             {
@@ -1902,13 +1909,13 @@
             }
           ],
           "affection_delta": 0,
-          "next_node_id": "daily_goodnight_2_3"
+          "next_node_id": "special_goodnight_2_3"
         }
       ]
     },
     {
-      "id": "daily_goodnight_2_1",
-      "event_id": "daily_goodnight",
+      "id": "special_goodnight_2_1",
+      "event_id": "special_goodnight",
       "step_order": 2,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1927,8 +1934,8 @@
       "choices": []
     },
     {
-      "id": "daily_goodnight_2_2",
-      "event_id": "daily_goodnight",
+      "id": "special_goodnight_2_2",
+      "event_id": "special_goodnight",
       "step_order": 2,
       "speaker_character_id": "char_yoon_doha",
       "messages": [
@@ -1944,8 +1951,8 @@
       "choices": []
     },
     {
-      "id": "daily_goodnight_2_3",
-      "event_id": "daily_goodnight",
+      "id": "special_goodnight_2_3",
+      "event_id": "special_goodnight",
       "step_order": 2,
       "speaker_character_id": "char_yoon_doha",
       "messages": [

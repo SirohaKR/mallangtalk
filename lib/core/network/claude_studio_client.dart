@@ -4,44 +4,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import 'claude_chat_client.dart';
 
-/// 제작 화면에서 적은 캐릭터 설정 (AI 생성의 재료)
+/// 만들기 화면에서 적은 캐릭터 설정 + 만들 분량 (AI 생성의 재료)
 class StudioBrief {
-  final String name;
-  final String statusMessage;
-  final String personality; // 성격·말투·취미·세계관
-  final String relationship; // 나와의 관계 (예: 알게 된 지 1년 된 남사친)
-  final String tagline; // 갤러리 한줄 소개 (비우면 AI가 지어 줌)
-  final List<String> tags;
-  /// 비밀 설정 (플레이어에겐 안 보이고 이야기 속에서 서서히 드러남)
-  final String secret;
-  final String avatarUrl; // 직접 올린 프로필 사진 (data: 주소)
-  final double typingSpeedMultiplier;
-  final List<AffectionStage> stages;
+  /// 만들기 화면의 캐릭터 (이름·캐릭터 설정·세계관·유저 설정·주변 인물·비밀·호감도 단계·타자 스타일)
+  final CharacterModel character;
   final int eventsPerStage;
   final int dailiesPerStage;
+  /// 실제 시간에만 오는 특별 이벤트 수
+  final int specials;
 
   const StudioBrief({
-    required this.name,
-    required this.statusMessage,
-    required this.personality,
-    required this.relationship,
-    this.tagline = '',
-    this.tags = const [],
-    this.secret = '',
-    this.avatarUrl = '',
-    required this.typingSpeedMultiplier,
-    required this.stages,
+    required this.character,
     this.eventsPerStage = 2,
     this.dailiesPerStage = 3,
+    this.specials = 1,
   });
 
-  String get worldviewPrompt => [
-        personality.trim(),
-        if (relationship.trim().isNotEmpty) '유저와의 관계: ${relationship.trim()}',
-      ].where((s) => s.isNotEmpty).join('\n');
+  List<AffectionStage> get stages => character.affectionStages;
 
-  /// 만들어질 대화 수 (호감도 이벤트 + 일상 대화 + 엔딩)
-  int get totalTalks => stages.length * (eventsPerStage + dailiesPerStage) + 1;
+  /// 만들어질 대화 수 (호감도 이벤트 + 일상 대화 + 특별 이벤트 + 엔딩)
+  int get totalTalks => stages.length * (eventsPerStage + dailiesPerStage) + specials + 1;
 }
 
 /// 생성 진행 상황 (화면의 진행 막대용)
@@ -49,9 +31,11 @@ typedef StudioProgress = void Function(String message, int done, int total);
 
 final claudeStudioClientProvider = Provider<ClaudeStudioClient>((ref) => ClaudeStudioClient());
 
-/// [초보자 노트] 캐릭터 설정만 적으면 Claude가 호감도 단계별 이벤트·일상 대화·엔딩과 모든 대사를 만들어 주는 클라이언트입니다.
-/// 1. 목차 만들기: 단계마다 이벤트 몇 개, 일상 대화 몇 개, 마지막에 엔딩 (한 번 호출)
-/// 2. 대사 쓰기: 대화 하나마다 장면·말풍선·선택지 (대화 수만큼 호출, 3개씩 동시에)
+/// [초보자 노트] 만들기 화면의 캐릭터 설정을 토대로 Claude가 호감도 단계별 이벤트·일상 대화·특별 이벤트·엔딩과
+/// 모든 대사를 만들어 주는 클라이언트입니다.
+/// 1. 목차 만들기: 단계마다 이벤트 몇 개, 일상 대화 몇 개, 실제 시간 특별 이벤트, 마지막에 엔딩 (한 번 호출)
+///    비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목 등)도 이때 채움
+/// 2. 대사 쓰기: 대화 하나마다 장면·말풍선·선택지 (대화 수만큼 호출, 3개씩 동시에). 이벤트 하나만 따로 쓸 수도 있음
 /// 3. 균형 맞추기: 좋은 선택을 하면 끝까지 갈 수 있게 호감도 점수를 자동 보정
 /// 키는 지금은 설정 화면의 내 키(BYOK)를 쓰고, 나중에 앱 토큰 충전 방식이 생기면 apiKey 자리만 서버 중계로 바꾸면 됩니다.
 class ClaudeStudioClient {
@@ -71,12 +55,11 @@ class ClaudeStudioClient {
     required StudioBrief brief,
     StudioProgress? onProgress,
   }) async {
-    final characterId = 'char_${DateTime.now().millisecondsSinceEpoch}';
     final total = brief.totalTalks + 1;
     onProgress?.call('이야기 목차를 짜는 중', 0, total);
 
-    final (outline, profile) = await _outline(apiKey: apiKey, model: model, brief: brief);
-    final character = profile.copyWith(id: characterId);
+    final (outline, character) = await _outline(apiKey: apiKey, model: model, brief: brief);
+    final characterId = character.id;
     onProgress?.call('대사를 쓰는 중', 1, total);
 
     final events = <ScenarioEventModel>[];
@@ -86,21 +69,29 @@ class ClaudeStudioClient {
       final type = switch (kind) {
         'daily' => ScenarioEventType.daily,
         'ending' => ScenarioEventType.ending,
+        'special' => ScenarioEventType.special,
         _ => ScenarioEventType.autoStory,
       };
       final cutscene = (o['cutscene'] as String? ?? '').trim();
       final stage = brief.stages.where((s) => s.stageLabel == o['stage']).firstOrNull ??
           brief.stages.last;
+      final from = (o['from_hour'] as num? ?? 22).toInt().clamp(0, 23);
+      final to = (o['to_hour'] as num? ?? 2).toInt().clamp(0, 24);
       events.add(ScenarioEventModel(
         id: 'evt_${i + 1}',
         characterId: characterId,
-        chapterOrder: type == ScenarioEventType.ending ? 999 : i + 1,
+        chapterOrder: type == ScenarioEventType.ending ? 999 : (i + 1) * 10,
         eventType: type,
         title: (o['title'] as String).trim(),
-        timeNotice: (o['time_notice'] as String?)?.trim(),
+        timeNotice: type == ScenarioEventType.special
+            ? null
+            : (o['time_notice'] as String?)?.trim(),
         stageLabel: stage.stageLabel,
-        cutscenePhotoTitle:
-            type == ScenarioEventType.autoStory && cutscene.isNotEmpty ? cutscene : null,
+        synopsis: (o['synopsis'] as String? ?? '').trim(),
+        realTime: type == ScenarioEventType.special
+            ? RealTimeWindow(fromHour: from, toHour: from == to ? (from + 3) % 24 : to)
+            : null,
+        cutscenePhotoTitle: type == ScenarioEventType.autoStory && cutscene.isNotEmpty ? cutscene : null,
         participantCharacterIds: [characterId],
       ));
     }
@@ -113,32 +104,13 @@ class ClaudeStudioClient {
       final batch = events.sublist(start, (start + 3).clamp(0, events.length));
       final results = await Future.wait([
         for (final event in batch)
-          _script(
-            apiKey: apiKey,
-            model: model,
-            brief: brief,
-            sheet: character,
-            event: event,
-            synopsis: outline[events.indexOf(event)]['synopsis'] as String? ?? '',
-            outline: outline,
-          ),
+          writeScript(apiKey: apiKey, model: model, character: character, event: event, outline: events),
       ]);
       for (var j = 0; j < batch.length; j++) {
         final (eventNodes, cutsceneStep) = results[j];
         nodes.addAll({for (final n in eventNodes) n.id: n});
         final e = batch[j];
-        finalEvents.add(ScenarioEventModel(
-          id: e.id,
-          characterId: e.characterId,
-          chapterOrder: e.chapterOrder,
-          eventType: e.eventType,
-          title: e.title,
-          timeNotice: e.timeNotice,
-          stageLabel: e.stageLabel,
-          cutscenePhotoTitle: e.cutscenePhotoTitle,
-          cutsceneTriggerStep: e.cutscenePhotoTitle != null ? cutsceneStep : null,
-          participantCharacterIds: e.participantCharacterIds,
-        ));
+        finalEvents.add(e.withCutsceneStep(e.cutscenePhotoTitle != null ? cutsceneStep : null));
         done++;
         onProgress?.call('대사를 쓰는 중 · ${e.title}', done, total);
       }
@@ -148,117 +120,113 @@ class ClaudeStudioClient {
     return balanceScenario(ScenarioBundle(character: character, events: finalEvents, nodes: nodes));
   }
 
-  String _characterSheet(StudioBrief brief, [CharacterModel? sheet]) => '''
+  String _characterSheet(CharacterModel c) => '''
 [캐릭터]
-이름: ${brief.name}
-상태메시지: ${brief.statusMessage}
-${sheet?.aiCharacterSheet ?? brief.worldviewPrompt}${brief.secret.trim().isNotEmpty && sheet == null ? '\n비밀(유저는 아직 모름, 서서히 드러냄): ${brief.secret.trim()}' : ''}
+이름: ${c.name}
+상태메시지: ${c.statusMessage}
+${c.aiCharacterSheet}
 
 [호감도 단계] (낮은 단계부터)
-${brief.stages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}점)').join('\n')}''';
+${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}점)').join('\n')}''';
 
   static const _system = '''
 너는 메신저 연애 시뮬레이션 게임 "말랑톡"의 시나리오 작가다. 유저는 카톡으로 캐릭터와 대화하며 호감도를 쌓는다.
 - 대사는 실제 카톡처럼 짧게 끊어 친다. 괄호 지문, 행동 묘사, 나레이션은 쓰지 않는다. 이모지는 거의 안 쓴다.
 - 캐릭터의 말투·습관·취미가 대사마다 살아 있어야 한다. 단계보다 앞서 나가는 고백이나 스킨십은 쓰지 않는다.
-- 유저는 평소 "너"라고 부르고, 이름을 부를 때만 {이름} 이라고 쓴다(앱이 플레이어 별명으로 바꿔 넣는다). 유저 성별은 정하지 않는다.''';
+- 유저는 평소 "너"라고 부르고, 이름을 부를 때만 {이름} 이라고 쓴다(앱이 플레이어 별명으로 바꿔 넣는다). 유저 성별은 정하지 않는다.
+- 플레이어가 언제 접속할지 모르므로 대사에 "지금 밤 11시" 같은 정확한 시각을 쓰지 않는다.''';
 
-  /// 목차 + 캐릭터 프로필(한줄 소개·태그·대표 대사·프로필 항목·성격 막대·대사 예시)을 한 번에 만듦
+  /// 목차 + 비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목·대표 대사·성격 막대·대사 예시)를 한 번에 만듦
   Future<(List<Map<String, dynamic>>, CharacterModel)> _outline({
     required String apiKey,
     required String model,
     required StudioBrief brief,
   }) async {
+    final base = brief.character;
     final stageNames = [for (final s in brief.stages) s.stageLabel];
     final schema = {
       'type': 'object',
       'properties': {
+        'tagline': {'type': 'string', 'description': '캐릭터 갤러리에 보일 한줄 소개 (30자 이내, 궁금해지게)'},
+        'tags': {'type': 'array', 'items': {'type': 'string'}, 'description': '캐릭터 태그 3~5개, # 없이'},
+        'world_setting': {'type': 'string', 'description': '세계관 설정 요약 2~3문장 (배경이 되는 곳·시대·분위기)'},
+        'quote': {'type': 'string', 'description': '캐릭터를 한 번에 보여주는 대표 대사 한 줄'},
+        'profile_fields': {
+          'type': 'array',
+          'description': '캐릭터 정보 항목 4~6개. 예: 나이, 직업, 생일, 좋아하는 것, 싫어하는 것',
+          'items': {
+            'type': 'object',
+            'properties': {'label': {'type': 'string'}, 'value': {'type': 'string'}},
+            'required': ['label', 'value'],
+            'additionalProperties': false,
+          },
+        },
+        'traits': {
+          'type': 'array',
+          'description': '성격 막대 3~4개. left↔right 양쪽 성향과 right 쪽으로 기운 정도(0~100)',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'left': {'type': 'string'},
+              'right': {'type': 'string'},
+              'percent': {'type': 'integer'},
+            },
+            'required': ['left', 'right', 'percent'],
+            'additionalProperties': false,
+          },
+        },
+        'sample_quotes': {
+          'type': 'array',
+          'description': '상황별 대사 예시 3개 (말투가 드러나게)',
+          'items': {
+            'type': 'object',
+            'properties': {'situation': {'type': 'string'}, 'body': {'type': 'string'}},
+            'required': ['situation', 'body'],
+            'additionalProperties': false,
+          },
+        },
         'talks': {
           'type': 'array',
           'items': {
             'type': 'object',
             'properties': {
-              'kind': {'type': 'string', 'enum': ['event', 'daily', 'ending']},
+              'kind': {'type': 'string', 'enum': ['event', 'daily', 'special', 'ending']},
               'stage': {'type': 'string', 'enum': stageNames},
               'title': {'type': 'string'},
-              'time_notice': {'type': 'string', 'description': '대화방 가운데 뜨는 시간 안내. 예: 화요일 밤 11:20'},
+              'time_notice': {
+                'type': 'string',
+                'description': '대화 시작 전 가운데 뜨는 장면 전환 문구. 앞 대화 기준 상대적인 말만: 다음 날, 그날 밤, 며칠 뒤 저녁, 주말 오후. 요일·시각 숫자 금지',
+              },
               'synopsis': {'type': 'string', 'description': '이 대화에서 일어나는 일 2~3문장'},
               'cutscene': {'type': 'string', 'description': 'event만: 앨범에 모이는 장면(CG) 한 줄 묘사. 없으면 빈 문자열'},
+              'from_hour': {'type': 'integer', 'description': 'special만: 열리는 실제 시각 시작(0~23). 나머지는 0'},
+              'to_hour': {'type': 'integer', 'description': 'special만: 끝 시각(0~24, 자정을 넘기면 시작보다 작게). 나머지는 0'},
             },
-            'required': ['kind', 'stage', 'title', 'time_notice', 'synopsis', 'cutscene'],
+            'required': ['kind', 'stage', 'title', 'time_notice', 'synopsis', 'cutscene', 'from_hour', 'to_hour'],
             'additionalProperties': false,
           },
         },
       },
-      'required': ['tagline', 'tags', 'quote', 'profile_fields', 'traits', 'sample_quotes', 'talks'],
+      'required': [
+        'tagline', 'tags', 'world_setting', 'quote', 'profile_fields', 'traits', 'sample_quotes', 'talks',
+      ],
       'additionalProperties': false,
-    };
-    (schema['properties'] as Map)['tagline'] = {
-      'type': 'string',
-      'description': '캐릭터 갤러리에 보일 한줄 소개 (30자 이내, 궁금해지게)',
-    };
-    (schema['properties'] as Map)['tags'] = {
-      'type': 'array',
-      'items': {'type': 'string'},
-      'description': '캐릭터 태그 3~5개, # 없이',
-    };
-    (schema['properties'] as Map)['quote'] = {
-      'type': 'string',
-      'description': '캐릭터를 한 번에 보여주는 대표 대사 한 줄',
-    };
-    (schema['properties'] as Map)['profile_fields'] = {
-      'type': 'array',
-      'description': '프로필 항목 4~6개. 예: 나이, 직업, 생일, 키, 좋아하는 것, 싫어하는 것',
-      'items': {
-        'type': 'object',
-        'properties': {'label': {'type': 'string'}, 'value': {'type': 'string'}},
-        'required': ['label', 'value'],
-        'additionalProperties': false,
-      },
-    };
-    (schema['properties'] as Map)['traits'] = {
-      'type': 'array',
-      'description': '성격 막대 3~4개. left↔right 양쪽 성향과 right 쪽으로 기운 정도(0~100)',
-      'items': {
-        'type': 'object',
-        'properties': {
-          'left': {'type': 'string'},
-          'right': {'type': 'string'},
-          'percent': {'type': 'integer'},
-        },
-        'required': ['left', 'right', 'percent'],
-        'additionalProperties': false,
-      },
-    };
-    (schema['properties'] as Map)['sample_quotes'] = {
-      'type': 'array',
-      'description': '상황별 대사 예시 3개 (말투가 드러나게)',
-      'items': {
-        'type': 'object',
-        'properties': {'situation': {'type': 'string'}, 'body': {'type': 'string'}},
-        'required': ['situation', 'body'],
-        'additionalProperties': false,
-      },
     };
 
     final user = '''
-${_characterSheet(brief)}
+${_characterSheet(base)}
 
-먼저 캐릭터 프로필(tagline, tags, quote, profile_fields, traits, sample_quotes)을 설정에 맞게 채우고,
+먼저 캐릭터 정보(tagline, tags, world_setting, quote, profile_fields, traits, sample_quotes)를 설정에 맞게 채우고,
 이 캐릭터의 이야기 목차(talks)를 짜 줘. 목차는 시간 순서대로 나열한다.
 - 각 호감도 단계마다 호감도 이벤트(kind=event) ${brief.eventsPerStage}개와 일상 대화(kind=daily) ${brief.dailiesPerStage}개.
   이벤트는 관계가 한 발짝 나아가는 사건, 일상 대화는 취미·하루 얘기처럼 가벼운 잡담이다.
-- 이벤트 중 절반 정도에는 cutscene(앨범 장면)을 넣는다. 일상 대화의 cutscene은 빈 문자열.
+- 특별 이벤트(kind=special) ${brief.specials}개: 플레이어가 실제로 그 시각에 대화방에 있을 때만 한 번 오는 톡이다.
+  늦은 밤 안부, 새벽 감성 톡처럼 시간대가 중요한 내용으로 쓰고 from_hour~to_hour에 그 시간대를 적는다. 목차의 아무 곳에나 둬도 된다.
+- 이벤트 중 절반 정도에는 cutscene(앨범 장면)을 넣는다. 일상 대화·특별 이벤트의 cutscene은 빈 문자열.
 - 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 장면이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
 
-    final json = await _call(
-      apiKey: apiKey,
-      model: model,
-      user: user,
-      schema: schema,
-      maxTokens: 8000,
-    );
+    final json = await _call(apiKey: apiKey, model: model, user: user, schema: schema, maxTokens: 9000);
     final talks = [for (final t in json['talks'] as List? ?? const []) t as Map<String, dynamic>];
     if (talks.where((t) => t['kind'] == 'event').isEmpty) {
       throw const ClaudeChatException('AI가 이벤트 목차를 만들지 못했어요. 다시 시도해 주세요.');
@@ -267,49 +235,60 @@ ${_characterSheet(brief)}
     final endings = talks.where((t) => t['kind'] == 'ending').toList();
     talks.removeWhere((t) => t['kind'] == 'ending');
     if (endings.isNotEmpty) talks.add(endings.first);
+
+    String text(String key) => (json[key] as String? ?? '').trim();
     final tags = [
       for (final t in json['tags'] as List? ?? const [])
         if ((t as String).trim().isNotEmpty) t.replaceAll('#', '').trim(),
     ].take(5).toList();
-    final aiTagline = (json['tagline'] as String? ?? '').trim();
-    final profile = CharacterModel(
-      id: 'draft',
-      creatorId: 'me',
-      name: brief.name.trim(),
-      statusMessage: brief.statusMessage.trim(),
-      avatarUrl: brief.avatarUrl,
-      tagline: brief.tagline.trim().isNotEmpty ? brief.tagline.trim() : aiTagline,
-      tags: brief.tags.isNotEmpty ? brief.tags : tags,
-      worldviewPrompt: brief.personality.trim(),
-      quote: (json['quote'] as String? ?? '').trim(),
-      profileFields: [
-        for (final f in json['profile_fields'] as List? ?? const [])
-          ProfileField.fromJson(f as Map<String, dynamic>),
-      ].where((f) => f.label.isNotEmpty && f.value.isNotEmpty).toList(),
-      traits: [
-        for (final t in json['traits'] as List? ?? const [])
-          PersonalityTrait.fromJson(t as Map<String, dynamic>),
-      ].where((t) => t.left.isNotEmpty).toList(),
-      sampleQuotes: [
-        for (final q in json['sample_quotes'] as List? ?? const [])
-          CharacterQuote.fromJson(q as Map<String, dynamic>),
-      ].where((q) => q.body.isNotEmpty).toList(),
-      secret: brief.secret.trim(),
-      userRole: brief.relationship.trim(),
-      typingSpeedMultiplier: brief.typingSpeedMultiplier,
-      affectionStages: brief.stages,
+    // 제작자가 이미 적은 칸은 그대로 두고 빈칸만 AI 것으로 채움
+    final character = CharacterModel(
+      id: base.id.isEmpty || base.id == 'draft' ? 'char_${DateTime.now().millisecondsSinceEpoch}' : base.id,
+      creatorId: base.creatorId,
+      name: base.name.trim(),
+      statusMessage: base.statusMessage.trim(),
+      avatarUrl: base.avatarUrl,
+      tagline: base.tagline.trim().isNotEmpty ? base.tagline : text('tagline'),
+      tags: base.tags.isNotEmpty ? base.tags : tags,
+      worldviewPrompt: base.worldviewPrompt,
+      worldSetting: base.worldSetting.trim().isNotEmpty ? base.worldSetting : text('world_setting'),
+      quote: base.quote.trim().isNotEmpty ? base.quote : text('quote'),
+      profileFields: base.profileFields.isNotEmpty
+          ? base.profileFields
+          : [
+              for (final f in json['profile_fields'] as List? ?? const [])
+                ProfileField.fromJson(f as Map<String, dynamic>),
+            ].where((f) => f.label.isNotEmpty && f.value.isNotEmpty).toList(),
+      traits: base.traits.isNotEmpty
+          ? base.traits
+          : [
+              for (final t in json['traits'] as List? ?? const [])
+                PersonalityTrait.fromJson(t as Map<String, dynamic>),
+            ].where((t) => t.left.isNotEmpty).toList(),
+      sampleQuotes: base.sampleQuotes.isNotEmpty
+          ? base.sampleQuotes
+          : [
+              for (final q in json['sample_quotes'] as List? ?? const [])
+                CharacterQuote.fromJson(q as Map<String, dynamic>),
+            ].where((q) => q.body.isNotEmpty).toList(),
+      secret: base.secret,
+      userRole: base.userRole,
+      extraCast: base.extraCast,
+      themeColor: base.themeColor,
+      typingSpeedMultiplier: base.typingSpeedMultiplier,
+      affectionStages: base.affectionStages,
     );
-    return (talks, profile);
+    return (talks, character);
   }
 
-  Future<(List<ScriptNodeModel>, int?)> _script({
+  /// 대화 하나의 대사(장면·말풍선·선택지)를 씀. 돌려주는 값: (대사 노드, 컷씬이 뜨는 단계)
+  /// outline은 앞뒤 흐름을 알려 주려고 넘기는 전체 대화 목록 (지금 쓸 대화 포함)
+  Future<(List<ScriptNodeModel>, int?)> writeScript({
     required String apiKey,
     required String model,
-    required StudioBrief brief,
-    required CharacterModel sheet,
+    required CharacterModel character,
     required ScenarioEventModel event,
-    required String synopsis,
-    required List<Map<String, dynamic>> outline,
+    required List<ScenarioEventModel> outline,
   }) async {
     final schema = {
       'type': 'object',
@@ -362,14 +341,15 @@ ${_characterSheet(brief)}
     final kindText = switch (event.eventType) {
       ScenarioEventType.daily => '일상 대화 (가벼운 잡담, 장면 1~2개)',
       ScenarioEventType.ending => '엔딩 (장면 1~2개, 마지막 장면은 선택지 1개 또는 없음)',
+      ScenarioEventType.special => '특별 이벤트 (그 시간대 분위기의 짧은 톡, 장면 1~2개)',
       _ => '호감도 이벤트 (장면 2~4개, 선택에 따라 갈림길 1개 정도)',
     };
     final storySoFar = outline
-        .map((o) => '- [${o['stage']}] ${o['title']}${o['title'] == event.title ? '  ← 지금 쓸 대화' : ''}')
+        .map((o) => '- [${o.stageLabel ?? ''}] ${o.title}${o.id == event.id ? '  ← 지금 쓸 대화' : ''}')
         .join('\n');
 
     final user = '''
-${_characterSheet(brief, sheet)}
+${_characterSheet(character)}
 
 [전체 목차]
 $storySoFar
@@ -378,8 +358,8 @@ $storySoFar
 종류: $kindText
 호감도 단계: ${event.stageLabel}
 제목: ${event.title}
-시간: ${event.timeNotice ?? ''}
-내용: $synopsis
+${event.isSpecial ? '실제 시간: ${event.realTime?.label ?? ''} 에 대화방에 있는 플레이어에게만 한 번 오는 특별한 톡' : '장면 전환: ${event.timeNotice ?? ''}'}
+내용: ${event.synopsis}
 ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTitle} → 이 장면이 떠오르는 단계를 cutscene_step으로. 좋은 선택을 하면 반드시 지나가는 단계여야 한다.' : '앨범 장면 없음 → cutscene_step은 0'}
 
 규칙:

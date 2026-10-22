@@ -32,6 +32,7 @@ void main() {
       overrides: [
         builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
         sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
       ],
       child: const MallangTalkApp(),
     ));
@@ -81,6 +82,7 @@ void main() {
       overrides: [
         builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle(), loadIjun()]),
         sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
       ],
       child: const MallangTalkApp(),
     ));
@@ -93,12 +95,17 @@ void main() {
     await tester.tap(find.text('서이준'));
     await settle(tester);
 
-    // 상세: 대표 대사·프로필·유저 설정이 보이고, 비밀은 개수만
-    expect(find.text('“찍을 거 없으면 너라도 찍지 뭐.”'), findsOneWidget);
+    // 상세: 캐릭터 정보·캐릭터 설정·세계관 설정·나는 이 이야기에서·주변 인물만, 비밀과 제작용 정보는 안 보임
+    for (final title in ['캐릭터 정보', '캐릭터 설정', '세계관 설정', '나는 이 이야기에서', '주변 인물']) {
+      expect(find.text(title), findsOneWidget, reason: title);
+    }
     expect(find.text('시각디자인과 4학년'), findsOneWidget);
+    expect(find.textContaining('대학 사진 동아리'), findsOneWidget);
     expect(find.text('말랑 · 사진 동아리에 새로 들어온 후배'), findsOneWidget);
     expect(find.textContaining('몰래 저장해 둠'), findsNothing);
-    expect(find.text('아직 모르는 비밀 2개'), findsOneWidget);
+    for (final hidden in ['관계 단계', '이야기 분량', '타자 스타일', '성격', '찍을 거 없으면 너라도 찍지 뭐.']) {
+      expect(find.textContaining(hidden), findsNothing, reason: hidden);
+    }
 
     await tester.tap(find.text('친구 추가'));
     await settle(tester);
@@ -119,5 +126,52 @@ void main() {
     expect(find.byType(ChatScreen), findsOneWidget);
     expect(find.text('후배님.'), findsOneWidget);
     expect(container.read(chatRoomsProvider), contains('char_example_seo_ijun'));
+  });
+
+  testWidgets('만들기: 예시를 불러와 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    appRouter.go('/add');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    await tester.tap(find.text('만들기'));
+    await tester.pumpAndSettle();
+    expect(find.text('호감도 단계'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('더 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('예시 캐릭터 불러오기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('불러오기'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
+
+    // 대사 탭: 첫 대화의 첫 말풍선을 고침
+    await tester.tap(find.text('대사'));
+    await tester.pumpAndSettle();
+    expect(find.text('장면 1'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, '내일 출사 가는데.'), '내일 출사 가는데 같이 갈래.');
+    await tester.pump();
+
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(tester.element(find.byType(Scaffold).first));
+    final entries = container.read(characterLibraryProvider);
+    expect(entries, hasLength(2));
+    final made = entries.last;
+    expect(made.source, CharacterSource.created);
+    expect(made.bundle.character.name, '서이준');
+    expect(made.bundle.events, hasLength(5));
+    final first = made.bundle.firstNodeOf(made.bundle.events.first.id)!;
+    expect(first.characterBubbles.map((b) => b.text), contains('내일 출사 가는데 같이 갈래.'));
+    // 저장하면 새 캐릭터를 만들 수 있게 빈 칸으로 돌아감
+    expect(find.widgetWithText(TextFormField, '서이준'), findsNothing);
   });
 }

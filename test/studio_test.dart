@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -8,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/core/network/claude_studio_client.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
-import 'package:mallangtalk/features/studio/script_workbook.dart';
+import 'package:mallangtalk/features/studio/scenario_draft.dart';
 import 'package:mallangtalk/features/studio/template_scenario.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,19 +16,22 @@ import 'test_helpers.dart';
 
 /// 엑셀 대본 변환, 캐릭터 목록 저장, AI 생성기를 확인하는 테스트입니다.
 void main() {
-  group('엑셀 대본', () {
-    test('윤도하 대본을 엑셀로 내보냈다가 다시 읽으면 내용이 그대로', () {
+  group('만들기 편집기 초안', () {
+    test('윤도하 시나리오를 편집기 초안으로 열었다가 저장하면 플레이 내용이 그대로', () {
       final original = loadSampleBundle();
-      final result = ScriptWorkbook.decode(ScriptWorkbook.encode(original));
-      final back = result.bundle;
+      final back = ScenarioDraft.fromBundle(original).toBundle();
 
       expect(back.character.name, '윤도하');
       expect(back.character.typingSpeedMultiplier, 0.85);
+      expect(back.character.worldSetting, original.character.worldSetting);
       expect(back.character.affectionStages.map((s) => s.stageLabel),
           ['편한 친구', '신경 쓰이는 친구', '친구 이상']);
       expect(back.events.map((e) => e.id), original.events.map((e) => e.id));
-      expect(back.events.where((e) => e.isDaily), hasLength(8));
-      expect(back.events.firstWhere((e) => e.id == 'daily_rain').stageLabel, '편한 친구');
+      expect(back.events.map((e) => e.eventType), original.events.map((e) => e.eventType));
+      expect(back.events.where((e) => e.isDaily), hasLength(6));
+      final goodnight = back.events.firstWhere((e) => e.id == 'special_goodnight');
+      expect(goodnight.realTime!.fromHour, 22);
+      expect(goodnight.realTime!.toHour, 2);
       expect(back.nodes, hasLength(original.nodes.length));
 
       int bubbles(ScenarioBundle b) =>
@@ -40,28 +42,72 @@ void main() {
       expect(bubbles(back), bubbles(original));
       expect(deltas(back), deltas(original));
 
-      // 갈림길: 공연을 거절하면 3단계 '거절' 장면으로 가고 컷씬(2단계)은 못 봄
+      // 갈림길: 공연을 거절하면 컷씬 장면을 건너뜀
       final gig = back.firstNodeOf('evt_gig_tickets')!;
       final decline = gig.choices.firstWhere((c) => c.buttonLabel.contains('거절'));
-      expect(back.nodes[decline.nextNodeId]!.stepOrder, 3);
-      expect(back.events.firstWhere((e) => e.id == 'evt_gig_tickets').cutsceneTriggerStep, 2);
+      final trigger = back.events.firstWhere((e) => e.id == 'evt_gig_tickets').cutsceneTriggerStep;
+      expect(back.nodes[decline.nextNodeId]!.stepOrder, isNot(trigger));
       expect(bestPathClears(back), isTrue);
+      // 단계 대신 점수로 적힌 조건도 그대로
+      for (final e in original.events) {
+        expect(back.affectionRangeOf(back.events.firstWhere((b) => b.id == e.id)).min,
+            original.affectionRangeOf(e).min, reason: e.id);
+      }
+    });
 
-      // 캐릭터 설정 카드(프로필 시트)도 그대로
-      final c = back.character;
-      final o = original.character;
-      expect(c.quote, o.quote);
-      expect(c.userRole, o.userRole);
-      expect(c.secret, o.secret);
-      expect(c.themeColor, '#6B8FD6');
-      expect(c.profileFields.map((f) => '${f.label}=${f.value}/${f.isSecret}'),
-          o.profileFields.map((f) => '${f.label}=${f.value}/${f.isSecret}'));
-      expect(c.profileFields.last.isSecret, isTrue);
-      expect(c.traits.map((t) => '${t.left}|${t.right}|${t.percent}'),
-          o.traits.map((t) => '${t.left}|${t.right}|${t.percent}'));
-      expect(c.sampleQuotes.map((q) => q.body), o.sampleQuotes.map((q) => q.body));
-      expect(c.extraCast.map((e) => '${e.name}/${e.role}/${e.speech}'),
-          o.extraCast.map((e) => '${e.name}/${e.role}/${e.speech}'));
+    test('빈 초안에서 장면·선택지를 직접 이어 만들면 플레이할 수 있는 시나리오가 됨', () {
+      final d = ScenarioDraft.blank()..name = '한결';
+      expect(d.problems(), isNotEmpty); // 대사가 비어 있음
+      final event = d.events.single
+        ..title = '첫 라떼'
+        ..cutscene = '창가 자리의 라떼';
+      final second = SceneDraft(lines: [LineDraft(text: '{이름} 또 왔네요')]);
+      event.scenes.first.lines.first.text = '왔어요?';
+      event.scenes.first.choices.add(ChoiceDraft(label: '인사하기', messages: '안녕하세요\n오늘도 라떼요', affection: 5, next: second));
+      event.scenes.add(second..cutsceneHere = true);
+      d.events.add(EventDraft(id: d.newEventId(), kind: DraftKind.ending, title: '마감', scenes: [
+        SceneDraft(lines: [LineDraft(text: '내일도 와요')]),
+      ]));
+      expect(d.problems(), isEmpty);
+
+      final bundle = d.toBundle();
+      final first = bundle.firstNodeOf(event.id)!;
+      expect(first.choices.single.userBubbles.map((b) => b.text), ['안녕하세요', '오늘도 라떼요']);
+      expect(bundle.nodes[first.choices.single.nextNodeId]!.characterBubbles.single.text, '{이름} 또 왔네요');
+      expect(bundle.events.first.cutsceneTriggerStep, 2);
+      expect(bundle.events.last.isEnding, isTrue);
+      expect(bestPathClears(bundle), isTrue);
+
+      // 장면을 지우면 그 장면으로 가던 선택지는 '대화 끝'이 됨
+      event.scenes.remove(second);
+      for (final c in event.scenes.first.choices) {
+        if (c.next == second) c.next = null;
+      }
+      expect(d.toBundle().firstNodeOf(event.id)!.choices.single.nextNodeId, isNull);
+    });
+
+    test('저장 전에 고칠 곳을 알려 줌', () {
+      final d = ScenarioDraft.blank();
+      d.stages.first.start = 5;
+      d.events.single.kind = DraftKind.special;
+      d.events.single.date = '크리스마스';
+      final problems = d.problems().join('\n');
+      expect(problems, contains('[캐릭터] 이름'));
+      expect(problems, contains('0점부터'));
+      expect(problems, contains('호감도 이벤트를 하나 이상'));
+      expect(problems, contains('12-25처럼'));
+    });
+
+    test('특별 이벤트 시간 구간은 자정을 넘겨도 맞게 판단', () {
+      const night = RealTimeWindow(fromHour: 22, toHour: 2);
+      expect(night.contains(DateTime(2026, 1, 1, 23)), isTrue);
+      expect(night.contains(DateTime(2026, 1, 1, 1)), isTrue);
+      expect(night.contains(DateTime(2026, 1, 1, 2)), isFalse);
+      expect(night.contains(DateTime(2026, 1, 1, 15)), isFalse);
+      const xmas = RealTimeWindow(date: '12-25');
+      expect(xmas.contains(DateTime(2026, 12, 25, 9)), isTrue);
+      expect(xmas.contains(DateTime(2026, 12, 24, 9)), isFalse);
+      expect(night.label, '밤 10시~새벽 2시');
     });
 
     test('{이름} 뒤 조사는 별명 받침에 맞게 바뀜', () {
@@ -74,65 +120,14 @@ void main() {
       expect(fill('{이름}. 그리고 {이름}', 'Lia'), 'Lia. 그리고 Lia');
     });
 
-    test('AI에게 넘기는 설정에는 비밀과 유저 설정까지 들어감', () {
+    test('AI에게 넘기는 설정에는 세계관·비밀·유저 설정까지 들어감', () {
       final sheet = loadSampleBundle().character.aiCharacterSheet;
-      expect(sheet, contains('경영학과'));
+      expect(sheet, contains('새벽녘 라디오'));
+      expect(sheet, contains('세계관: 지금의 서울'));
       expect(sheet, contains('비밀(유저는 아직 모름'));
       expect(sheet, contains('유저 설정: {이름} · 1년 전'));
       expect(sheet, contains('준혁 (도하의 룸메이트'));
       expect(sheet, contains('진짜 마음 처음 팀플 하던 날부터 좋아했음(비밀)'));
-    });
-
-    test('템플릿(예시 캐릭터)은 바로 올려도 끝까지 플레이할 수 있음', () {
-      final result = ScriptWorkbook.decode(ScriptWorkbook.encode(templateScenario()));
-      expect(result.bundle.character.name, '서이준');
-      expect(result.bundle.events.where((e) => e.isDaily), hasLength(2));
-      expect(result.bundle.events.where((e) => e.isEnding), hasLength(1));
-      expect(result.warnings, isEmpty);
-      expect(bestPathClears(result.bundle), isTrue);
-      // 사진만 있는 말풍선, 이름 붙인 장면(2-거절)도 그대로
-      final film = result.bundle.firstNodeOf('daily_film')!;
-      expect(film.characterBubbles.last.photoLabel, contains('필름 사진'));
-      expect(result.bundle.nodes.containsKey('evt_photo_walk_2-거절'), isTrue);
-    });
-
-    test('잘못 쓴 곳은 시트 이름과 줄 번호로 알려줌', () {
-      final broken = ScenarioBundle(
-        character: templateScenario().character,
-        events: [
-          ...templateScenario().events.map((e) => e.id == 'evt_rainy_cafe'
-              ? ScenarioEventModel(
-                  id: e.id,
-                  characterId: e.characterId,
-                  chapterOrder: e.chapterOrder,
-                  eventType: e.eventType,
-                  title: e.title,
-                  stageLabel: '없는 단계',
-                )
-              : e),
-        ],
-        nodes: templateScenario().nodes,
-      );
-      expect(
-        () => ScriptWorkbook.decode(ScriptWorkbook.encode(broken)),
-        throwsA(isA<ScriptWorkbookException>().having(
-          (e) => e.errors.join(),
-          'errors',
-          allOf(contains('[이벤트] 4번째 줄'), contains('없는 단계')),
-        )),
-      );
-      expect(
-        () => ScriptWorkbook.decode(Uint8List.fromList(utf8.encode('엑셀 아님'))),
-        throwsA(isA<ScriptWorkbookException>()),
-      );
-    });
-
-    test('저장소에 템플릿 파일이 최신 내용으로 들어 있음', () {
-      final file = File('templates/mallangtalk_script_template.xlsx');
-      expect(file.existsSync(), isTrue, reason: 'tool/make_template.dart로 만들어 둬야 함');
-      final result = ScriptWorkbook.decode(file.readAsBytesSync());
-      expect(result.bundle.character.name, templateScenario().character.name);
-      expect(result.bundle.nodes.length, templateScenario().nodes.length);
     });
   });
 
@@ -189,27 +184,33 @@ void main() {
         apiKey: 'sk-ant-xyz',
         model: 'claude-sonnet-5-5',
         brief: const StudioBrief(
-          name: '한결',
-          statusMessage: '바리스타',
-          personality: '무뚝뚝하지만 다정한 카페 사장. 말끝을 흐린다.',
-          relationship: '단골 카페 사장님',
-          secret: '사실 카페를 접으려다 너 때문에 버티는 중',
-          typingSpeedMultiplier: 1.3,
-          stages: [
-            AffectionStage(minScore: 0, maxScore: 29, stageLabel: '손님'),
-            AffectionStage(minScore: 30, maxScore: 100, stageLabel: '단골'),
-          ],
+          character: CharacterModel(
+            id: 'draft',
+            creatorId: 'me',
+            name: '한결',
+            statusMessage: '바리스타',
+            avatarUrl: '',
+            worldviewPrompt: '무뚝뚝하지만 다정한 카페 사장. 말끝을 흐린다.',
+            userRole: '단골 카페 사장님',
+            secret: '사실 카페를 접으려다 너 때문에 버티는 중',
+            typingSpeedMultiplier: 1.3,
+            affectionStages: [
+              AffectionStage(minScore: 0, maxScore: 29, stageLabel: '손님'),
+              AffectionStage(minScore: 30, maxScore: 100, stageLabel: '단골'),
+            ],
+          ),
           eventsPerStage: 1,
           dailiesPerStage: 1,
+          specials: 1,
         ),
         onProgress: (message, done, total) => progress.add('$done/$total'),
       );
 
-      expect(adapter.calls, 1 + 5); // 목차 1번 + 대화 5개
+      expect(adapter.calls, 1 + 6); // 목차 1번 + 대화 6개
       expect(adapter.bodies.first['output_config']['format']['schema']['properties']['talks']
           ['items']['properties']['stage']['enum'], ['손님', '단골']);
       expect(adapter.bodies.first['messages'][0]['content'], contains('단골 카페 사장님'));
-      expect(progress.last, '6/6');
+      expect(progress.last, '7/7');
 
       expect(bundle.character.name, '한결');
       expect(bundle.character.typingSpeedMultiplier, 1.3);
@@ -226,8 +227,15 @@ void main() {
       expect(adapter.bodies[1]['messages'][0]['content'], allOf(contains('…오늘도 그거죠?'), contains('버티는 중')));
       expect(bundle.events.map((e) => e.eventType), [
         ScenarioEventType.autoStory, ScenarioEventType.daily,
-        ScenarioEventType.autoStory, ScenarioEventType.daily, ScenarioEventType.ending,
+        ScenarioEventType.autoStory, ScenarioEventType.daily, ScenarioEventType.special,
+        ScenarioEventType.ending,
       ]);
+      final special = bundle.events[4];
+      expect(special.realTime!.fromHour, 23);
+      expect(special.timeNotice, isNull); // 특별 이벤트는 장면 전환 문구 없이 바로
+      expect(bundle.events.first.timeNotice, '다음 날');
+      expect(bundle.character.worldSetting, '골목 끝 작은 카페');
+      expect(bundle.character.id, isNot('draft'));
       expect(bundle.events[2].stageLabel, '단골');
       expect(bundle.events.first.cutsceneTriggerStep, 2);
       expect(bundle.events[1].cutsceneTriggerStep, isNull); // 일상 대화엔 컷씬 없음
@@ -257,6 +265,7 @@ class _ScriptedAdapter implements HttpClientAdapter {
         ? {
             'tagline': '말없이 라떼를 내미는 사장님',
             'tags': ['카페', '무뚝뚝'],
+            'world_setting': '골목 끝 작은 카페',
             'quote': '…오늘도 그거죠?',
             'profile_fields': [
               {'label': '나이', 'value': '29살'},
@@ -273,6 +282,7 @@ class _ScriptedAdapter implements HttpClientAdapter {
               _talk('daily', '손님', '비 오는 오후', ''),
               _talk('event', '단골', '마감 후', ''),
               _talk('daily', '단골', '새 원두', ''),
+              {..._talk('special', '단골', '마감 후 새벽 톡', ''), 'from_hour': 23, 'to_hour': 3},
               _talk('ending', '단골', '간판 불 끄고', ''),
             ],
           }
@@ -317,9 +327,11 @@ class _ScriptedAdapter implements HttpClientAdapter {
         'kind': kind,
         'stage': stage,
         'title': title,
-        'time_notice': '화요일 오후 3:00',
+        'time_notice': '다음 날',
         'synopsis': '$title 이야기',
         'cutscene': cutscene,
+        'from_hour': 0,
+        'to_hour': 0,
       };
 
   @override

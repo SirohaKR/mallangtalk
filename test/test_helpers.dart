@@ -34,6 +34,9 @@ class BootGate extends ConsumerWidget {
   }
 }
 
+/// 테스트 시각: 오후 3시 (밤·새벽에만 오는 특별 이벤트가 끼어들지 않게)
+DateTime testNow() => DateTime(2026, 10, 22, 15);
+
 /// 윤도하 대화방을 연 앱 (새 ProviderScope = 새로고침한 것과 같음)
 Future<ProviderContainer> openDohaChat(
   WidgetTester tester, {
@@ -47,6 +50,7 @@ Future<ProviderContainer> openDohaChat(
       overrides: [
         builtinBundlesProvider.overrideWith((ref) async => [bundle]),
         sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
         ...extra,
       ],
       child: MaterialApp(theme: AppTheme.lightTheme, home: const BootGate()),

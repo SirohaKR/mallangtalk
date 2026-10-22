@@ -1,6 +1,6 @@
 import '../../shared/models/mallangtalk_models.dart';
 
-/// [초보자 노트] '템플릿 받기'로 내려받는 엑셀에 미리 채워 두는 예시 캐릭터입니다.
+/// [초보자 노트] 받아오기 갤러리와 만들기 화면의 '예시 불러오기'에 쓰는 예시 캐릭터입니다.
 /// 이벤트·일상 대화·갈림길·컷씬·엔딩이 한 번씩 다 들어 있어서 보고 따라 쓰기 좋게 만들었어요.
 ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
       'character': {
@@ -10,8 +10,9 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
         'status_message': '사진 동아리 / 필름 카메라',
         'tagline': '말수 적은 사진 동아리 선배가 자꾸 출사에 부른다',
         'tags': ['선배', '무뚝뚝', '필름카메라'],
-        'worldview_prompt': '서이준, 25살, 사진 동아리 선배. 말수가 적고 문장이 짧다. 마침표를 꼭 찍는다. '
-            '필름 카메라로 골목 사진 찍는 게 취미. 칭찬을 받으면 말을 돌린다.',
+        'worldview_prompt': '사진 동아리의 말수 적은 선배. 문장이 짧고 마침표를 꼭 찍는다. '
+            '필름 카메라로 골목 사진 찍는 게 취미이고, 칭찬을 받으면 말을 돌린다.',
+        'world_setting': '지금의 서울, 대학 사진 동아리. 주말마다 출사를 나가고 동아리방 암실에서 필름을 현상하는 가을 학기.',
         'quote': '찍을 거 없으면 너라도 찍지 뭐.',
         'profile_fields': [
           {'label': '나이', 'value': '25살'},
@@ -48,7 +49,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
           'chapter_order': 1,
           'event_type': 'custom',
           'title': '출사 같이 갈래',
-          'time_notice': '토요일 오전 11:02',
+          'time_notice': '어느 토요일 오전',
           'stage': '어색한 선후배',
           'cutscene_title': '골목 담벼락 앞에서 필름 카메라를 들어 보이는 이준',
           'cutscene_trigger_step': 2,
@@ -59,7 +60,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
           'chapter_order': 2,
           'event_type': 'daily',
           'title': '필름 현상',
-          'time_notice': '월요일 저녁 7:40',
+          'time_notice': '며칠 뒤 저녁',
           'stage': '어색한 선후배',
         },
         {
@@ -68,7 +69,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
           'chapter_order': 3,
           'event_type': 'custom',
           'title': '비 오는 날 카페',
-          'time_notice': '목요일 오후 4:15',
+          'time_notice': '비 오는 오후',
           'stage': '편한 선배',
         },
         {
@@ -77,7 +78,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
           'chapter_order': 4,
           'event_type': 'daily',
           'title': '밤 산책 사진',
-          'time_notice': '금요일 밤 11:20',
+          'time_notice': '그 주 금요일 밤',
           'stage': '편한 선배',
         },
         {
@@ -86,7 +87,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
           'chapter_order': 99,
           'event_type': 'ending',
           'title': '네 사진',
-          'time_notice': '일요일 저녁 6:30',
+          'time_notice': '일요일 저녁',
         },
       ],
       'script_nodes': [

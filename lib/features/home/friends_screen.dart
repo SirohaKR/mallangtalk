@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/character_sheet_view.dart';
@@ -13,8 +12,6 @@ import '../chat/chat_notifier.dart';
 import '../chat/start_chat.dart';
 import '../library/character_library.dart';
 import '../settings/user_profile.dart';
-import '../studio/character_import.dart';
-import '../studio/script_workbook.dart';
 import '../../shared/utils/korean.dart';
 
 /// [초보자 노트] '내 캐릭터' 탭: 받아오거나 만든 캐릭터 목록. 누르면 프로필이 뜨고 거기서 1:1 채팅을 시작합니다.
@@ -111,7 +108,6 @@ class _CharacterProfileSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bundle = entry.bundle;
     final c = bundle.character;
-    final summary = ScenarioSummary.of(bundle);
     final messenger = ScaffoldMessenger.of(parentContext);
     final router = GoRouter.of(parentContext);
 
@@ -131,14 +127,6 @@ class _CharacterProfileSheet extends ConsumerWidget {
               const SizedBox(height: 4),
               Text(c.statusMessage, textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
             ],
-            const SizedBox(height: AppSpacing.md),
-            Text(summary.line, textAlign: TextAlign.center, style: AppTextStyles.messageTime.copyWith(height: 1.4)),
-            const SizedBox(height: 6),
-            Text(
-              '타자 스타일: ${TypingStyle.closest(c.typingSpeedMultiplier).label}',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.messageTime,
-            ),
             const SizedBox(height: AppSpacing.lg),
             ElevatedButton.icon(
               icon: const Icon(Icons.chat_bubble_rounded, size: 18),
@@ -191,20 +179,19 @@ class _CharacterProfileSheet extends ConsumerWidget {
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.table_chart_outlined, size: 18),
-                    label: const Text('엑셀로 내보내기'),
-                    onPressed: () async {
-                      await FileIO.save(
-                        fileName: '${FileIO.safeName(c.name)}_대본.xlsx',
-                        bytes: ScriptWorkbook.encode(bundle),
-                        mimeType: FileIO.xlsxMime,
-                      );
-                    },
+                if (entry.source != CharacterSource.builtin) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('고치기'),
+                      onPressed: () {
+                        close();
+                        router.push('/edit/${c.id}');
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: AppSpacing.sm),
+                ],
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.ios_share_rounded, size: 18),

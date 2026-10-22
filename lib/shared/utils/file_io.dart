@@ -33,7 +33,6 @@ class FileIO {
     await FilePicker.saveFile(fileName: fileName, bytes: bytes, mimeType: mimeType);
   }
 
-  static const xlsxMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   static const jsonMime = 'application/json';
 
   /// 파일 이름에 못 쓰는 글자를 빼고 정리

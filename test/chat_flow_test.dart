@@ -18,7 +18,7 @@ void main() {
     ChatRoomState state() => container.read(chatRoomProvider(dohaId));
 
     expect(state().isByokAiModeEnabled, isFalse);
-    expect(find.text('토요일 오전 10:24'), findsOneWidget);
+    expect(find.text('어느 토요일 아침'), findsOneWidget);
 
     await choose(tester, '지금 바로 같이 찾으러 가겠다고 하기');
     // 2단계 대사가 끝나면 컷씬이 팝업 없이 앨범에 바로 들어감
@@ -26,7 +26,7 @@ void main() {
     expect(find.textContaining('화면을 탭하면 계속'), findsNothing);
     await choose(tester, '다음엔 직접 두부 보러 가겠다고 하기');
 
-    expect(find.text('화요일 오전 6:40'), findsOneWidget);
+    expect(find.text('다음 날 새벽'), findsOneWidget);
     await choose(tester, '다음엔 나도 같이 뛰자고 하기');
 
     await choose(tester, '좋다고, 무슨 밴드냐고 묻기');
@@ -43,7 +43,7 @@ void main() {
     expect(state().unlockedCutsceneEventIds, contains('evt_first_year'));
     await choose(tester, '지금 간다고 하기');
 
-    expect(find.text('그날 밤 8:10'), findsOneWidget);
+    expect(find.text('그날 늦은 밤'), findsOneWidget);
     await choose(tester, '좋다고 대답하기');
     expect(state().progress, StoryProgress.cleared);
     expect(state().unlockedCutsceneEventIds, hasLength(4));
@@ -69,7 +69,7 @@ void main() {
 
     expect(state().progress, StoryProgress.missedCutscenes);
     expect(container.read(chatRoomProvider(dohaId).notifier).missedCutsceneCount, 1);
-    expect(find.text('그날 밤 8:10'), findsNothing);
+    expect(find.text('그날 늦은 밤'), findsNothing);
 
     await tester.tap(find.text('처음부터 다시 하기'));
     await settle(tester);
@@ -122,14 +122,14 @@ void main() {
     await settle(tester);
 
     expect(state().currentEventId, 'daily_lunch_menu');
-    expect(find.text('월요일 오후 12:10'), findsOneWidget);
+    expect(find.text('며칠 뒤 점심'), findsOneWidget);
     expect(find.widgetWithText(ElevatedButton, '돈까스라고 바로 답하기'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(ElevatedButton, '돈까스라고 바로 답하기'));
     await settle(tester);
     // 일상 대화가 끝나면 다음 호감도 이벤트로
     expect(state().completedEventIds, ['evt_dubu_missing', 'daily_lunch_menu']);
-    expect(find.text('화요일 오전 6:40'), findsOneWidget);
+    expect(find.text('다음 날 새벽'), findsOneWidget);
   });
 
   testWidgets('자유대화에서 엔터로 보내도 입력창에 커서가 남아 연달아 칠 수 있음', (tester) async {
@@ -155,5 +155,38 @@ void main() {
     expect(sent, containsAllInOrder(['첫 번째', '두 번째']));
     expect(tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus, isTrue);
     await settle(tester);
+  });
+
+  testWidgets('특별 이벤트: 그 시간에 대화방에 있으면 한 번만 오고, 다시 해도 또 오지 않음', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    final container = await openDohaChat(
+      tester,
+      extra: [clockProvider.overrideWithValue(() => DateTime(2026, 10, 23, 1, 30))],
+    );
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+
+    // 첫 대화는 시간과 상관없이 첫 이벤트부터
+    expect(state().currentEventId, 'evt_dubu_missing');
+    await tester.tap(find.widgetWithText(ElevatedButton, '지금 바로 같이 찾으러 가겠다고 하기'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '다음엔 직접 두부 보러 가겠다고 하기'));
+    await settle(tester);
+
+    // 새벽 1시 반 → 새벽에만 오는 톡이 먼저 (장면 전환 문구 없이)
+    expect(state().currentEventId, 'special_playlist');
+    expect(find.text('안 자?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, '내일 들어본다고 하기'));
+    await settle(tester);
+    // 끝나면 원래 흐름(일상 대화)으로, 특별 이벤트는 공략 목록에 안 들어감
+    expect(state().currentEventId, 'daily_lunch_menu');
+    expect(state().completedEventIds, ['evt_dubu_missing']);
+
+    container.read(chatRoomProvider(dohaId).notifier).restart();
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '지금 바로 같이 찾으러 가겠다고 하기'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '다음엔 직접 두부 보러 가겠다고 하기'));
+    await settle(tester);
+    expect(state().currentEventId, 'daily_lunch_menu');
   });
 }

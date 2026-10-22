@@ -9,6 +9,9 @@ import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
 
+/// 지금 시각 (테스트에서 특별 이벤트 시간을 바꿔 보려고 따로 둠)
+final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
 /// 공략 진행 상황 (대화방 하단에 '다시 하기' 버튼을 띄울지 판단하는 용도)
 enum StoryProgress {
   playing, // 이벤트 진행 중
@@ -155,9 +158,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         progress: saved.cleared ? StoryProgress.cleared : null,
         seenMessageCount: saved.messages.length,
       );
+      final runId = _runId;
       if (!saved.cleared) {
-        final runId = _runId;
         Future.microtask(() => _advance(runId));
+      } else {
+        // 공략을 끝낸 뒤에도 특별한 시간에 들어오면 그 시간 톡은 옴
+        Future.microtask(() => _playSpecialIfDue(runId));
       }
       return restored;
     }
@@ -244,6 +250,33 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         event.requiredFlags.every(state.acquiredFlags.contains);
   }
 
+  /// 지금 실제 시각에 열려 있고 아직 한 번도 못 본 특별 이벤트
+  ScenarioEventModel? _dueSpecialEvent() {
+    if (state.completedEventIds.isEmpty) return null; // 첫 대화는 늘 첫 이벤트부터
+    final seen = _store.loadSeenSpecials(_bundle.character.id);
+    final now = ref.read(clockProvider)();
+    for (final event in _bundle.events) {
+      if (!event.isSpecial || seen.contains(event.id)) continue;
+      if (event.realTime == null || !event.realTime!.contains(now)) continue;
+      if (_isUnlocked(event)) return event;
+    }
+    return null;
+  }
+
+  /// 공략 완료 후 등 대화가 멈춰 있을 때 특별 이벤트 시간이면 재생
+  Future<void> _playSpecialIfDue(int runId) async {
+    if (runId != _runId || state.currentChoices.isNotEmpty) return;
+    final special = _dueSpecialEvent();
+    if (special != null) await _playEvent(special, runId);
+  }
+
+  /// 대화방에 들어올 때: 이야기가 멈춰 있는 상태(공략 완료·막힘)면 특별 이벤트 시간인지 확인
+  void checkSpecialEvents() {
+    if (state.isCharacterTyping || state.currentChoices.isNotEmpty) return;
+    if (state.progress == StoryProgress.playing) return;
+    _playSpecialIfDue(_runId);
+  }
+
   /// 방금 끝낸 게 호감도 이벤트였는지 (그 다음엔 일상 대화를 하나 끼워 넣음)
   bool get _justFinishedStoryEvent {
     final lastId = state.completedEventIds.lastOrNull;
@@ -297,6 +330,15 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 이벤트 하나를 끝내고 다음 이벤트로 넘어가거나, 공략 완료/막힘을 판정합니다.
   Future<void> _finishEvent(ScenarioEventModel event, int runId) async {
+    if (event.isSpecial) {
+      final id = _bundle.character.id;
+      _store.saveSeenSpecials(id, {..._store.loadSeenSpecials(id), event.id}.toList());
+      if (state.progress != StoryProgress.playing) return; // 공략 완료·막힘 뒤에 온 톡이면 여기서 끝
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (runId != _runId) return;
+      await _advance(runId);
+      return;
+    }
     if (event.isEnding) {
       _addSystemNotice('${state.character.name} 공략 완료');
       state = state.copyWith(progress: StoryProgress.cleared);
@@ -317,6 +359,13 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 순서: 호감도 이벤트가 끝나면 지금 단계의 일상 대화 하나 → 다음 호감도 이벤트.
   /// 다음 이벤트 조건이 안 맞으면 남은 일상 대화로 호감도를 더 쌓을 기회를 줍니다.
   Future<void> _advance(int runId) async {
+    // 실제 시간에 맞춰 오는 특별한 톡이 있으면 먼저
+    final special = _dueSpecialEvent();
+    if (special != null) {
+      await _playEvent(special, runId);
+      return;
+    }
+
     if (_justFinishedStoryEvent) {
       final daily = _nextDailyTalk();
       if (daily != null) {

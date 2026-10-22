@@ -22,14 +22,14 @@ void main() {
     await openChat(tester);
     await choose(tester, '지금 바로 같이 찾으러 가겠다고 하기');
     await choose(tester, '다음엔 직접 두부 보러 가겠다고 하기');
-    expect(find.text('화요일 오전 6:40'), findsOneWidget);
+    expect(find.text('다음 날 새벽'), findsOneWidget);
 
     final container = await openChat(tester);
     final state = container.read(chatRoomProvider(dohaId));
     expect(state.completedEventIds, ['evt_dubu_missing', 'daily_lunch_menu']);
     expect(state.unlockedCutsceneEventIds, ['evt_dubu_missing']);
     expect(state.internalAffection, 11);
-    expect(state.messages.first.text, '토요일 오전 10:24'); // 지난 대화 기록 복원
+    expect(state.messages.first.text, '어느 토요일 아침'); // 지난 대화 기록 복원
     expect(find.widgetWithText(ElevatedButton, '다음엔 나도 같이 뛰자고 하기'), findsOneWidget);
   });
 

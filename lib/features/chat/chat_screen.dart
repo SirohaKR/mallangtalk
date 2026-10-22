@@ -58,7 +58,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(chatRoomsProvider.notifier).open(widget.characterId);
-      ref.read(chatRoomProvider(widget.characterId).notifier).markSeen();
+      final notifier = ref.read(chatRoomProvider(widget.characterId).notifier);
+      notifier.markSeen();
+      notifier.checkSpecialEvents(); // 이야기가 멈춰 있어도 특별한 시간이면 톡이 옴
     });
   }
 
