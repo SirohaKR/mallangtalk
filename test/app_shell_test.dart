@@ -211,6 +211,49 @@ void main() {
     expect(prefs.getString('byok_claude_api_key'), 'sk-ant-old-key-123456'); // Claude 키는 그대로
   });
 
+  testWidgets('만들기: 카이엔 설정을 불러오고, 쓰던 초안은 새로 열어도 남아 있음', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    Future<void> openStudio() async {
+      appRouter.go('/add');
+      await tester.pumpWidget(ProviderScope(
+        key: UniqueKey(),
+        overrides: [
+          builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+          sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+          clockProvider.overrideWithValue(testNow),
+        ],
+        child: const MallangTalkApp(),
+      ));
+      await settle(tester);
+      await tester.tap(find.text('만들기'));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await openStudio();
+    await tester.tap(find.byTooltip('더 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('예시: 카이엔 (설정만)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('불러오기'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, '카이엔'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, '카이엔'), '카이엔 루벨리아');
+    await tester.pump(const Duration(seconds: 4)); // 자동 저장
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('studio_draft_v1'), contains('카이엔 루벨리아'));
+
+    // 앱을 새로 띄워도(새 버전·새로고침) 쓰던 초안이 그대로
+    await openStudio();
+    expect(find.widgetWithText(TextFormField, '카이엔 루벨리아'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, '루벨리아 제국 제2황자'), findsOneWidget);
+    appRouter.go('/friends'); // 만들기 화면을 닫아 자동 저장 타이머 정리
+    await settle(tester);
+  });
+
   testWidgets('만들기: 예시를 불러와 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
     SharedPreferences.setMockInitialValues({});
     appRouter.go('/add');

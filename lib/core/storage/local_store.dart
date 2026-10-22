@@ -159,6 +159,10 @@ class LocalStore {
 
   Future<void> clearApiKey(String provider) => _write(_keyKey(provider), null);
 
+  /// 만들기 화면에서 쓰던 새 캐릭터 초안 (새로고침·새 버전이 떠도 이어 쓰게)
+  String? loadStudioDraft() => _getString('studio_draft_v1');
+  Future<void> saveStudioDraft(String json) => _write('studio_draft_v1', json);
+
   /// 내 캐릭터 목록 (받아온·만든 캐릭터의 시나리오 전체를 JSON으로). 처음 실행이면 null
   List<Map<String, dynamic>>? loadLibrary() {
     final raw = _getString(_libraryKey);

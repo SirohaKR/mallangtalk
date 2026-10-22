@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/claude_chat_client.dart';
 import '../../core/network/claude_studio_client.dart';
+import '../../core/storage/local_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -72,13 +74,44 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   @override
   void initState() {
     super.initState();
-    _draft = widget.initial != null ? ScenarioDraft.fromBundle(widget.initial!) : ScenarioDraft.blank();
+    _draft = widget.initial != null ? ScenarioDraft.fromBundle(widget.initial!) : _savedDraft() ?? ScenarioDraft.blank();
+    // 새 캐릭터를 만드는 중이면 몇 초마다 브라우저에 초안을 저장 (새로고침해도 이어 쓰기)
+    if (widget.initial == null) {
+      _autosave = Timer.periodic(const Duration(seconds: 3), (_) => _saveDraftNow());
+    }
   }
 
   @override
   void dispose() {
+    _autosave?.cancel();
+    if (widget.initial == null) _saveDraftNow();
     _tabs.dispose();
     super.dispose();
+  }
+
+  Timer? _autosave;
+  String? _lastSavedDraft;
+
+  ScenarioDraft? _savedDraft() {
+    final raw = ref.read(localStoreProvider).loadStudioDraft();
+    if (raw == null) return null;
+    try {
+      _lastSavedDraft = raw;
+      return ScenarioDraft.fromBundle(ScenarioBundle.fromJson(jsonDecode(raw) as Map<String, dynamic>));
+    } catch (_) {
+      return null; // 형식이 바뀐 옛 초안은 무시
+    }
+  }
+
+  void _saveDraftNow() {
+    try {
+      final json = jsonEncode(_draft.toBundle().toJson());
+      if (json == _lastSavedDraft) return;
+      _lastSavedDraft = json;
+      ref.read(localStoreProvider).saveStudioDraft(json);
+    } catch (_) {
+      // 쓰다 만 초안이라 묶지 못해도 다음 저장 때 다시 시도
+    }
   }
 
   void _toast(String text) =>
@@ -119,6 +152,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       case 'example':
         if (await _confirm('예시 불러오기', '예시 캐릭터 서이준으로 채워요. 지금 적은 내용은 지워져요.', '불러오기')) {
           _replaceDraft(ScenarioDraft.fromBundle(templateScenario())..id = 'char_${DateTime.now().millisecondsSinceEpoch}');
+        }
+      case 'example_kaien':
+        if (await _confirm('카이엔 불러오기', '로판 아카데미 황자님 카이엔의 캐릭터 설정(8쪽)으로 채워요. 호감도 단계부터는 직접 정하면 돼요. 지금 적은 내용은 지워져요.', '불러오기')) {
+          _replaceDraft(ScenarioDraft.fromBundle(kaienScenario()));
         }
       case 'import':
         final file = await FileIO.pick(extensions: ['json']);
@@ -396,6 +433,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'new', child: Text('새로 만들기')),
                     PopupMenuItem(value: 'example', child: Text('예시 캐릭터 불러오기')),
+                    PopupMenuItem(value: 'example_kaien', child: Text('예시: 카이엔 (설정만)')),
                     PopupMenuItem(value: 'import', child: Text('캐릭터 파일(.json) 불러오기')),
                     PopupMenuItem(value: 'export', child: Text('캐릭터 파일로 내보내기')),
                   ],
