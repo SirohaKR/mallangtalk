@@ -102,9 +102,11 @@ class ClaudeStudioClient {
     final nodes = <String, ScriptNodeModel>{};
     final finalEvents = <ScenarioEventModel>[];
     var done = 1;
-    // 너무 많이 동시에 부르면 요청 한도에 걸리니 3개씩
-    for (var start = 0; start < events.length; start += 3) {
-      final batch = events.sublist(start, (start + 3).clamp(0, events.length));
+    // 너무 많이 동시에 부르면 요청 한도에 걸리니 3개씩.
+    // Gemini 무료 등급은 분당 요청·토큰 한도가 작아서 하나씩 차례로 부름
+    final parallel = provider == AiProvider.gemini ? 1 : 3;
+    for (var start = 0; start < events.length; start += parallel) {
+      final batch = events.sublist(start, (start + parallel).clamp(0, events.length));
       final results = await Future.wait([
         for (final event in batch)
           writeScript(provider: provider, apiKey: apiKey, relay: relay, model: model, character: character, event: event, outline: events),
