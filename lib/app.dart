@@ -6,7 +6,7 @@ import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_text_styles.dart';
 import 'core/theme/app_theme.dart';
-import 'features/chat/chat_notifier.dart';
+import 'features/library/character_library.dart';
 
 class MallangTalkApp extends StatelessWidget {
   const MallangTalkApp({super.key});
@@ -23,7 +23,7 @@ class MallangTalkApp extends StatelessWidget {
   }
 }
 
-/// [초보자 노트] 시나리오 파일과 브라우저 저장소를 다 불러올 때까지 로딩 화면을 보여주는 문지기입니다.
+/// [초보자 노트] 기본 캐릭터 파일과 브라우저 저장소를 다 불러올 때까지 로딩 화면을 보여주는 문지기입니다.
 /// 덕분에 어느 화면에서 새로고침해도 데이터가 준비된 뒤에 화면이 그려집니다.
 class _BootGate extends ConsumerWidget {
   const _BootGate({required this.child});
@@ -32,7 +32,7 @@ class _BootGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bundle = ref.watch(scenarioBundleProvider);
+    final bundle = ref.watch(builtinBundlesProvider);
     final prefs = ref.watch(sharedPreferencesProvider);
 
     final error = bundle.error ?? prefs.error;

@@ -6,11 +6,14 @@ import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/cutscene_view.dart';
 import '../chat/chat_notifier.dart';
+import '../library/character_library.dart';
 
 /// [초보자 노트] 지금까지 모은 컷씬(CG)을 모아 보는 앨범 화면입니다.
 /// 아직 못 본 장면은 제목을 가린 채 자물쇠로 보여줘서 "더 모으고 싶게" 만듭니다.
 class AlbumScreen extends ConsumerStatefulWidget {
-  const AlbumScreen({super.key});
+  const AlbumScreen({super.key, required this.characterId});
+
+  final String characterId;
 
   @override
   ConsumerState<AlbumScreen> createState() => _AlbumScreenState();
@@ -21,9 +24,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bundle = ref.watch(scenarioBundleProvider).requireValue;
+    final bundle = ref.watch(characterBundleProvider(widget.characterId));
+    if (bundle == null) {
+      return const Scaffold(body: Center(child: Text('캐릭터를 찾을 수 없어요')));
+    }
     final unlocked = ref.watch(
-      chatRoomProvider.select((s) => s.unlockedCutsceneEventIds),
+      chatRoomProvider(widget.characterId).select((s) => s.unlockedCutsceneEventIds),
     );
     final cutsceneEvents = bundle.events.where((e) => e.hasCutscene).toList();
 

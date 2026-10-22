@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/cutscene_view.dart';
+import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import 'chat_notifier.dart';
 
@@ -14,8 +15,29 @@ import 'chat_notifier.dart';
 /// - 유저나 캐릭터가 찍은 사진이 대화방 말풍선 안에 직접 올라오며, 클릭하면 크게 볼 수 있습니다.
 /// - 내가 단문으로 여러 번 연속해서 보내는 동안에는 캐릭터가 답장하지 않고 기다려 줍니다.
 /// - 상단 버튼으로 앨범(모은 컷씬)과 설정(내 AI 키)으로 이동합니다.
+/// 지운 캐릭터의 주소로 들어오면 안내만 보여주고, 있으면 대화방을 엶
+class ChatRoomPage extends ConsumerWidget {
+  const ChatRoomPage({super.key, required this.characterId});
+
+  final String characterId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final exists = ref.watch(characterBundleProvider(characterId).select((b) => b != null));
+    if (!exists) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: Text('이 캐릭터는 내 캐릭터 목록에 없어요', style: AppTextStyles.systemNotice)),
+      );
+    }
+    return ChatScreen(characterId: characterId);
+  }
+}
+
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, required this.characterId});
+
+  final String characterId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -24,12 +46,33 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  /// 엔터로 보낸 뒤에도 입력창에 커서를 그대로 둬서 연달아 칠 수 있게 함
+  final FocusNode _inputFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // 대화방에 들어오면 채팅방 목록 맨 위로 + 지금까지 온 톡은 읽음
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(chatRoomsProvider.notifier).open(widget.characterId);
+      ref.read(chatRoomProvider(widget.characterId).notifier).markSeen();
+    });
+  }
 
   @override
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
+    _inputFocus.dispose();
     super.dispose();
+  }
+
+  void _send(ChatRoomNotifier notifier) {
+    notifier.sendUserMessage(text: _inputController.text);
+    _inputController.clear();
+    notifier.onUserTypingChanged('');
+    _inputFocus.requestFocus();
   }
 
   void _scrollToBottom() {
@@ -103,21 +146,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final chatState = ref.watch(chatRoomProvider);
-    final notifier = ref.read(chatRoomProvider.notifier);
+    final id = widget.characterId;
+    final chatState = ref.watch(chatRoomProvider(id));
+    final notifier = ref.read(chatRoomProvider(id).notifier);
     final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.hasKey));
 
-    ref.listen<ChatRoomState>(chatRoomProvider, (prev, next) {
+    ref.listen<ChatRoomState>(chatRoomProvider(id), (prev, next) {
       if (prev?.messages.length != next.messages.length ||
           prev?.isCharacterTyping != next.isCharacterTyping ||
           prev?.progress != next.progress) {
         _scrollToBottom();
+      }
+      if (prev?.messages.length != next.messages.length) {
+        // 보고 있는 대화방에 온 톡은 바로 읽음 처리
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) notifier.markSeen();
+        });
       }
     });
 
     return Scaffold(
       backgroundColor: AppColors.chatRoomBackground,
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: '채팅방 목록',
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/chats'),
+        ),
+        titleSpacing: 0,
         title: Row(
           children: [
             CircleAvatar(
@@ -150,13 +206,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         actions: [
           IconButton(
             tooltip: '앨범',
-            onPressed: () => context.go('/album'),
+            onPressed: () => context.push('/chat/$id/album'),
             icon: const Icon(Icons.photo_library_outlined),
-          ),
-          IconButton(
-            tooltip: '설정',
-            onPressed: () => context.go('/settings'),
-            icon: const Icon(Icons.settings_outlined),
           ),
           // [AI 자유대화 ON/OFF] 토글: 켜면 선택지 아래에 직접 입력창이 열림
           Padding(
@@ -280,24 +331,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           Expanded(
                             child: TextField(
                               controller: _inputController,
+                              focusNode: _inputFocus,
+                              autofocus: true,
                               onChanged: notifier.onUserTypingChanged,
+                              textInputAction: TextInputAction.send,
                               decoration: const InputDecoration(
                                 hintText: '짧게 여러 번 끊어서 연속으로 보내보세요...',
                               ),
-                              onSubmitted: (text) {
-                                notifier.sendUserMessage(text: text);
-                                _inputController.clear();
-                              },
+                              // 엔터를 눌러도 키보드·커서가 내려가지 않게 (웹에서 연속 입력)
+                              onEditingComplete: () {},
+                              onSubmitted: (_) => _send(notifier),
                             ),
                           ),
                           const SizedBox(width: 8),
                           IconButton.filled(
-                            onPressed: () {
-                              notifier.sendUserMessage(
-                                text: _inputController.text,
-                              );
-                              _inputController.clear();
-                            },
+                            onPressed: () => _send(notifier),
                             icon: const Icon(Icons.send_rounded),
                           ),
                         ],
@@ -412,9 +460,26 @@ class _MessageBubbleRow extends StatelessWidget {
   }
 }
 
-/// 상대방이 타자를 치고 있을 때 뜨는 점 세 개('···') 말풍선
-class _TypingIndicatorBubble extends StatelessWidget {
+/// 상대방이 타자를 치고 있을 때 뜨는 말풍선 (점 세 개가 차례로 통통 튐)
+class _TypingIndicatorBubble extends StatefulWidget {
   const _TypingIndicatorBubble();
+
+  @override
+  State<_TypingIndicatorBubble> createState() => _TypingIndicatorBubbleState();
+}
+
+class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -422,14 +487,44 @@ class _TypingIndicatorBubble extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: AppColors.partnerBubble,
           borderRadius: BorderRadius.circular(AppSpacing.bubbleRadius),
         ),
-        child: const Text('···', style: AppTextStyles.appBarTitle),
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < 3; i++) ...[
+                if (i > 0) const SizedBox(width: 5),
+                Transform.translate(
+                  offset: Offset(0, -3 * _bounce((_controller.value - i * 0.18) % 1.0)),
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: AppColors.textMuted.withValues(
+                        alpha: 0.45 + 0.55 * _bounce((_controller.value - i * 0.18) % 1.0),
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  /// 0~1 사이에서 앞쪽 40% 동안만 한 번 튀어 오름
+  static double _bounce(double t) {
+    if (t < 0 || t > 0.4) return 0;
+    final x = t / 0.4;
+    return 4 * x * (1 - x);
   }
 }
 

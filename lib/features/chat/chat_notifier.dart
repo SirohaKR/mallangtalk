@@ -1,18 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/services.dart' show rootBundle;
+import 'dart:math';
+import 'package:flutter/widgets.dart' show Characters;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/claude_chat_client.dart';
 import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
+import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
-
-/// [초보자 노트] 샘플 시나리오 JSON 파일을 읽어오는 FutureProvider입니다.
-/// 지금은 앱 안의 assets 파일을 읽지만, 4단계에서 서버가 생기면 이 부분만 API 호출로 바꾸면 됩니다.
-final scenarioBundleProvider = FutureProvider<ScenarioBundle>((ref) async {
-  final raw = await rootBundle.loadString('assets/scenarios/sample_character.json');
-  return ScenarioBundle.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-});
+import '../settings/chat_tempo.dart';
 
 /// 공략 진행 상황 (대화방 하단에 '다시 하기' 버튼을 띄울지 판단하는 용도)
 enum StoryProgress {
@@ -42,6 +37,8 @@ class ChatRoomState {
   /// 지금까지 수집한 컷씬의 이벤트 ID (앨범용, '다시 하기'를 해도 유지됨)
   final List<String> unlockedCutsceneEventIds;
   final StoryProgress progress;
+  /// 내가 대화방에서 마지막으로 본 메시지 개수 (채팅방 목록의 안 읽은 숫자 계산용)
+  final int seenMessageCount;
 
   const ChatRoomState({
     required this.character,
@@ -58,7 +55,22 @@ class ChatRoomState {
     this.activeCutscene,
     this.unlockedCutsceneEventIds = const [],
     this.progress = StoryProgress.playing,
+    this.seenMessageCount = 0,
   });
+
+  /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
+  int get unreadCount => messages
+      .skip(seenMessageCount)
+      .where((m) => !m.isUser && !m.isSystem)
+      .length;
+
+  /// 채팅방 목록에 보여줄 마지막 말풍선
+  ChatMessageLog? get lastBubble {
+    for (final m in messages.reversed) {
+      if (!m.isSystem) return m;
+    }
+    return messages.lastOrNull;
+  }
 
   ChatRoomState copyWith({
     int? internalAffection,
@@ -76,6 +88,7 @@ class ChatRoomState {
     bool clearActiveCutscene = false,
     List<String>? unlockedCutsceneEventIds,
     StoryProgress? progress,
+    int? seenMessageCount,
   }) {
     return ChatRoomState(
       character: character,
@@ -96,6 +109,7 @@ class ChatRoomState {
       unlockedCutsceneEventIds:
           unlockedCutsceneEventIds ?? this.unlockedCutsceneEventIds,
       progress: progress ?? this.progress,
+      seenMessageCount: seenMessageCount ?? this.seenMessageCount,
     );
   }
 }
@@ -107,9 +121,10 @@ class ChatRoomState {
 ///    캐릭터가 중간에 끼어들지 않고 내가 말을 다 끝낼 때까지 기다렸다가 한꺼번에 '1'이 사라지며 답장합니다!
 /// 4. 이벤트 하나가 끝나면 호감도·플래그 조건을 보고 다음 이벤트로 넘어가고,
 ///    지정된 단계에서 컷씬(CG)을 띄우며, 조건을 다 채우면 엔딩과 함께 공략 완료를 알립니다.
-class ChatRoomNotifier extends Notifier<ChatRoomState> {
+class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   late ScenarioBundle _bundle;
   late LocalStore _store;
+  final _random = Random();
 
   /// 내가 연속으로 톡을 보낼 때 상대방 답장을 보류하는 디바운스 타이머
   Timer? _userBurstReplyTimer;
@@ -123,14 +138,19 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
   int _runId = 0;
 
   @override
-  ChatRoomState build() {
+  ChatRoomState build(String characterId) {
     ref.onDispose(() {
       _userBurstReplyTimer?.cancel();
+      _runId++; // 대화방이 닫히면(캐릭터 삭제 등) 돌던 연출을 멈춤
     });
 
-    _bundle = ref.watch(scenarioBundleProvider).requireValue;
+    // 캐릭터 목록이 바뀔 때마다 대화가 처음부터 다시 시작되지 않도록 watch 대신 read
+    final bundle = ref.read(characterBundleProvider(characterId));
+    if (bundle == null) {
+      throw StateError('캐릭터를 찾을 수 없어요: $characterId');
+    }
+    _bundle = bundle;
     _store = ref.watch(localStoreProvider);
-    final characterId = _bundle.character.id;
     final album = _store.loadAlbum(characterId);
     final saved = _store.loadRun(characterId);
 
@@ -142,11 +162,16 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
         completedEventIds: saved.completedEventIds,
         messages: saved.messages,
         progress: saved.cleared ? StoryProgress.cleared : null,
+        seenMessageCount: saved.messages.length,
       );
-      if (!saved.cleared) Future.microtask(() => _advance(_runId));
+      if (!saved.cleared) {
+        final runId = _runId;
+        Future.microtask(() => _advance(runId));
+      }
       return restored;
     }
-    Future.microtask(() => _advance(_runId));
+    final runId = _runId;
+    Future.microtask(() => _advance(runId));
     return _freshRunState(unlockedCutscenes: album);
   }
 
@@ -198,9 +223,29 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
     return null;
   }
 
+  /// 지금 호감도 단계에서 나올 수 있는, 이번 회차에 아직 안 본 일상 대화
+  ScenarioEventModel? _nextDailyTalk() {
+    for (final event in _bundle.events) {
+      if (!event.isDaily) continue;
+      if (state.completedEventIds.contains(event.id)) continue;
+      if (_isUnlocked(event)) return event;
+    }
+    return null;
+  }
+
   bool _isUnlocked(ScenarioEventModel event) {
-    return state.internalAffection >= event.requiredAffection &&
+    final range = _bundle.affectionRangeOf(event);
+    final score = state.internalAffection;
+    return score >= range.min &&
+        (range.max == null || score <= range.max!) &&
         event.requiredFlags.every(state.acquiredFlags.contains);
+  }
+
+  /// 방금 끝낸 게 호감도 이벤트였는지 (그 다음엔 일상 대화를 하나 끼워 넣음)
+  bool get _justFinishedStoryEvent {
+    final lastId = state.completedEventIds.lastOrNull;
+    if (lastId == null) return false;
+    return _eventById(lastId)?.isAffectionEvent ?? false;
   }
 
   Future<void> _playEvent(ScenarioEventModel event, int runId) async {
@@ -221,28 +266,7 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
   /// 노드 하나의 캐릭터 대사를 재생하고, 선택지를 띄우거나(선택지가 없으면) 이벤트를 끝냅니다.
   Future<void> _playNode(ScriptNodeModel node, int runId) async {
     for (final bubble in node.characterBubbles) {
-      state = state.copyWith(isCharacterTyping: true);
-      await Future.delayed(
-        _calculateRealisticTypingDelay(bubble.text, bubble.speedFactor),
-      );
-      if (runId != _runId) return;
-
-      final reply = ChatMessageLog(
-        id: 'char_${DateTime.now().microsecondsSinceEpoch}',
-        isUser: false,
-        speakerCharacterId: node.speakerCharacterId,
-        speakerName: state.character.name,
-        text: bubble.text,
-        photoLabel: bubble.photoLabel,
-        timestamp: DateTime.now(),
-      );
-      state = state.copyWith(
-        isCharacterTyping: false,
-        messages: [...state.messages, reply],
-      );
-      // 다음 말풍선을 치기 전 잠깐의 자연스러운 호흡 간격
-      await Future.delayed(const Duration(milliseconds: 260));
-      if (runId != _runId) return;
+      if (!await _typeOut(bubble, () => runId == _runId)) return;
     }
 
     state = state.copyWith(currentStepOrder: node.stepOrder);
@@ -300,10 +324,26 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
   }
 
   /// 다음에 열 수 있는 이벤트를 재생하거나, 더 없으면 공략 완료/놓친 컷씬/막힘을 판정합니다.
+  /// 순서: 호감도 이벤트가 끝나면 지금 단계의 일상 대화 하나 → 다음 호감도 이벤트.
+  /// 다음 이벤트 조건이 안 맞으면 남은 일상 대화로 호감도를 더 쌓을 기회를 줍니다.
   Future<void> _advance(int runId) async {
+    if (_justFinishedStoryEvent) {
+      final daily = _nextDailyTalk();
+      if (daily != null) {
+        await _playEvent(daily, runId);
+        return;
+      }
+    }
+
     final next = _nextPlayableEvent();
     if (next != null) {
       await _playEvent(next, runId);
+      return;
+    }
+
+    final extraDaily = _nextDailyTalk();
+    if (extraDaily != null) {
+      await _playEvent(extraDaily, runId);
       return;
     }
 
@@ -355,14 +395,66 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
     state = state.copyWith(messages: [...state.messages, notice]);
   }
 
-  /// 글자 수와 빠르기 계수(speedFactor)를 바탕으로 현실적인 타자 시간(ms)을 계산합니다.
-  Duration _calculateRealisticTypingDelay(String text, double speedFactor) {
-    final baseMs = 380;
-    final perCharMs = 52;
-    final rawMs = (baseMs + (text.length * perCharMs)) *
-        speedFactor *
-        state.character.typingSpeedMultiplier;
-    return Duration(milliseconds: rawMs.clamp(350, 2600).toInt());
+  /// 캐릭터 타자 속도 × 설정의 대화 속도
+  double get _pace =>
+      state.character.typingSpeedMultiplier * ref.read(chatTempoProvider);
+
+  /// ±15% 정도 들쭉날쭉하게 (매번 똑같은 박자면 기계 같아서)
+  double _jitter() => 0.85 + _random.nextDouble() * 0.3;
+
+  /// [초보자 노트] 말풍선 하나를 사람처럼 쳐서 보냅니다.
+  /// 1. 읽고 나서 뭐라고 할지 잠깐 멈칫 (입력 중 표시 없음)
+  /// 2. '입력 중' 표시: 휴대폰으로 한 글자에 0.15초 정도 + 말투(speedFactor)와 캐릭터 타자 속도 반영
+  /// 3. 망설이는 말(speedFactor 1.3 이상)은 치다가 멈췄다가(썼다 지웠다) 다시 침
+  /// 중간에 회차가 바뀌거나 내가 끼어들면 false를 돌려주고 멈춥니다.
+  Future<bool> _typeOut(ScriptBubblePiece bubble, bool Function() stillValid) async {
+    final pace = _pace;
+    await Future.delayed(Duration(milliseconds: (500 * pace * _jitter()).round()));
+    if (!stillValid()) return false;
+
+    final chars = Characters(bubble.text).length;
+    final typingMs = ((700 + chars * 150) * bubble.speedFactor * pace * _jitter())
+        .clamp(450 * pace, 9000 * pace)
+        .round();
+
+    state = state.copyWith(isCharacterTyping: true);
+    if (bubble.speedFactor >= 1.3 && typingMs > 1500 * pace) {
+      // 썼다 지웠다: 40% 치고 → 잠깐 멈춤 → 나머지
+      await Future.delayed(Duration(milliseconds: (typingMs * 0.4).round()));
+      if (!stillValid()) return false;
+      state = state.copyWith(isCharacterTyping: false);
+      await Future.delayed(Duration(milliseconds: (900 * pace * _jitter()).round()));
+      if (!stillValid()) return false;
+      state = state.copyWith(isCharacterTyping: true);
+      await Future.delayed(Duration(milliseconds: (typingMs * 0.6).round()));
+    } else {
+      await Future.delayed(Duration(milliseconds: typingMs));
+    }
+    if (!stillValid()) {
+      state = state.copyWith(isCharacterTyping: false);
+      return false;
+    }
+
+    final reply = ChatMessageLog(
+      id: 'char_${DateTime.now().microsecondsSinceEpoch}',
+      isUser: false,
+      speakerCharacterId: state.character.id,
+      speakerName: state.character.name,
+      text: bubble.text,
+      photoLabel: bubble.photoLabel,
+      timestamp: DateTime.now(),
+    );
+    state = state.copyWith(
+      isCharacterTyping: false,
+      messages: [...state.messages, reply],
+    );
+    return true;
+  }
+
+  /// 대화방을 보고 있을 때 호출 → 안 읽은 숫자 0
+  void markSeen() {
+    if (state.seenMessageCount == state.messages.length) return;
+    state = state.copyWith(seenMessageCount: state.messages.length);
   }
 
   /// 모든 내 안 읽음('1') 말풍선을 일괄 '읽음' 처리합니다.
@@ -516,39 +608,11 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
       replyPieces = _buildNaturalSplitReplies(combinedInput);
     }
 
+    state = state.copyWith(isCharacterTyping: false);
     for (final piece in replyPieces) {
       // 만약 캐릭터가 답장하는 도중에 내가 또 새로운 톡을 쳤다면 즉시 중단하고 내 말을 먼저 받음!
-      if (_pendingUserBurstTexts.isNotEmpty) {
-        state = state.copyWith(isCharacterTyping: false);
-        return;
-      }
-
-      state = state.copyWith(isCharacterTyping: true);
-      await Future.delayed(
-        _calculateRealisticTypingDelay(piece.text, piece.speedFactor),
-      );
-
-      if (_pendingUserBurstTexts.isNotEmpty) {
-        state = state.copyWith(isCharacterTyping: false);
-        return;
-      }
-
-      final replyMsg = ChatMessageLog(
-        id: 'char_reply_${DateTime.now().millisecondsSinceEpoch}',
-        isUser: false,
-        speakerCharacterId: state.character.id,
-        speakerName: state.character.name,
-        text: piece.text,
-        photoLabel: piece.photoLabel,
-        timestamp: DateTime.now(),
-      );
-
-      state = state.copyWith(
-        isCharacterTyping: false,
-        messages: [...state.messages, replyMsg],
-      );
-
-      await Future.delayed(const Duration(milliseconds: 280));
+      final sent = await _typeOut(piece, () => _pendingUserBurstTexts.isEmpty);
+      if (!sent) return;
     }
 
     // AI가 판정한 호감도 변화는 답장을 다 보낸 뒤 반영 (화면에는 숫자로 안 보임)
@@ -617,6 +681,8 @@ class ChatRoomNotifier extends Notifier<ChatRoomState> {
   }
 }
 
-final chatRoomProvider = NotifierProvider<ChatRoomNotifier, ChatRoomState>(
+/// 캐릭터마다 대화방 하나씩 (캐릭터 ID로 구분)
+final chatRoomProvider =
+    NotifierProvider.family<ChatRoomNotifier, ChatRoomState, String>(
   ChatRoomNotifier.new,
 );

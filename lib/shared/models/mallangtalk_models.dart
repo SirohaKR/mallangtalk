@@ -24,6 +24,38 @@ class AffectionStage {
       stageLabel: json['label'] as String,
     );
   }
+
+  Map<String, dynamic> toJson() => {'min': minScore, 'max': maxScore, 'label': stageLabel};
+
+  bool contains(int score) => score >= minScore && score <= maxScore;
+}
+
+/// 캐릭터 성격에 맞춘 타자 스타일 (제작 화면에서 고르고, 값은 typingSpeedMultiplier로 저장)
+class TypingStyle {
+  final String label;
+  final String note;
+  final double multiplier;
+
+  const TypingStyle(this.label, this.note, this.multiplier);
+
+  static const all = [
+    TypingStyle('번개같이', '생각보다 손이 먼저 나가는 성격', 0.6),
+    TypingStyle('빠릿빠릿', '수다스럽고 답장이 빠른 편', 0.8),
+    TypingStyle('보통', '평범한 속도', 1.0),
+    TypingStyle('느긋하게', '한 글자씩 신중하게 고르는 편', 1.3),
+    TypingStyle('한참 고민', '썼다 지웠다 하는 무뚝뚝한 성격', 1.7),
+  ];
+
+  /// 배율에 가장 가까운 스타일
+  static TypingStyle closest(double multiplier) {
+    var best = all.first;
+    for (final style in all) {
+      if ((style.multiplier - multiplier).abs() < (best.multiplier - multiplier).abs()) {
+        best = style;
+      }
+    }
+    return best;
+  }
 }
 
 /// 2. 캐릭터 기본 설정 모델 (DB 테이블: characters)
@@ -68,6 +100,34 @@ class CharacterModel {
       isPublished: json['is_published'] == true || json['is_published'] == 1,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'creator_id': creatorId,
+        'name': name,
+        'status_message': statusMessage,
+        'avatar_url': avatarUrl,
+        'worldview_prompt': worldviewPrompt,
+        'typing_speed_multiplier': typingSpeedMultiplier,
+        'affection_stages': [for (final stage in affectionStages) stage.toJson()],
+        'is_published': isPublished,
+      };
+
+  /// 점수가 속한 호감도 단계 (구간 밖이면 가장 가까운 단계)
+  AffectionStage? stageFor(int score) {
+    for (final stage in affectionStages) {
+      if (stage.contains(score)) return stage;
+    }
+    if (affectionStages.isEmpty) return null;
+    return score < affectionStages.first.minScore
+        ? affectionStages.first
+        : affectionStages.last;
+  }
+
+  AffectionStage? stageNamed(String? label) {
+    if (label == null) return null;
+    return affectionStages.where((s) => s.stageLabel == label).firstOrNull;
+  }
 }
 
 /// 3. 동일 제작자 캐릭터 간 관계도 모델 (DB 테이블: character_relations)
@@ -99,6 +159,8 @@ class ScenarioEventType {
   static const String custom = 'custom'; // 제작자가 직접 만든 호감도 이벤트
   static const String intrusion = 'intrusion'; // 2단계: 타 캐릭터 난입/단톡
   static const String ending = 'ending'; // 공략 완료 후 재생되는 엔딩
+  /// 호감도 이벤트 사이사이에 끼는 일상 대화 (공략 완료 판정에는 안 들어감)
+  static const String daily = 'daily';
 }
 
 /// 4. 시나리오 이벤트 모델 (DB 테이블: scenario_events)
@@ -116,6 +178,11 @@ class ScenarioEventModel {
   final String? cutsceneImageUrl; // 실제 CG 이미지 경로 (없으면 제목만 있는 자리표시 카드로 보여줌)
   final int? cutsceneTriggerStep; // 이 단계(stepOrder)의 대사가 끝나면 컷씬(CG)이 전체 화면으로 뜸
   final List<String> participantCharacterIds;
+  /// 이 대화가 속한 호감도 단계 이름 (캐릭터의 affectionStages 중 하나)
+  /// 이벤트는 그 단계에 도달하면 열리고, 일상 대화는 그 단계에 머무는 동안에만 나옵니다.
+  final String? stageLabel;
+  /// 이 점수를 넘으면 더는 안 나옴 (주로 일상 대화용, 비우면 제한 없음)
+  final int? maxAffection;
 
   const ScenarioEventModel({
     required this.id,
@@ -130,10 +197,13 @@ class ScenarioEventModel {
     this.cutsceneImageUrl,
     this.cutsceneTriggerStep,
     this.participantCharacterIds = const [],
+    this.stageLabel,
+    this.maxAffection,
   });
 
   bool get hasCutscene => cutsceneTriggerStep != null;
   bool get isEnding => eventType == ScenarioEventType.ending;
+  bool get isDaily => eventType == ScenarioEventType.daily;
 
   /// 공략 완료 판정에 들어가는 '호감도 이벤트'인지 (엔딩·난입 이벤트는 제외)
   bool get isAffectionEvent =>
@@ -160,8 +230,29 @@ class ScenarioEventModel {
       participantCharacterIds: [
         for (final id in json['participants'] as List? ?? const []) id as String,
       ],
+      stageLabel: json['stage'] as String?,
+      maxAffection: unlock['max_affection'] as int?,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'character_id': characterId,
+        'chapter_order': chapterOrder,
+        'event_type': eventType,
+        'title': title,
+        if (timeNotice != null) 'time_notice': timeNotice,
+        if (stageLabel != null) 'stage': stageLabel,
+        'unlock_condition': {
+          'min_affection': requiredAffection,
+          if (maxAffection != null) 'max_affection': maxAffection,
+          if (requiredFlags.isNotEmpty) 'required_flags': requiredFlags,
+        },
+        if (cutscenePhotoTitle != null) 'cutscene_title': cutscenePhotoTitle,
+        if (cutsceneImageUrl != null) 'cutscene_image_url': cutsceneImageUrl,
+        if (cutsceneTriggerStep != null) 'cutscene_trigger_step': cutsceneTriggerStep,
+        if (participantCharacterIds.isNotEmpty) 'participants': participantCharacterIds,
+      };
 }
 
 /// 5. 말풍선 한 줄 단위 모델 (타자 속도 조절 & 사진 첨부 지원)
@@ -187,6 +278,12 @@ class ScriptBubblePiece {
       photoLabel: json['photo'] as String?,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        if (speedFactor != 1.0) 'speed': speedFactor,
+        if (hasPhoto) 'photo': photoLabel,
+      };
 }
 
 /// 6. 선택지 모델 (내가 선택지를 눌렀을 때도 짧게 여러 마디로 끊어서 보내거나 사진을 찍어 보낼 수 있음!)
@@ -220,6 +317,15 @@ class ChoiceOption {
       nextNodeId: json['next_node_id'] as String?,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'choice_id': id,
+        'label': buttonLabel,
+        'user_messages': [for (final b in userBubbles) b.toJson()],
+        'affection_delta': affectionDelta,
+        if (addFlag != null) 'add_flag': addFlag,
+        if (nextNodeId != null) 'next_node_id': nextNodeId,
+      };
 }
 
 /// 7. 대사 및 선택지 분기 노드 모델 (DB 테이블: script_nodes)
@@ -256,6 +362,15 @@ class ScriptNodeModel {
       ],
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'event_id': eventId,
+        'step_order': stepOrder,
+        'speaker_character_id': speakerCharacterId,
+        'messages': [for (final b in characterBubbles) b.toJson()],
+        if (choices.isNotEmpty) 'choices': [for (final c in choices) c.toJson()],
+      };
 }
 
 /// 시나리오 묶음: 캐릭터 1명 + 이벤트 목록 + 대사 노드 목록
@@ -285,6 +400,26 @@ class ScenarioBundle {
               ScriptNodeModel.fromJson(node),
       },
     );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'format': 'mallangtalk-scenario-v1',
+        'character': character.toJson(),
+        'events': [for (final e in events) e.toJson()],
+        'script_nodes': [for (final n in nodes.values) n.toJson()],
+      };
+
+  /// 이 이벤트가 열리는 호감도 구간. 단계 이름이 있으면 그 단계 시작 점수부터 열리고,
+  /// 일상 대화는 그 단계 끝 점수까지만 나옵니다.
+  ({int min, int? max}) affectionRangeOf(ScenarioEventModel event) {
+    final stage = character.stageNamed(event.stageLabel);
+    var min = event.requiredAffection;
+    int? max = event.maxAffection;
+    if (stage != null) {
+      if (stage.minScore > min) min = stage.minScore;
+      if (event.isDaily && (max == null || stage.maxScore < max)) max = stage.maxScore;
+    }
+    return (min: min, max: max);
   }
 
   /// 이벤트의 첫 대사 노드 (stepOrder가 가장 작은 노드, 같으면 파일에 먼저 적힌 노드)

@@ -4,8 +4,8 @@ import '../../core/network/claude_chat_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../chat/chat_notifier.dart';
 import 'byok_settings.dart';
+import 'chat_tempo.dart';
 
 /// [초보자 노트] 내 Claude API 키(BYOK)를 넣고 자유대화에 쓸 모델을 고르는 설정 화면입니다.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -33,6 +33,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(byokSettingsProvider);
     final notifier = ref.read(byokSettingsProvider.notifier);
+    final tempo = ref.watch(chatTempoProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -42,10 +43,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              const Text('내 AI 키로 자유대화', style: AppTextStyles.appBarTitle),
+              const Text('내 AI 키', style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
-                '채팅방에서 자유대화를 켜고 직접 입력하면, 아래 키로 Claude가 캐릭터 답장을 만들어요. '
+                '채팅방 자유대화와 캐릭터 추가 > 만들기 > AI로 만들기에서 이 키로 Claude를 불러요. '
                 '요금은 이 키의 계정에 청구돼요. 키는 이 브라우저에만 저장돼요.',
                 style: AppTextStyles.systemNotice,
               ),
@@ -117,19 +118,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: AppSpacing.xl),
               const Divider(),
               const SizedBox(height: AppSpacing.md),
-              const Text('진행 기록', style: AppTextStyles.appBarTitle),
+              const Text('대화 속도', style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
-                '대화 기록과 호감도를 지우고 처음부터 시작해요. 앨범에 모은 장면은 그대로 남아요.',
+                '캐릭터의 "입력 중" 시간에 곱해져요. 캐릭터마다 성격에 맞는 타자 속도는 따로 있어요.',
                 style: AppTextStyles.systemNotice,
               ),
+              for (final option in ChatTempoOption.all)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () => ref.read(chatTempoProvider.notifier).set(option.tempo),
+                  leading: Icon(
+                    tempo == option.tempo
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_off_rounded,
+                    color: tempo == option.tempo ? AppColors.primaryPink : AppColors.textMuted,
+                  ),
+                  title: Text(option.label),
+                  subtitle: Text(option.note, style: AppTextStyles.systemNotice),
+                ),
               const SizedBox(height: AppSpacing.md),
-              OutlinedButton(
-                onPressed: () {
-                  ref.read(chatRoomProvider.notifier).restart();
-                  _toast('처음부터 다시 시작했어요');
-                },
-                child: const Text('처음부터 다시 하기'),
+              const Text(
+                '대화를 처음부터 다시 하려면 내 캐릭터 → 프로필 → 처음부터',
+                style: AppTextStyles.messageTime,
               ),
             ],
           ),

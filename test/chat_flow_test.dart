@@ -1,44 +1,21 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mallangtalk/core/storage/local_store.dart';
-import 'package:mallangtalk/core/theme/app_theme.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
-import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers.dart';
 
 /// 샘플 시나리오(윤도하)를 실제 화면에서 끝까지 플레이해 보는 테스트입니다.
 void main() {
-  final bundle = ScenarioBundle.fromJson(
-    jsonDecode(File('assets/scenarios/sample_character.json').readAsStringSync())
-        as Map<String, dynamic>,
-  );
-
   Future<ProviderContainer> openChat(WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
-    await tester.binding.setSurfaceSize(const Size(420, 900));
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          scenarioBundleProvider.overrideWith((ref) async => bundle),
-          sharedPreferencesProvider.overrideWith((ref) async => prefs),
-        ],
-        child: MaterialApp(theme: AppTheme.lightTheme, home: const BootGate()),
-      ),
-    );
-    await settle(tester);
-    return ProviderScope.containerOf(tester.element(find.byType(Scaffold).first));
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    return openDohaChat(tester);
   }
 
   testWidgets('모든 컷씬을 모으면 엔딩 후 공략 완료', (tester) async {
     final container = await openChat(tester);
-    ChatRoomState state() => container.read(chatRoomProvider);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
 
     expect(state().isByokAiModeEnabled, isFalse);
     expect(find.text('토요일 오전 10:24'), findsOneWidget);
@@ -80,7 +57,7 @@ void main() {
 
   testWidgets('공연을 거절하면 컷씬을 놓치고, 다시 하기로 모으면 이미 본 컷씬은 인정됨', (tester) async {
     final container = await openChat(tester);
-    ChatRoomState state() => container.read(chatRoomProvider);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
 
     await choose(tester, '츄르 봉지를 흔들어 보라고 하기');
     await closeCutscene(tester);
@@ -98,7 +75,7 @@ void main() {
     await choose(tester, '지금 간다고 하기');
 
     expect(state().progress, StoryProgress.missedCutscenes);
-    expect(container.read(chatRoomProvider.notifier).missedCutsceneCount, 1);
+    expect(container.read(chatRoomProvider(dohaId).notifier).missedCutsceneCount, 1);
     expect(find.text('그날 밤 8:10'), findsNothing);
 
     await tester.tap(find.text('처음부터 다시 하기'));
@@ -127,7 +104,7 @@ void main() {
 
   testWidgets('계속 무심하게 답하면 연락이 끊김', (tester) async {
     final container = await openChat(tester);
-    ChatRoomState state() => container.read(chatRoomProvider);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
 
     await choose(tester, '츄르 봉지를 흔들어 보라고 하기');
     await closeCutscene(tester);
@@ -144,7 +121,53 @@ void main() {
     final container = await openChat(tester);
     await choose(tester, '지금 바로 같이 찾으러 가겠다고 하기');
     await closeCutscene(tester);
-    expect(container.read(chatRoomProvider).internalAffection, 5);
+    expect(container.read(chatRoomProvider(dohaId)).internalAffection, 5);
     expect(find.textContaining('호감도'), findsNothing);
+  });
+
+  testWidgets('호감도 이벤트가 끝나면 지금 단계의 일상 대화가 하나 끼어듦', (tester) async {
+    final container = await openChat(tester);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+
+    await tester.tap(find.widgetWithText(ElevatedButton, '지금 바로 같이 찾으러 가겠다고 하기'));
+    await settle(tester);
+    await closeCutscene(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '다음엔 직접 두부 보러 가겠다고 하기'));
+    await settle(tester);
+
+    expect(state().currentEventId, 'daily_lunch_menu');
+    expect(find.text('월요일 오후 12:10'), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, '돈까스라고 바로 답하기'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ElevatedButton, '돈까스라고 바로 답하기'));
+    await settle(tester);
+    // 일상 대화가 끝나면 다음 호감도 이벤트로
+    expect(state().completedEventIds, ['evt_dubu_missing', 'daily_lunch_menu']);
+    expect(find.text('화요일 오전 6:40'), findsOneWidget);
+  });
+
+  testWidgets('자유대화에서 엔터로 보내도 입력창에 커서가 남아 연달아 칠 수 있음', (tester) async {
+    final container = await openChat(tester);
+    container.read(chatRoomProvider(dohaId).notifier).toggleDirectInputMode(true);
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), '첫 번째');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    final field = tester.widget<EditableText>(find.byType(EditableText));
+    expect(field.focusNode.hasFocus, isTrue);
+    expect(field.controller.text, isEmpty);
+
+    await tester.enterText(find.byType(TextField), '두 번째');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    final sent = container
+        .read(chatRoomProvider(dohaId))
+        .messages
+        .where((m) => m.isUser)
+        .map((m) => m.text);
+    expect(sent, containsAllInOrder(['첫 번째', '두 번째']));
+    expect(tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus, isTrue);
+    await settle(tester);
   });
 }

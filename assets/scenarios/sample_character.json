@@ -30,7 +30,7 @@
     {
       "id": "evt_dubu_missing",
       "character_id": "char_yoon_doha",
-      "chapter_order": 1,
+      "chapter_order": 10,
       "event_type": "custom",
       "title": "두부 실종 사건",
       "time_notice": "토요일 오전 10:24",
@@ -44,9 +44,24 @@
       ]
     },
     {
+      "id": "daily_lunch_menu",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 15,
+      "event_type": "daily",
+      "title": "점심 메뉴 결정 장애",
+      "time_notice": "월요일 오후 12:10",
+      "stage": "편한 친구",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
       "id": "evt_dawn_run",
       "character_id": "char_yoon_doha",
-      "chapter_order": 2,
+      "chapter_order": 20,
       "event_type": "custom",
       "title": "새벽 러닝",
       "time_notice": "화요일 오전 6:40",
@@ -58,9 +73,24 @@
       ]
     },
     {
+      "id": "daily_dubu_photo",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 25,
+      "event_type": "daily",
+      "title": "두부 근황",
+      "time_notice": "수요일 밤 10:42",
+      "stage": "편한 친구",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
       "id": "evt_gig_tickets",
       "character_id": "char_yoon_doha",
-      "chapter_order": 3,
+      "chapter_order": 30,
       "event_type": "custom",
       "title": "공연 티켓 두 장",
       "time_notice": "목요일 밤 9:15",
@@ -74,9 +104,24 @@
       ]
     },
     {
+      "id": "daily_playlist",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 35,
+      "event_type": "daily",
+      "title": "새벽 플레이리스트",
+      "time_notice": "목요일 새벽 1:15",
+      "stage": "편한 친구",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
       "id": "evt_latte_art",
       "character_id": "char_yoon_doha",
-      "chapter_order": 4,
+      "chapter_order": 40,
       "event_type": "custom",
       "title": "라떼아트 연습",
       "time_notice": "일요일 오후 3:02",
@@ -88,9 +133,24 @@
       ]
     },
     {
+      "id": "daily_rain",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 45,
+      "event_type": "daily",
+      "title": "갑자기 비",
+      "time_notice": "금요일 오후 5:48",
+      "stage": "편한 친구",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
       "id": "evt_birthday_song",
       "character_id": "char_yoon_doha",
-      "chapter_order": 5,
+      "chapter_order": 50,
       "event_type": "custom",
       "title": "생일 전날 밤",
       "time_notice": "금요일 밤 11:58",
@@ -104,9 +164,24 @@
       ]
     },
     {
+      "id": "daily_guitar_string",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 55,
+      "event_type": "daily",
+      "title": "기타 줄",
+      "time_notice": "화요일 밤 9:30",
+      "stage": "신경 쓰이는 친구",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
       "id": "evt_first_year",
       "character_id": "char_yoon_doha",
-      "chapter_order": 6,
+      "chapter_order": 60,
       "event_type": "custom",
       "title": "1년 전 그날",
       "time_notice": "일요일 저녁 7:30",
@@ -120,9 +195,54 @@
       ]
     },
     {
+      "id": "daily_exam_night",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 65,
+      "event_type": "daily",
+      "title": "시험 기간",
+      "time_notice": "수요일 새벽 2:03",
+      "stage": "신경 쓰이는 친구",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "daily_weird_dream",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 75,
+      "event_type": "daily",
+      "title": "이상한 꿈",
+      "time_notice": "토요일 오전 9:12",
+      "stage": "친구 이상",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "daily_goodnight",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 85,
+      "event_type": "daily",
+      "title": "잘 자",
+      "time_notice": "일요일 밤 11:47",
+      "stage": "친구 이상",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
       "id": "evt_ending_confession",
       "character_id": "char_yoon_doha",
-      "chapter_order": 99,
+      "chapter_order": 999,
       "event_type": "ending",
       "title": "친구 말고",
       "time_notice": "그날 밤 8:10",
@@ -866,6 +986,891 @@
           "affection_delta": 5
         }
       ]
+    },
+    {
+      "id": "daily_lunch_menu_1",
+      "event_id": "daily_lunch_menu",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "야 급함",
+          "speed": 0.5
+        },
+        {
+          "text": "학식 돈까스 vs 편의점 컵라면",
+          "speed": 0.8
+        },
+        {
+          "text": "10초 안에 골라줘",
+          "speed": 0.6
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_lunch_menu_c1",
+          "label": "돈까스라고 바로 답하기",
+          "user_messages": [
+            {
+              "text": "돈까스"
+            },
+            {
+              "text": "고민할 걸 고민해"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_lunch_menu_2_1"
+        },
+        {
+          "choice_id": "daily_lunch_menu_c2",
+          "label": "컵라면에 삼각김밥 조합 추천하기",
+          "user_messages": [
+            {
+              "text": "컵라면 + 참치마요"
+            },
+            {
+              "text": "이게 근본임"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_lunch_menu_2_2"
+        },
+        {
+          "choice_id": "daily_lunch_menu_c3",
+          "label": "알아서 먹으라고 하기",
+          "user_messages": [
+            {
+              "text": "알아서 먹어"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_lunch_menu_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_lunch_menu_2_1",
+      "event_id": "daily_lunch_menu",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅋㅋㅋ역시",
+          "speed": 0.5
+        },
+        {
+          "text": "너랑 메뉴 고르면 1초 컷이라 좋음"
+        },
+        {
+          "text": "담에 학식 같이 먹자 내가 쏨",
+          "speed": 0.9
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_lunch_menu_2_2",
+      "event_id": "daily_lunch_menu",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "오 그 조합 인정",
+          "speed": 0.6
+        },
+        {
+          "text": "근데 너 어제도 그거 먹었다며ㅋㅋ",
+          "speed": 0.9
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_lunch_menu_2_3",
+      "event_id": "daily_lunch_menu",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "넵...",
+          "speed": 0.7
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_dubu_photo_1",
+      "event_id": "daily_dubu_photo",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "두부 근황",
+          "speed": 0.6,
+          "photo": "택배 상자에 몸을 꾸겨 넣고 눈만 내놓은 회색 고양이 두부 사진"
+        },
+        {
+          "text": "새로 산 캣타워는 거들떠도 안 봄"
+        },
+        {
+          "text": "상자가 4만원짜리 캣타워를 이김",
+          "speed": 0.9
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_dubu_photo_c1",
+          "label": "너무 귀엽다고 사진 더 달라고 하기",
+          "user_messages": [
+            {
+              "text": "아 미쳤다"
+            },
+            {
+              "text": "사진 더 줘 지금 당장"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_dubu_photo_2_1"
+        },
+        {
+          "choice_id": "daily_dubu_photo_c2",
+          "label": "캣타워 아깝다고 놀리기",
+          "user_messages": [
+            {
+              "text": "캣타워 당근에 올려"
+            },
+            {
+              "text": "4만원 날렸네ㅋㅋ"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_dubu_photo_2_2"
+        },
+        {
+          "choice_id": "daily_dubu_photo_c3",
+          "label": "고양이는 원래 그렇다고 하기",
+          "user_messages": [
+            {
+              "text": "고양이는 원래 그래"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_dubu_photo_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_dubu_photo_2_1",
+      "event_id": "daily_dubu_photo",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅋㅋㅋㅋ너 두부 팬클럽 회장이지",
+          "speed": 0.7
+        },
+        {
+          "text": "하나 더 줌",
+          "speed": 0.5,
+          "photo": "상자 밖으로 앞발 하나만 내밀고 자는 두부 사진"
+        },
+        {
+          "text": "이건 너한테만 보여주는 거임",
+          "speed": 1.1
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_dubu_photo_2_2",
+      "event_id": "daily_dubu_photo",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "아 팩폭 금지",
+          "speed": 0.6
+        },
+        {
+          "text": "두부가 언젠간 올라가 줄 거라 믿음"
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_dubu_photo_2_3",
+      "event_id": "daily_dubu_photo",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅇ그렇긴 하지",
+          "speed": 0.7
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_playlist_1",
+      "event_id": "daily_playlist",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "안 자?",
+          "speed": 0.6
+        },
+        {
+          "text": "나 지금 새벽녘 라디오 신곡 무한 반복 중"
+        },
+        {
+          "text": "이거 들어봐 가사 미쳤음",
+          "speed": 0.8
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_playlist_c1",
+          "label": "들어보고 좋다고 하기",
+          "user_messages": [
+            {
+              "text": "방금 들었는데"
+            },
+            {
+              "text": "2절 가사 진짜 좋다"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_playlist_2_1"
+        },
+        {
+          "choice_id": "daily_playlist_c2",
+          "label": "내일 들어본다고 하기",
+          "user_messages": [
+            {
+              "text": "내일 아침에 들을게"
+            },
+            {
+              "text": "너도 얼른 자"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_playlist_2_2"
+        },
+        {
+          "choice_id": "daily_playlist_c3",
+          "label": "졸리다고 하기",
+          "user_messages": [
+            {
+              "text": "나 졸려..."
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_playlist_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_playlist_2_1",
+      "event_id": "daily_playlist",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "헐 2절 알아들었어?",
+          "speed": 0.6
+        },
+        {
+          "text": "나 그 부분 기타로 따라 쳐보는 중이었는데",
+          "speed": 1.1
+        },
+        {
+          "text": "완성되면 너한테 제일 먼저 들려줌",
+          "speed": 1.2
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_playlist_2_2",
+      "event_id": "daily_playlist",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅋ 꼭 들어",
+          "speed": 0.6
+        },
+        {
+          "text": "잘 자라",
+          "speed": 0.8
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_playlist_2_3",
+      "event_id": "daily_playlist",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "아 미안 깨웠나",
+          "speed": 0.8
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_rain_1",
+      "event_id": "daily_rain",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "밖에 비 오는 거 봄?",
+          "speed": 0.7
+        },
+        {
+          "text": "나 우산 없음",
+          "speed": 0.6
+        },
+        {
+          "text": "도서관에 갇힘ㅋㅋ",
+          "speed": 0.7
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_rain_c1",
+          "label": "우산 들고 데리러 가겠다고 하기",
+          "user_messages": [
+            {
+              "text": "나 근처야"
+            },
+            {
+              "text": "우산 들고 갈게 기다려"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_rain_2_1"
+        },
+        {
+          "choice_id": "daily_rain_c2",
+          "label": "편의점 우산 사라고 하기",
+          "user_messages": [
+            {
+              "text": "편의점 우산 5천원"
+            },
+            {
+              "text": "투자해"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_rain_2_2"
+        },
+        {
+          "choice_id": "daily_rain_c3",
+          "label": "그칠 때까지 기다리라고 하기",
+          "user_messages": [
+            {
+              "text": "좀 기다려 봐 곧 그치겠지"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_rain_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_rain_2_1",
+      "event_id": "daily_rain",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "...진짜?",
+          "speed": 1.3
+        },
+        {
+          "text": "아 고마워",
+          "speed": 0.8
+        },
+        {
+          "text": "정문 앞 벤치에 있을게 천천히 와"
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_rain_2_2",
+      "event_id": "daily_rain",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅋㅋ현실적이네",
+          "speed": 0.6
+        },
+        {
+          "text": "ㅇㅋ 사러 감",
+          "speed": 0.6
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_rain_2_3",
+      "event_id": "daily_rain",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅇ그래야지",
+          "speed": 0.7
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_guitar_string_1",
+      "event_id": "daily_guitar_string",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "아",
+          "speed": 0.4
+        },
+        {
+          "text": "기타 1번 줄 끊어짐",
+          "speed": 0.7
+        },
+        {
+          "text": "연습하다가 손가락 튕겨서 아직도 얼얼함",
+          "speed": 1.1
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_guitar_string_c1",
+          "label": "손 괜찮냐고 걱정하기",
+          "user_messages": [
+            {
+              "text": "괜찮아?"
+            },
+            {
+              "text": "손 다친 거 아니지"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_guitar_string_2_1"
+        },
+        {
+          "choice_id": "daily_guitar_string_c2",
+          "label": "줄 갈 때 구경하고 싶다고 하기",
+          "user_messages": [
+            {
+              "text": "줄 가는 거 보고 싶다"
+            },
+            {
+              "text": "나 그런 거 처음 봐"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_guitar_string_2_2"
+        },
+        {
+          "choice_id": "daily_guitar_string_c3",
+          "label": "연습 너무 하지 말라고 하기",
+          "user_messages": [
+            {
+              "text": "쉬엄쉬엄 해"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_guitar_string_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_guitar_string_2_1",
+      "event_id": "daily_guitar_string",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "응 괜찮아",
+          "speed": 0.8
+        },
+        {
+          "text": "근데 네가 물어봐 주니까",
+          "speed": 1.4
+        },
+        {
+          "text": "좀 더 괜찮아진 듯ㅋㅋ",
+          "speed": 0.9
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_guitar_string_2_2",
+      "event_id": "daily_guitar_string",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "담에 악기점 같이 가자",
+          "speed": 0.9
+        },
+        {
+          "text": "줄 고르는 것도 은근 재밌음"
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_guitar_string_2_3",
+      "event_id": "daily_guitar_string",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅇ",
+          "speed": 0.5
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_exam_night_1",
+      "event_id": "daily_exam_night",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "아직 도서관",
+          "speed": 0.8,
+          "photo": "노트북과 전공책 사이에 놓인 반쯤 남은 아이스 아메리카노 사진"
+        },
+        {
+          "text": "재무관리 진짜 사람이 할 게 아님"
+        },
+        {
+          "text": "너는 공부 끝냄?",
+          "speed": 0.7
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_exam_night_c1",
+          "label": "같이 버티자고 하기",
+          "user_messages": [
+            {
+              "text": "나도 아직"
+            },
+            {
+              "text": "같이 버티자 화이팅"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_exam_night_2_1"
+        },
+        {
+          "choice_id": "daily_exam_night_c2",
+          "label": "커피 그만 마시라고 하기",
+          "user_messages": [
+            {
+              "text": "그거 몇 잔째야"
+            },
+            {
+              "text": "커피 그만"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_exam_night_2_2"
+        },
+        {
+          "choice_id": "daily_exam_night_c3",
+          "label": "먼저 잔다고 하기",
+          "user_messages": [
+            {
+              "text": "나 먼저 잘게"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_exam_night_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_exam_night_2_1",
+      "event_id": "daily_exam_night",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "오 동지",
+          "speed": 0.5
+        },
+        {
+          "text": "이상하게 너도 깨어 있다니까 힘남",
+          "speed": 1.2
+        },
+        {
+          "text": "끝나면 맛있는 거 먹으러 가자",
+          "speed": 0.9
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_exam_night_2_2",
+      "event_id": "daily_exam_night",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "...3잔",
+          "speed": 0.9
+        },
+        {
+          "text": "알겠어 물 마실게ㅋㅋ",
+          "speed": 0.7
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_exam_night_2_3",
+      "event_id": "daily_exam_night",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅋ 굿밤",
+          "speed": 0.6
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_weird_dream_1",
+      "event_id": "daily_weird_dream",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "나 어제 꿈에 너 나옴"
+        },
+        {
+          "text": "같이 한강에서 뛰는데",
+          "speed": 0.9
+        },
+        {
+          "text": "너가 나보다 빨라서 충격받고 깸ㅋㅋ"
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_weird_dream_c1",
+          "label": "꿈에 내가 왜 나왔냐고 묻기",
+          "user_messages": [
+            {
+              "text": "내가 왜 나와"
+            },
+            {
+              "text": "나 생각하다 잤어?"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_weird_dream_2_1"
+        },
+        {
+          "choice_id": "daily_weird_dream_c2",
+          "label": "현실에서도 이길 수 있다고 하기",
+          "user_messages": [
+            {
+              "text": "현실에서도 이김"
+            },
+            {
+              "text": "한판 붙자"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_weird_dream_2_2"
+        },
+        {
+          "choice_id": "daily_weird_dream_c3",
+          "label": "개꿈이라고 하기",
+          "user_messages": [
+            {
+              "text": "개꿈이네"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_weird_dream_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_weird_dream_2_1",
+      "event_id": "daily_weird_dream",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "......",
+          "speed": 1.6
+        },
+        {
+          "text": "아 몰라",
+          "speed": 0.6
+        },
+        {
+          "text": "그냥 나왔어",
+          "speed": 1.1
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_weird_dream_2_2",
+      "event_id": "daily_weird_dream",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅋㅋㅋ콜",
+          "speed": 0.5
+        },
+        {
+          "text": "지는 사람이 라떼 사기",
+          "speed": 0.8
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_weird_dream_2_3",
+      "event_id": "daily_weird_dream",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅇ개꿈ㅋㅋ",
+          "speed": 0.6
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_goodnight_1",
+      "event_id": "daily_goodnight",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "오늘 재밌었다"
+        },
+        {
+          "text": "너랑 있으면 시간이 이상하게 빨리 감",
+          "speed": 1.3
+        },
+        {
+          "text": "잘 자",
+          "speed": 0.8
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "daily_goodnight_c1",
+          "label": "나도 재밌었다고 하기",
+          "user_messages": [
+            {
+              "text": "나도"
+            },
+            {
+              "text": "오늘 진짜 좋았어"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "daily_goodnight_2_1"
+        },
+        {
+          "choice_id": "daily_goodnight_c2",
+          "label": "다음엔 어디 갈지 묻기",
+          "user_messages": [
+            {
+              "text": "다음엔 어디 가?"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "daily_goodnight_2_2"
+        },
+        {
+          "choice_id": "daily_goodnight_c3",
+          "label": "짧게 잘 자라고 하기",
+          "user_messages": [
+            {
+              "text": "너도 잘 자"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "daily_goodnight_2_3"
+        }
+      ]
+    },
+    {
+      "id": "daily_goodnight_2_1",
+      "event_id": "daily_goodnight",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "다행이다",
+          "speed": 0.9
+        },
+        {
+          "text": "내일도 연락할게"
+        },
+        {
+          "text": "아니 내일도 연락해도 되지?",
+          "speed": 1.4
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_goodnight_2_2",
+      "event_id": "daily_goodnight",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "생각해 둔 데 있음",
+          "speed": 0.8
+        },
+        {
+          "text": "비밀ㅋㅋ",
+          "speed": 0.5
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "daily_goodnight_2_3",
+      "event_id": "daily_goodnight",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅇ",
+          "speed": 0.5
+        }
+      ],
+      "choices": []
     }
   ]
 }
