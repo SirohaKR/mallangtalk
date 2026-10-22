@@ -600,12 +600,15 @@ class ScriptBubblePiece {
   final String? photoLabel;
   /// 진짜 사진 (캐릭터 파일의 images 안 번호. 없으면 설명만 있는 사진 카드)
   final String? photoImage;
+  /// 답장이 늦게 오는 연출: 이 말풍선을 치기 전에 '1'이 안 사라진 채 기다리는 시간(초). 0이면 보통
+  final int delaySeconds;
 
   const ScriptBubblePiece({
     required this.text,
     this.speedFactor = 1.0,
     this.photoLabel,
     this.photoImage,
+    this.delaySeconds = 0,
   });
 
   bool get hasPhoto => photoLabel != null && photoLabel!.isNotEmpty;
@@ -616,12 +619,14 @@ class ScriptBubblePiece {
       speedFactor: (json['speed'] as num?)?.toDouble() ?? 1.0,
       photoLabel: json['photo'] as String?,
       photoImage: json['photo_image'] as String?,
+      delaySeconds: (json['delay'] as num?)?.toInt() ?? 0,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'text': text,
         if (speedFactor != 1.0) 'speed': speedFactor,
+        if (delaySeconds > 0) 'delay': delaySeconds,
         if (hasPhoto) 'photo': photoLabel,
         if (hasPhoto && photoImage != null) 'photo_image': photoImage,
       };
@@ -677,6 +682,8 @@ class ScriptNodeModel {
   final String speakerCharacterId;
   final List<ScriptBubblePiece> characterBubbles; // 캐릭터가 끊어서 치는 말풍선 배열
   final List<ChoiceOption> choices;
+  /// 선톡: 이 장면이 시작되면 캐릭터보다 먼저 내가 보내는 톡 (비우면 캐릭터가 먼저)
+  final List<ScriptBubblePiece> userFirst;
 
   const ScriptNodeModel({
     required this.id,
@@ -685,6 +692,7 @@ class ScriptNodeModel {
     required this.speakerCharacterId,
     required this.characterBubbles,
     required this.choices,
+    this.userFirst = const [],
   });
 
   factory ScriptNodeModel.fromJson(Map<String, dynamic> json) {
@@ -701,6 +709,10 @@ class ScriptNodeModel {
         for (final choice in json['choices'] as List? ?? const [])
           ChoiceOption.fromJson(choice as Map<String, dynamic>),
       ],
+      userFirst: [
+        for (final bubble in json['user_first'] as List? ?? const [])
+          ScriptBubblePiece.fromJson(bubble as Map<String, dynamic>),
+      ],
     );
   }
 
@@ -711,6 +723,7 @@ class ScriptNodeModel {
         'speaker_character_id': speakerCharacterId,
         'messages': [for (final b in characterBubbles) b.toJson()],
         if (choices.isNotEmpty) 'choices': [for (final c in choices) c.toJson()],
+        if (userFirst.isNotEmpty) 'user_first': [for (final b in userFirst) b.toJson()],
       };
 }
 

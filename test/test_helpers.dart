@@ -41,14 +41,15 @@ DateTime testNow() => DateTime(2026, 10, 22, 15);
 Future<ProviderContainer> openDohaChat(
   WidgetTester tester, {
   List<Override> extra = const [],
+  ScenarioBundle? bundle,
 }) async {
-  final bundle = loadSampleBundle();
+  bundle ??= loadSampleBundle();
   await tester.binding.setSurfaceSize(const Size(420, 900));
   await tester.pumpWidget(
     ProviderScope(
       key: UniqueKey(),
       overrides: [
-        builtinBundlesProvider.overrideWith((ref) async => [bundle]),
+        builtinBundlesProvider.overrideWith((ref) async => [bundle!]),
         sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
         clockProvider.overrideWithValue(testNow),
         ...extra,

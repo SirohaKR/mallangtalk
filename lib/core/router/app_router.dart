@@ -7,6 +7,7 @@ import '../../features/chat/chat_screen.dart';
 import '../../features/chats/chat_list_screen.dart';
 import '../../features/home/friends_screen.dart';
 import '../../features/home/home_shell.dart';
+import '../../features/relations/relation_map_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/studio/studio_screen.dart';
 
@@ -16,6 +17,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 /// - 하단 탭 4개: /friends(내 캐릭터) /chats(채팅) /add(캐릭터 추가) /settings(설정)
 /// - 갤러리 캐릭터 상세: /gallery/캐릭터ID
 /// - 만든 캐릭터 고치기: /edit/캐릭터ID
+/// - 내가 만든 캐릭터끼리 관계도: /relations
 /// - 대화방은 탭 위에 전체 화면으로: /chat/캐릭터ID, 앨범은 /chat/캐릭터ID/album
 final appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
@@ -43,6 +45,11 @@ final appRouter = GoRouter(
       path: '/gallery/:id',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => CharacterDetailScreen(characterId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/relations',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const RelationMapScreen(),
     ),
     GoRoute(
       path: '/edit/:id',

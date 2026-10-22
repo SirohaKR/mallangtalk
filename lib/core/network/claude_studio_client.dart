@@ -308,6 +308,11 @@ ${_characterSheet(base)}
             'type': 'object',
             'properties': {
               'scene': {'type': 'string', 'description': '장면 이름. 예: 1, 2, 3-수락, 3-거절'},
+              'user_first': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': '선톡: 이 장면에서 캐릭터보다 유저가 먼저 보내는 톡. 보통 빈 배열',
+              },
               'step': {'type': 'integer', 'description': '몇 번째 단계인지 (1부터)'},
               'lines': {
                 'type': 'array',
@@ -317,8 +322,9 @@ ${_characterSheet(base)}
                     'text': {'type': 'string'},
                     'speed': {'type': 'number', 'description': '0.5 툭 빠르게 ~ 1.5 망설이며 느리게'},
                     'photo': {'type': 'string', 'description': '사진을 보내는 말풍선이면 사진 묘사, 아니면 빈 문자열'},
+                    'late': {'type': 'boolean', 'description': '바빠서·망설여서 답장이 늦게 오는 말풍선이면 true (보통 false)'},
                   },
-                  'required': ['text', 'speed', 'photo'],
+                  'required': ['text', 'speed', 'photo', 'late'],
                   'additionalProperties': false,
                 },
               },
@@ -337,7 +343,7 @@ ${_characterSheet(base)}
                 },
               },
             },
-            'required': ['scene', 'step', 'lines', 'choices'],
+            'required': ['scene', 'user_first', 'step', 'lines', 'choices'],
             'additionalProperties': false,
           },
         },
@@ -360,6 +366,8 @@ ${_characterSheet(base)}
     final affectionBudget = event.isAffectionEvent && stage != null
         ? ((stage.maxScore - stage.minScore + 1) / (storyInStage == 0 ? 1 : storyInStage)).round().clamp(4, 30)
         : null;
+    // 대화마다 연출을 조금씩 다르게 (늘 캐릭터가 먼저 말하고 선택지로 끝나면 단조로워서)
+    final style = _scriptStyle(event);
     final storySoFar = outline
         .map((o) => '- [${o.stageLabel ?? ''}] ${o.title}${o.id == event.id ? '  ← 지금 쓸 대화' : ''}')
         .join('\n');
@@ -378,12 +386,16 @@ ${event.isSpecial ? '실제 시간: ${event.realTime?.label ?? ''} 에 대화방
 내용: ${event.synopsis}
 ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTitle} → 이 장면이 떠오르는 단계를 cutscene_step으로. 좋은 선택을 하면 반드시 지나가는 단계여야 한다.' : '앨범 장면 없음 → cutscene_step은 0'}
 
+이 대화의 연출: ${style.$2}
+
 규칙:
-- 캐릭터가 먼저 톡을 보내며 시작한다. 장면마다 캐릭터 말풍선 3~5개.
+- ${style.$1 == _ScriptStyle.userFirst ? '첫 장면의 user_first에 유저가 먼저 보내는 톡 1~3개를 쓰고, 캐릭터는 그 톡에 답하며 시작한다. 나머지 장면의 user_first는 빈 배열' : '캐릭터가 먼저 톡을 보내며 시작한다. 모든 장면의 user_first는 빈 배열'}. 장면마다 캐릭터 말풍선 3~5개.
+- ${style.$1 == _ScriptStyle.late ? '대화 중 한 번은 캐릭터가 답장을 늦게 한다: 유저의 선택 바로 다음 장면 첫 말풍선의 late를 true로 하고, 늦은 이유가 말에 묻어나게 쓴다 (예: 아 미안 씻고 왔어). 나머지 late는 false' : '모든 late는 false'}.
+- 당황하거나 급하거나 들뜰 때는 일부러 오타를 내기도 한다 (예: 잠깐만 잠깐ㄴ만, 헐 대박ㅂ). 오타 뒤에 *고친말 로 바로잡는 말풍선을 붙이기도 한다. 대화당 0~2번, 캐릭터 말투에 맞을 때만.
 - 분량: 좋은 선택을 따라 끝까지 읽었을 때 캐릭터 말풍선이 모두 합쳐 $bubbleRange개가 되게 쓴다. 짧게 끊어 치는 카톡처럼, 한 말풍선은 한두 문장.
 - 선택지는 2~3개. user_messages는 유저가 보내는 짧은 톡 1~3개.
 - affection: 캐릭터 마음에 쏙 드는 답 +2~+4, 무난한 답 +1, 서운한 답 0. 음수는 쓰지 않는다.${affectionBudget != null ? '\n- 좋은 답만 골랐을 때 이 대화에서 오르는 호감도 합이 약 $affectionBudget점이 되게 맞춘다.' : ''}
-- 선택지가 없는 장면에서 대화가 끝난다. next_scene은 이 대화 안의 장면 이름만 쓴다.''';
+- 선택지가 없는 장면에서 대화가 끝난다. next_scene은 이 대화 안의 장면 이름만 쓴다.${style.$1 == _ScriptStyle.monologue ? '\n- 이 대화는 장면 1~2개로 짧게, 캐릭터가 혼자 연달아 말하고 유저 대답 없이(choices 빈 배열) 끝난다. 분량은 캐릭터 말풍선 5~8개.' : ''}''';
 
     final json = await _call(
       provider: provider,
@@ -425,6 +437,7 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
               (l['photo'] as String? ?? '').trim().isNotEmpty)
             ScriptBubblePiece(
               text: (l['text'] as String? ?? '').trim(),
+              delaySeconds: l['late'] == true ? 10 : 0,
               speedFactor: (l['speed'] as num? ?? 1.0).toDouble().clamp(0.4, 1.8),
               photoLabel: (l['photo'] as String? ?? '').trim().isEmpty
                   ? null
@@ -439,6 +452,10 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
         speakerCharacterId: event.characterId,
         characterBubbles: lines,
         choices: choices,
+        userFirst: [
+          for (final m in s['user_first'] as List? ?? const [])
+            if ((m as String).trim().isNotEmpty) ScriptBubblePiece(text: m.trim()),
+        ],
       ));
     }
     if (nodes.isEmpty) {
@@ -447,6 +464,30 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
     final step = (json['cutscene_step'] as num? ?? 0).toInt();
     final validStep = nodes.any((n) => n.stepOrder == step) ? step : null;
     return (nodes, validStep ?? (event.cutscenePhotoTitle != null ? nodes.first.stepOrder : null));
+  }
+
+  /// 이벤트마다 연출 하나를 고름 (같은 이벤트는 늘 같은 연출)
+  /// 일상·특별 대화: 보통 / 혼잣말로 끝 / 내가 선톡 / 늦은 답장, 호감도 이벤트: 보통 / 선톡 / 늦은 답장, 엔딩: 보통
+  static (_ScriptStyle, String) _scriptStyle(ScenarioEventModel event) {
+    final options = switch (event.eventType) {
+      ScenarioEventType.ending => [_ScriptStyle.normal],
+      ScenarioEventType.daily || ScenarioEventType.special => _ScriptStyle.values,
+      _ => [_ScriptStyle.normal, _ScriptStyle.normal, _ScriptStyle.userFirst, _ScriptStyle.late],
+    };
+    var hash = 0;
+    for (final unit in event.id.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final style = options[hash % options.length];
+    return (
+      style,
+      switch (style) {
+        _ScriptStyle.normal => '보통 (캐릭터가 먼저 말을 걸고 선택지로 이어짐)',
+        _ScriptStyle.monologue => '혼잣말 톡 (캐릭터가 혼자 할 말만 하고 끝남)',
+        _ScriptStyle.userFirst => '선톡 (유저가 먼저 톡을 보냄)',
+        _ScriptStyle.late => '늦은 답장 (캐릭터 답장이 한 번 늦게 옴)',
+      },
+    );
   }
 
   Future<Map<String, dynamic>> _call({
@@ -557,3 +598,6 @@ ScenarioBundle _scaleDeltas(ScenarioBundle bundle, double factor) {
     },
   );
 }
+
+/// AI가 대본을 쓸 때 고르는 연출
+enum _ScriptStyle { normal, monologue, userFirst, late }
