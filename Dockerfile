@@ -23,12 +23,12 @@ RUN flutter build web --release --no-web-resources-cdn
 RUN cd server && dart compile exe bin/server.dart -o /out/server
 
 FROM debian:bookworm-slim
-# AI 회사 API(https)를 부르려면 인증서 목록이 필요해요
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# AI 회사 API(https)를 부르려면 인증서 목록이, 유저·캐릭터 DB에는 SQLite가 필요해요
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/server /app/server
 COPY --from=build /src/build/web /app/web
-ENV WEB_DIR=/app/web PORT=5200
+ENV WEB_DIR=/app/web PORT=5200 DATA_DIR=/app/data
 EXPOSE 5200
 CMD ["/app/server"]

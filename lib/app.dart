@@ -1,11 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/network/server_info.dart';
 import 'core/router/app_router.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_text_styles.dart';
 import 'core/theme/app_theme.dart';
+import 'features/auth/auth_state.dart';
+import 'features/auth/login_screen.dart';
 import 'features/library/character_library.dart';
 
 class MallangTalkApp extends StatelessWidget {
@@ -51,11 +55,23 @@ class _BootGate extends ConsumerWidget {
         ),
       );
     }
-    if (!bundle.hasValue || !prefs.hasValue) {
+    // 웹에서는 말랑톡 서버인지 확인할 때까지 기다림 (서버면 로그인 화면부터)
+    final server = ref.watch(serverInfoProvider);
+    if (!bundle.hasValue || !prefs.hasValue || (kIsWeb && server.isLoading)) {
       return const Scaffold(
         backgroundColor: AppColors.chatRoomBackground,
         body: Center(child: CircularProgressIndicator()),
       );
+    }
+    if (server.valueOrNull?.accounts ?? false) {
+      if (!ref.watch(authProvider).isLoggedIn) {
+        // 로그인 화면의 입력칸이 쓸 Navigator(오버레이)를 따로 둠
+        return Navigator(
+          pages: const [MaterialPage(child: LoginScreen())],
+          onDidRemovePage: (_) {},
+        );
+      }
+      ref.watch(librarySyncProvider); // 로그인하면 내 캐릭터를 서버와 맞춤
     }
     return child;
   }

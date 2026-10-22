@@ -57,8 +57,10 @@ mallangtalk/
 ├── server/                           # NAS 백엔드 서버 (Dart, shelf)
 │   ├── bin/server.dart               # 서버 켜기 (.env 읽기)
 │   ├── lib/mallangtalk_server.dart   # AI 중계(/api/ai/json), 상태 확인(/api/health), 앱 화면 띄우기
+│   ├── lib/accounts.dart             # 회원가입·로그인, 캐릭터 저장·받아오기 목록, 사진 API
+│   ├── lib/store.dart                # SQLite DB (users·sessions·characters·images)
 │   └── test/                         # 서버 테스트 (dart test)
-│   # 다음 단계: 캐릭터·진행 상황 DB 저장, 선톡 스케줄러
+│   # 다음 단계: 대화 진행 상황 서버 저장, 선톡 스케줄러
 └── lib/                              # Flutter 클라이언트 (플레이 + 제작 통합 웹앱)
     ├── main.dart                     # 앱 진입점 및 ProviderScope 초기화
     ├── app.dart                      # MaterialApp.router 및 글로벌 테마 연결
@@ -114,7 +116,9 @@ cd server && dart pub get && dart run bin/server.dart
 # → http://localhost:5200 접속. 설정 탭에 '말랑톡 서버에서 열었어요'가 보이면 성공
 ```
 
-ACCESS_CODE를 정했으면 앱 설정 탭의 `서버 접속 코드`에 같은 값을 넣어 주세요. claude.ai 플레이 링크는 바깥 주소 호출이 막혀 있어서 서버를 쓸 수 없고, 거기서는 계속 내 키(BYOK)로만 AI를 부를 수 있어요(Claude 키만 동작).
+서버에서 열면 먼저 **아이디·비밀번호 로그인** 화면이 나와요(아래 `회원가입`으로 계정 만들기). 로그인하면 내가 만든 캐릭터가 서버 DB(`data/mallangtalk.db`, SQLite)에 저장되고, 올린 사진도 DB로 옮겨져서 캐릭터 파일에는 `/api/images/…` 주소만 남아요. `캐릭터 추가 > 받아오기`에는 다른 유저들이 만든 캐릭터가 같이 보여요(아래로 당기면 새로고침).
+
+AI는 지금 **각자 설정에 넣은 내 API 키**로만 불러요(서버 `.env` 키는 `USE_SERVER_AI_KEYS=false`로 잠겨 있음). 처음엔 무료 한도가 있는 Gemini가 기본이고, 설정의 `Gemini 키 받으러 가기`로 aistudio.google.com에서 키를 받을 수 있어요. 서버 키를 다시 켜려면 `.env`에서 `USE_SERVER_AI_KEYS=true`로 바꾸고, 그때는 ACCESS_CODE를 정해 앱 설정 탭의 `서버 접속 코드`에 같은 값을 넣어 주세요. claude.ai 플레이 링크는 바깥 주소 호출이 막혀 있어서 서버를 쓸 수 없고, 거기서는 계속 내 키(BYOK)로만 AI를 부를 수 있어요(Claude 키만 동작).
 
 ### 앱 화면 구성 (하단 탭)
 | 탭 | 하는 일 |

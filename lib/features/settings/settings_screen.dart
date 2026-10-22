@@ -5,6 +5,8 @@ import '../../core/network/server_info.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../auth/auth_state.dart';
 import 'byok_settings.dart';
 import 'user_profile.dart';
 
@@ -58,6 +60,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
+  /// AI 회사별 API 키 발급 페이지
+  static String _keyPage(AiProvider provider) => switch (provider) {
+        AiProvider.gemini => 'https://aistudio.google.com/apikey',
+        AiProvider.claude => 'https://console.anthropic.com/settings/keys',
+        AiProvider.openai => 'https://platform.openai.com/api-keys',
+      };
+
   static String _usd(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
   void _toast(String text) {
@@ -80,6 +89,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
+              if (ref.watch(authProvider).user case final user?) ...[
+                Row(
+                  children: [
+                    const Icon(Icons.account_circle_rounded, color: AppColors.primaryPink),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('${user.nickname} (${user.username})로 로그인했어요',
+                          style: AppTextStyles.chatBubbleBody),
+                    ),
+                    TextButton(
+                      onPressed: () => ref.read(authProvider.notifier).logout(),
+                      child: const Text('로그아웃'),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                const SizedBox(height: AppSpacing.md),
+              ],
               const Text('내 프로필', style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
@@ -112,14 +139,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: AppSpacing.xl),
               const Divider(),
               const SizedBox(height: AppSpacing.md),
-              Text(server != null ? 'AI 설정' : '내 AI 키', style: AppTextStyles.appBarTitle),
+              Text(server != null && server.providers.isNotEmpty ? 'AI 설정' : '내 AI 키', style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
                 '채팅방 자유대화와 캐릭터 추가 > 만들기 > AI로 만들기에서 여기서 고른 AI를 불러요. '
                 '요금은 그 키의 계정에 청구돼요. 내 키는 이 브라우저에만 저장돼요.',
                 style: AppTextStyles.systemNotice,
               ),
-              if (server != null) ...[
+              if (server != null && server.providers.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.md),
                 _ServerCard(server: server),
                 if (server.needsAccessCode) ...[
@@ -167,6 +194,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 settings.usesServer ? '서버 키로 불러요. 내 키는 넣지 않아도 돼요.' : _provider.keyNote,
                 style: AppTextStyles.messageTime,
               ),
+              if (!settings.usesServer)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                    label: Text('${_provider.label.split(' ').first} 키 받으러 가기'),
+                    onPressed: () => launchUrl(Uri.parse(_keyPage(_provider)), webOnlyWindowName: '_blank'),
+                  ),
+                ),
               const SizedBox(height: AppSpacing.md),
               Text(settings.usesServer ? 'API 키 (안 넣어도 됨)' : 'API 키', style: AppTextStyles.speakerName),
               const SizedBox(height: 4),

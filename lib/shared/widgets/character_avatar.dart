@@ -32,6 +32,8 @@ class CharacterImage extends StatelessWidget {
       }
     }
     if (url.startsWith('http')) return NetworkImage(url);
+    // 말랑톡 서버 DB에 저장된 사진 (/api/images/…). 지금 연 서버 주소 기준으로
+    if (url.startsWith('/api/')) return NetworkImage(Uri.base.resolve(url).toString());
     if (url.startsWith('assets/')) return AssetImage(url);
     return null;
   }

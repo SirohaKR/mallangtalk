@@ -14,7 +14,15 @@ class ServerInfo {
   /// 서버에 ACCESS_CODE가 정해져 있으면 true
   final bool needsAccessCode;
 
-  const ServerInfo({required this.baseUrl, required this.providers, this.needsAccessCode = false});
+  /// 계정(로그인·회원가입)과 캐릭터 저장을 지원하는 서버인지
+  final bool accounts;
+
+  const ServerInfo({
+    required this.baseUrl,
+    required this.providers,
+    this.needsAccessCode = false,
+    this.accounts = false,
+  });
 }
 
 /// [초보자 노트] 앱이 켜질 때 '지금 이 화면을 띄운 곳이 말랑톡 서버인지' 한 번 물어봐요.
@@ -40,6 +48,7 @@ Future<ServerInfo?> detectServer(Uri page, {Dio? dio}) async {
           if (AiProvider.values.where((p) => p.name == name).firstOrNull case final p?) p,
       },
       needsAccessCode: data['needsAccessCode'] == true,
+      accounts: data['accounts'] == true,
     );
   } catch (_) {
     return null; // 서버가 아니거나(정적 호스팅·플레이 링크) 연결이 막힘
