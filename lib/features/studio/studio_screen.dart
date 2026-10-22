@@ -1255,6 +1255,14 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               ),
             ],
           ),
+          EditField(
+            fieldKey: _k(scene, 'userFirst'),
+            value: scene.userFirst,
+            label: '선톡 (선택)',
+            hint: '캐릭터보다 내가 먼저 보내는 톡. 줄마다 말풍선 하나. 비우면 캐릭터가 먼저 말해요',
+            lines: 2,
+            onChanged: (v) => scene.userFirst = v,
+          ),
           const Text('캐릭터 말풍선', style: AppTextStyles.speakerName),
           const SizedBox(height: 4),
           for (final line in scene.lines) _lineRow(scene, line),
@@ -1322,6 +1330,17 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Text(speeds[speedKey]!, style: AppTextStyles.messageTime.copyWith(color: AppColors.aiActivePurple)),
+                ),
+              ),
+              IconButton(
+                // 누를 때마다 바로 → 늦게(10초) → 한참 뒤(30초)
+                tooltip: switch (line.delay) { 0 => '답장 늦게 오게', 10 => '답장 늦게 (10초)', _ => '답장 한참 뒤에 (30초)' },
+                onPressed: () => setState(() => line.delay = switch (line.delay) { 0 => 10, 10 => 30, _ => 0 }),
+                icon: Badge(
+                  isLabelVisible: line.delay > 0,
+                  label: Text('${line.delay}'),
+                  child: Icon(Icons.schedule_rounded, size: 20,
+                      color: line.delay == 0 ? AppColors.textMuted : AppColors.primaryPink),
                 ),
               ),
               IconButton(

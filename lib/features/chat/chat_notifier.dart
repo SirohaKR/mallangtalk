@@ -317,6 +317,17 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 노드 하나의 캐릭터 대사를 재생하고, 선택지를 띄우거나(선택지가 없으면) 이벤트를 끝냅니다.
   /// [from]: 나갔다 들어왔을 때 이미 친 말풍선은 건너뜀
   Future<void> _playNode(ScriptNodeModel node, int runId, {int from = 0}) async {
+    if (from == 0 && node.userFirst.isNotEmpty) {
+      // 선톡: 내가 먼저 입력칸에 쳐서 보냄
+      for (var i = 0; i < node.userFirst.length; i++) {
+        if (!await _sendUserBubble(node.userFirst[i], i, () => runId == _runId)) return;
+      }
+      if (node.characterBubbles.firstOrNull?.delaySeconds == 0) {
+        await Future.delayed(const Duration(milliseconds: 700));
+        if (runId != _runId) return;
+        _markAllUserMessagesRead();
+      }
+    }
     for (var i = from; i < node.characterBubbles.length; i++) {
       if (!await _typeOut(node.characterBubbles[i], () => runId == _runId)) return;
       if (i < node.characterBubbles.length - 1) _saveRun(node: node, nextBubble: i + 1);
@@ -469,6 +480,13 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 중간에 회차가 바뀌거나 내가 끼어들면 false를 돌려주고 멈춥니다.
   Future<bool> _typeOut(ScriptBubblePiece bubble, bool Function() stillValid) async {
     final pace = _pace;
+    if (bubble.delaySeconds > 0) {
+      // 답장이 늦게 오는 연출: 그동안 내 톡의 '1'은 그대로 (대화 속도 설정을 따르고 최대 30초)
+      final tempo = ref.read(chatPrefsProvider(arg)).tempo;
+      await Future.delayed(Duration(milliseconds: (bubble.delaySeconds.clamp(1, 30) * 1000 * tempo).round()));
+      if (!stillValid()) return false;
+      _markAllUserMessagesRead();
+    }
     await Future.delayed(Duration(milliseconds: (500 * pace * _jitter()).round()));
     if (!stillValid()) return false;
 
@@ -552,6 +570,25 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     return true;
   }
 
+  /// 내 말풍선 하나를 입력칸에 쳐서 보냄 (처음엔 '1' 표시)
+  Future<bool> _sendUserBubble(ScriptBubblePiece piece, int index, bool Function() stillValid) async {
+    final text = CharacterModel.fillUserName(piece.text, _nickname, charName: state.character.name);
+    if (!await _typeUserDraft(text, index == 0, stillValid)) return false;
+    final myMsg = ChatMessageLog(
+      id: 'user_choice_${DateTime.now().millisecondsSinceEpoch}_$index',
+      isUser: true,
+      speakerCharacterId: 'user',
+      speakerName: _nickname,
+      text: text,
+      photoLabel: piece.photoLabel,
+      photoImage: piece.photoImage,
+      isUnread: true,
+      timestamp: DateTime.now(),
+    );
+    state = state.copyWith(userDraft: '', messages: [...state.messages, myMsg]);
+    return true;
+  }
+
   /// [선택지 클릭 시] 내가 고른 대답도 짧게 끊어서 연속 전송한 뒤, 캐릭터가 현실적인 타자 속도로 답장합니다.
   Future<void> selectChoice(ChoiceOption choice) async {
     final runId = _runId;
@@ -567,31 +604,23 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
     // 1. 내 말풍선마다 입력창에 한 글자씩 쳐서 보냄 (처음엔 '1' 표시)
     for (int i = 0; i < choice.userBubbles.length; i++) {
-      final piece = choice.userBubbles[i];
-      final text = CharacterModel.fillUserName(piece.text, _nickname, charName: state.character.name);
-      if (!await _typeUserDraft(text, i == 0, () => runId == _runId)) return;
-      final myMsg = ChatMessageLog(
-        id: 'user_choice_${DateTime.now().millisecondsSinceEpoch}_$i',
-        isUser: true,
-        speakerCharacterId: 'user',
-        speakerName: _nickname,
-        text: text,
-        photoLabel: piece.photoLabel,
-        photoImage: piece.photoImage,
-        isUnread: true,
-        timestamp: DateTime.now(),
-      );
-      state = state.copyWith(userDraft: '', messages: [...state.messages, myMsg]);
+      if (!await _sendUserBubble(choice.userBubbles[i], i, () => runId == _runId)) return;
     }
 
     // 2. 내가 연속 전송을 마친 뒤 0.7초 후 캐릭터가 읽음('1' 일괄 사라짐)
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (runId != _runId) return;
-    _markAllUserMessagesRead();
-
-    // 3. 다음 노드가 있으면 이어서 재생, 없으면 이 이벤트는 끝
+    //    다음 말풍선이 늦게 오는 답장이면 그때까지 '1'이 남음
     final nextNode =
         choice.nextNodeId != null ? _bundle.nodes[choice.nextNodeId] : null;
+    final lateReply = nextNode != null &&
+        nextNode.userFirst.isEmpty &&
+        (nextNode.characterBubbles.firstOrNull?.delaySeconds ?? 0) > 0;
+    if (!lateReply) {
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (runId != _runId) return;
+      _markAllUserMessagesRead();
+    }
+
+    // 3. 다음 노드가 있으면 이어서 재생, 없으면 이 이벤트는 끝
     if (nextNode != null) {
       _saveRun(node: nextNode);
       await _playNode(nextNode, runId);

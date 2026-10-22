@@ -45,7 +45,9 @@ class LineDraft {
   String photo;
   /// 올린 진짜 사진 (data: 주소). 비우면 설명만 있는 사진 카드
   String photoImage;
-  LineDraft({this.text = '', this.speed = 1.0, this.photo = '', this.photoImage = ''});
+  /// 답장이 늦게 오는 연출: 이 말풍선 전에 기다리는 초 (0이면 보통)
+  int delay;
+  LineDraft({this.text = '', this.speed = 1.0, this.photo = '', this.photoImage = '', this.delay = 0});
 }
 
 class ChoiceDraft {
@@ -63,7 +65,9 @@ class SceneDraft {
   final List<ChoiceDraft> choices;
   /// 이 장면 대사까지 보면 컷씬이 앨범에 모임
   bool cutsceneHere;
-  SceneDraft({List<LineDraft>? lines, List<ChoiceDraft>? choices, this.cutsceneHere = false})
+  /// 선톡: 이 장면에서 캐릭터보다 먼저 내가 보내는 톡 (줄마다 말풍선 하나, 비우면 캐릭터가 먼저)
+  String userFirst;
+  SceneDraft({List<LineDraft>? lines, List<ChoiceDraft>? choices, this.cutsceneHere = false, this.userFirst = ''})
       : lines = lines ?? [LineDraft()],
         choices = choices ?? [];
 }
@@ -203,8 +207,10 @@ class ScenarioDraft {
                 speed: b.speedFactor,
                 photo: b.photoLabel ?? '',
                 photoImage: bundle.resolveImage(b.photoImage) ?? '',
+                delay: b.delaySeconds,
               ),
           ],
+          userFirst: n.userFirst.map((b) => b.text).join('\n'),
         ),
     };
     var cutsceneMarked = false;
@@ -350,7 +356,12 @@ class ScenarioDraft {
                 speedFactor: l.speed,
                 photoLabel: l.photo.trim().isEmpty ? (l.photoImage.isEmpty ? null : '사진') : l.photo.trim(),
                 photoImage: imageRef(l.photoImage),
+                delaySeconds: l.delay,
               ),
+        ],
+        userFirst: [
+          for (final m in scene.userFirst.split('\n'))
+            if (m.trim().isNotEmpty) ScriptBubblePiece(text: m.trim()),
         ],
         choices: [
           for (var j = 0; j < scene.choices.length; j++)
