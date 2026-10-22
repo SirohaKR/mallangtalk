@@ -159,6 +159,14 @@ class LocalStore {
 
   Future<void> clearApiKey(String provider) => _write(_keyKey(provider), null);
 
+  /// 말랑톡 서버 로그인 (토큰과 아이디·닉네임). 로그아웃하면 지움
+  String? get authToken => _getString('auth_token');
+  String? get authUserJson => _getString('auth_user');
+  Future<void> saveAuth(String? token, String? userJson) async {
+    await _write('auth_token', token);
+    await _write('auth_user', userJson);
+  }
+
   /// 말랑톡 서버의 접속 코드 (서버 .env에 ACCESS_CODE가 있을 때만 필요)
   String? get serverAccessCode => _getString('server_access_code');
   Future<void> saveServerAccessCode(String? code) =>

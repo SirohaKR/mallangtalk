@@ -7,6 +7,11 @@ import 'package:mallangtalk_ai/mallangtalk_ai.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_static/shelf_static.dart';
 
+import 'accounts.dart';
+import 'store.dart';
+
+export 'store.dart';
+
 /// [초보자 노트] 서버 설정. 값은 .env 파일(또는 환경 변수)에서 읽어요.
 class ServerConfig {
   /// AI 회사별 키. 비어 있는 회사는 서버로 부를 수 없음
@@ -20,7 +25,23 @@ class ServerConfig {
 
   final int port;
 
-  const ServerConfig({required this.keys, this.accessCode, this.webDir, this.port = 5200});
+  /// DB 파일(mallangtalk.db)을 둘 폴더
+  final String dataDir;
+
+  /// .env 키로 AI를 대신 불러 줄지. 지금은 꺼 두고 각자 설정의 내 키를 씀 (USE_SERVER_AI_KEYS=true면 켜짐)
+  final bool useServerAiKeys;
+
+  const ServerConfig({
+    required this.keys,
+    this.accessCode,
+    this.webDir,
+    this.port = 5200,
+    this.dataDir = 'data',
+    this.useServerAiKeys = false,
+  });
+
+  /// 실제로 쓸 수 있는 서버 키 (잠가 두면 비어 있음)
+  Map<AiProvider, String> get activeKeys => useServerAiKeys ? keys : const {};
 
   /// .env 파일 내용과 환경 변수를 합쳐서 설정을 만듦 (환경 변수가 우선)
   factory ServerConfig.fromEnv(Map<String, String> env) {
@@ -41,6 +62,8 @@ class ServerConfig {
       accessCode: read('ACCESS_CODE'),
       webDir: read('WEB_DIR'),
       port: int.tryParse(read('PORT') ?? '') ?? 5200,
+      dataDir: read('DATA_DIR') ?? 'data',
+      useServerAiKeys: read('USE_SERVER_AI_KEYS')?.toLowerCase() == 'true',
     );
   }
 }
@@ -70,8 +93,9 @@ const _maxBodyBytes = 2 * 1024 * 1024;
 /// [초보자 노트] 서버가 하는 일:
 /// - GET  /api/health  : 서버가 켜져 있는지, 어느 AI 회사 키가 있는지, 접속 코드가 필요한지 알려 줌 (키 자체는 절대 안 보냄)
 /// - POST /api/ai/json : 앱 대신 .env 키로 AI를 불러서 JSON 결과만 돌려줌. 키·대화 내용은 기록(로그)하지 않음
+/// - /api/auth·characters·images… : 계정·캐릭터·사진 (accounts.dart)
 /// - 그 밖의 주소      : 빌드한 앱 화면 파일
-Handler buildHandler(ServerConfig config, {Dio? dio}) {
+Handler buildHandler(ServerConfig config, {required Store store, Dio? dio}) {
   final client = dio ??
       Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 15),
@@ -83,11 +107,14 @@ Handler buildHandler(ServerConfig config, {Dio? dio}) {
     if (path == 'api/health' && request.method == 'GET') {
       return _json(200, {
         'ok': true,
-        'providers': [for (final p in AiProvider.values) if (config.keys.containsKey(p)) p.name],
+        'providers': [for (final p in AiProvider.values) if (config.activeKeys.containsKey(p)) p.name],
         'needsAccessCode': config.accessCode != null,
+        'accounts': true,
       });
     }
     if (path == 'api/ai/json' && request.method == 'POST') return _relay(request, config, client);
+    final account = await accountsApi(request, store);
+    if (account != null) return account;
     return _json(404, {'error': '없는 주소예요.'});
   }
 
@@ -119,9 +146,11 @@ Future<Response> _relay(Request request, ServerConfig config, Dio dio) async {
 
   final provider = AiProvider.values.where((p) => p.name == body['provider']).firstOrNull;
   if (provider == null) return _json(400, {'error': '모르는 AI 회사예요.'});
-  final key = config.keys[provider];
+  final key = config.activeKeys[provider];
   if (key == null) {
-    return _json(400, {'error': '서버 .env에 ${provider.label} 키가 없어요. 다른 AI 회사를 고르거나 키를 넣어 주세요.'});
+    return _json(400, {'error': config.useServerAiKeys
+        ? '서버 .env에 ${provider.label} 키가 없어요. 다른 AI 회사를 고르거나 키를 넣어 주세요.'
+        : '서버 키는 잠겨 있어요. 설정에서 내 API 키를 넣어 주세요.'});
   }
   final model = body['model'];
   final system = body['system'];

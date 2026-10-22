@@ -17,3 +17,6 @@ Thumbs.db
 # 서버 배포용 비밀 값 (예시 파일 .env.example만 올림)
 .env
 packages/mallangtalk_ai/pubspec.lock
+
+# 서버 DB (유저·캐릭터·사진). NAS에서는 이 폴더를 백업해 주세요
+data/

@@ -20,9 +20,10 @@ class CharacterDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final gallery = ref.watch(builtinBundlesProvider).valueOrNull ?? const [];
-    final bundle = gallery.where((b) => b.character.id == characterId).firstOrNull;
-    if (bundle == null) {
+    final gallery = ref.watch(galleryProvider).valueOrNull ?? const [];
+    final item = gallery.where((g) => g.bundle.character.id == characterId).firstOrNull;
+    final bundle = item?.bundle;
+    if (item == null || bundle == null) {
       return Scaffold(
         appBar: AppBar(),
         body: const Center(child: Text('캐릭터를 찾을 수 없어요', style: AppTextStyles.systemNotice)),
@@ -50,6 +51,10 @@ class CharacterDetailScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 22)),
+                    if (item.creator != null) ...[
+                      const SizedBox(height: 2),
+                      Text(item.mine ? '내가 만든 캐릭터' : '만든 사람: ${item.creator}', style: AppTextStyles.messageTime),
+                    ],
                     if (c.tagline.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(CharacterModel.fillUserName(c.tagline, '너', charName: c.name), style: AppTextStyles.chatBubbleBody),
@@ -86,7 +91,14 @@ class CharacterDetailScreen extends ConsumerWidget {
                               label: const Text('친구 추가'),
                               onPressed: () async {
                                 await ref.read(characterLibraryProvider.notifier)
-                                    .add(bundle, CharacterSource.builtin);
+                                    .add(
+                                      bundle,
+                                      item.isBuiltin
+                                          ? CharacterSource.builtin
+                                          : item.mine
+                                              ? CharacterSource.created
+                                              : CharacterSource.imported,
+                                    );
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text('${josa(c.name, '을', '를')} 친구로 추가했어요')),

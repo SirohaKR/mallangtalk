@@ -53,9 +53,16 @@ class ByokSettingsNotifier extends Notifier<ByokSettings> {
   ByokSettings build() {
     final store = ref.watch(localStoreProvider);
     final server = ref.watch(serverInfoProvider).valueOrNull; // 서버 확인이 끝나면 다시 읽음
-    // 아직 회사를 고른 적 없으면 서버에 키가 있는 회사부터
-    final first = AiProvider.values.where((p) => server?.providers.contains(p) ?? false).firstOrNull;
-    return _load(store, store.provider == null && first != null ? first : AiProvider.byName(store.provider));
+    return _load(store, _initialProvider(store, server));
+  }
+
+  /// 아직 회사를 고른 적 없으면: 서버 키가 있는 회사 → 예전에 넣어 둔 Claude 키 → 무료 한도가 있는 Gemini
+  static AiProvider _initialProvider(LocalStore store, ServerInfo? server) {
+    if (store.provider != null) return AiProvider.byName(store.provider);
+    final serverFirst = AiProvider.values.where((p) => server?.providers.contains(p) ?? false).firstOrNull;
+    if (serverFirst != null) return serverFirst;
+    if (store.apiKeyOf(AiProvider.claude.name)?.isNotEmpty ?? false) return AiProvider.claude;
+    return AiProvider.gemini;
   }
 
   ByokSettings _load(LocalStore store, AiProvider provider) => ByokSettings(

@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/network/mallangtalk_api.dart';
 import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
+import '../auth/auth_state.dart';
 
 /// 앱에 기본으로 들어 있는 캐릭터 시나리오 파일 목록 ('캐릭터 추가 > 받아오기'에 보임)
 const builtinScenarioAssets = [
@@ -11,7 +14,7 @@ const builtinScenarioAssets = [
 ];
 
 /// [초보자 노트] 앱 안에 들어 있는 기본 캐릭터들을 읽어오는 FutureProvider입니다.
-/// 4단계에서 서버가 생기면 '받아오기' 목록은 서버의 공개 캐릭터 목록으로 바뀝니다.
+/// '받아오기' 목록에는 이것과 서버에 올라온 유저 캐릭터(galleryProvider)가 같이 보여요.
 final builtinBundlesProvider = FutureProvider<List<ScenarioBundle>>((ref) async {
   return [
     for (final path in builtinScenarioAssets)
@@ -112,7 +115,37 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
   }
 
   /// 캐릭터 추가 (같은 ID가 있으면 새 내용으로 교체하고, 그 캐릭터 대화방은 새 내용으로 다시 열림)
+  /// 로그인했으면 내가 만든 캐릭터는 서버 DB에도 저장해요 (사진은 서버로 옮겨지고 주소만 남음)
   Future<void> add(ScenarioBundle bundle, CharacterSource source) async {
+    await _putLocal(bundle, source);
+    if (source == CharacterSource.created) await _upload(bundle);
+  }
+
+  Future<void> _upload(ScenarioBundle bundle) async {
+    final api = ref.read(accountApiProvider);
+    if (api == null) return;
+    try {
+      final saved = await api.saveCharacter(bundle);
+      // 서버가 사진을 주소로 바꾼 파일로 교체 → 브라우저 저장소에는 사진이 안 남음
+      if (byId(saved.character.id) != null) await _putLocal(saved, CharacterSource.created);
+    } catch (e) {
+      debugPrint('캐릭터 서버 저장 실패 (다음 로그인 때 다시 올림): $e');
+    }
+  }
+
+  /// 로그인하면 한 번: 서버의 내 캐릭터를 받아오고, 이 브라우저에만 있던 내 캐릭터는 서버에 올림
+  Future<void> syncWithServer(MallangtalkApi api) async {
+    final mine = await api.myCharacters();
+    final onServer = {for (final c in mine) c.bundle.character.id};
+    for (final entry in [...state]) {
+      if (entry.source == CharacterSource.created && !onServer.contains(entry.id)) await _upload(entry.bundle);
+    }
+    for (final c in mine) {
+      await _putLocal(c.bundle, CharacterSource.created);
+    }
+  }
+
+  Future<void> _putLocal(ScenarioBundle bundle, CharacterSource source) async {
     final existing = byId(bundle.character.id);
     final entry = LibraryEntry(
       bundle: bundle,
@@ -125,8 +158,15 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
     await _persist();
   }
 
-  /// 캐릭터 삭제 (대화 기록·앨범도 같이 지움)
+  /// 캐릭터 삭제 (대화 기록·앨범도 같이 지움). 내가 만든 캐릭터면 서버에서도 지움
   Future<void> remove(String id) async {
+    if (byId(id)?.source == CharacterSource.created) {
+      try {
+        await ref.read(accountApiProvider)?.deleteCharacter(id);
+      } catch (e) {
+        debugPrint('캐릭터 서버 삭제 실패: $e');
+      }
+    }
     state = [for (final e in state) if (e.id != id) e];
     await _persist();
     await _store.forgetCharacter(id);
@@ -167,3 +207,39 @@ class ChatRoomsNotifier extends Notifier<List<String>> {
 
 final chatRoomsProvider =
     NotifierProvider<ChatRoomsNotifier, List<String>>(ChatRoomsNotifier.new);
+
+/// 로그인하면 내 캐릭터를 서버와 맞춤 (앱 맨 위 문지기가 지켜봄)
+final librarySyncProvider = FutureProvider<void>((ref) async {
+  final api = ref.watch(accountApiProvider);
+  if (api == null) return;
+  await ref.read(characterLibraryProvider.notifier).syncWithServer(api);
+});
+
+/// '받아오기' 갤러리의 캐릭터 하나
+class GalleryItem {
+  final ScenarioBundle bundle;
+  /// 만든 사람 닉네임 (앱 기본 캐릭터면 null)
+  final String? creator;
+  final bool mine;
+  const GalleryItem(this.bundle, {this.creator, this.mine = false});
+
+  bool get isBuiltin => creator == null;
+}
+
+/// [초보자 노트] '받아오기' 목록: 앱 기본 캐릭터 + 서버에 올라온 유저들의 캐릭터 (최근에 고친 순)
+final galleryProvider = FutureProvider<List<GalleryItem>>((ref) async {
+  final builtins = await ref.watch(builtinBundlesProvider.future);
+  final items = [for (final b in builtins) GalleryItem(b)];
+  final api = ref.watch(accountApiProvider);
+  if (api != null) {
+    try {
+      final ids = {for (final b in builtins) b.character.id};
+      for (final c in await api.publishedCharacters()) {
+        if (!ids.contains(c.bundle.character.id)) items.add(GalleryItem(c.bundle, creator: c.creator, mine: c.mine));
+      }
+    } catch (e) {
+      debugPrint('받아오기 목록을 못 불러옴: $e');
+    }
+  }
+  return items;
+});
