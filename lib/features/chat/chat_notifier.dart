@@ -164,6 +164,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         seenMessageCount: saved.messages.length,
       );
       final runId = _runId;
+      final node = saved.nodeId != null ? _bundle.nodes[saved.nodeId] : null;
+      if (!saved.cleared && node != null && _eventById(node.eventId) != null) {
+        // 이벤트 중간에 나갔으면 나가기 전 그 자리부터 (치던 말풍선 다음, 또는 선택지)
+        Future.microtask(() => _playNode(node, runId, from: saved.nextBubble));
+        return restored.copyWith(currentEventId: node.eventId, currentStepOrder: node.stepOrder);
+      }
       if (!saved.cleared) {
         Future.microtask(() => _advance(runId));
       } else {
@@ -213,8 +219,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _advance(_runId);
   }
 
-  /// 이벤트 경계마다 진행 기록을 브라우저에 저장
-  void _saveRun({bool cleared = false}) {
+  /// 진행 기록을 브라우저에 저장. 이벤트 경계마다, 그리고 이벤트 중간에는 말풍선마다
+  /// [node]·[nextBubble]로 돌아올 자리를 함께 저장해서 나갔다 와도 그 자리부터 이어짐
+  void _saveRun({bool cleared = false, ScriptNodeModel? node, int nextBubble = 0}) {
     _store.saveRun(
       _bundle.character.id,
       SavedRun(
@@ -223,6 +230,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         completedEventIds: state.completedEventIds,
         messages: state.messages,
         cleared: cleared,
+        eventId: node?.eventId,
+        nodeId: node?.id,
+        nextBubble: nextBubble,
       ),
     );
   }
@@ -305,9 +315,11 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   /// 노드 하나의 캐릭터 대사를 재생하고, 선택지를 띄우거나(선택지가 없으면) 이벤트를 끝냅니다.
-  Future<void> _playNode(ScriptNodeModel node, int runId) async {
-    for (final bubble in node.characterBubbles) {
-      if (!await _typeOut(bubble, () => runId == _runId)) return;
+  /// [from]: 나갔다 들어왔을 때 이미 친 말풍선은 건너뜀
+  Future<void> _playNode(ScriptNodeModel node, int runId, {int from = 0}) async {
+    for (var i = from; i < node.characterBubbles.length; i++) {
+      if (!await _typeOut(node.characterBubbles[i], () => runId == _runId)) return;
+      if (i < node.characterBubbles.length - 1) _saveRun(node: node, nextBubble: i + 1);
     }
 
     state = state.copyWith(currentStepOrder: node.stepOrder);
@@ -323,6 +335,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
     state = state.copyWith(currentChoices: node.choices);
+    _saveRun(node: node, nextBubble: node.characterBubbles.length);
   }
 
   void _collectCutscene(ScenarioEventModel event) {
@@ -580,6 +593,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final nextNode =
         choice.nextNodeId != null ? _bundle.nodes[choice.nextNodeId] : null;
     if (nextNode != null) {
+      _saveRun(node: nextNode);
       await _playNode(nextNode, runId);
       return;
     }

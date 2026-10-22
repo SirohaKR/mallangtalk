@@ -26,12 +26,21 @@ class SavedRun {
   final List<ChatMessageLog> messages;
   final bool cleared;
 
+  /// 이벤트 중간에 나갔을 때 돌아올 자리: 하던 이벤트, 장면, 그 장면에서 다음에 칠 말풍선 번호
+  /// (말풍선을 다 쳤으면 그 장면의 선택지가 다시 뜸)
+  final String? eventId;
+  final String? nodeId;
+  final int nextBubble;
+
   const SavedRun({
     required this.affection,
     required this.flags,
     required this.completedEventIds,
     required this.messages,
     this.cleared = false,
+    this.eventId,
+    this.nodeId,
+    this.nextBubble = 0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -40,6 +49,7 @@ class SavedRun {
         'completed_event_ids': completedEventIds,
         'messages': [for (final m in messages) m.toJson()],
         'cleared': cleared,
+        if (nodeId != null) ...{'event_id': eventId, 'node_id': nodeId, 'next_bubble': nextBubble},
       };
 
   factory SavedRun.fromJson(Map<String, dynamic> json) {
@@ -54,6 +64,9 @@ class SavedRun {
           ChatMessageLog.fromJson(m as Map<String, dynamic>),
       ],
       cleared: json['cleared'] as bool? ?? false,
+      eventId: json['event_id'] as String?,
+      nodeId: json['node_id'] as String?,
+      nextBubble: json['next_bubble'] as int? ?? 0,
     );
   }
 }
