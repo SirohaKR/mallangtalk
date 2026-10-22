@@ -78,7 +78,7 @@ class CharacterDetailScreen extends ConsumerWidget {
                           ? ElevatedButton.icon(
                               icon: const Icon(Icons.chat_bubble_rounded, size: 18),
                               label: const Text('친구 · 1:1 채팅'),
-                              onPressed: () => openChat(context, ref, c),
+                              onPressed: () => openChat(context, c),
                             )
                           : ElevatedButton.icon(
                               icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),

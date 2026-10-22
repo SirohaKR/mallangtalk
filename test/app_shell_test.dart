@@ -129,6 +129,51 @@ void main() {
     expect(container.read(chatRoomsProvider), contains('char_example_seo_ijun'));
   });
 
+  testWidgets('내 캐릭터 프로필에서 1:1 채팅을 누르면 별명을 정하고 대화방으로 이동', (tester) async {
+    SharedPreferences.setMockInitialValues({'tempo_$dohaId': '0.2'});
+    appRouter.go('/friends');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+
+    // 처음: 프로필 시트가 닫힌 뒤에도 별명 창이 뜨고, 정하면 대화방이 열림
+    await tester.tap(find.text('윤도하'));
+    await settle(tester);
+    await tester.tap(find.text('1:1 채팅'));
+    await settle(tester);
+    expect(find.text('윤도하와 대화 시작'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '말랑');
+    await tester.tap(find.text('대화 시작'));
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsOneWidget);
+
+    // 두 번째: 별명이 이미 있으면 바로 대화방
+    appRouter.go('/friends');
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsNothing);
+    await tester.tap(find.text('윤도하'));
+    await settle(tester);
+    await tester.tap(find.text('1:1 채팅'));
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsOneWidget);
+
+    // 프로필 시트의 대화 속도도 시트가 닫힌 뒤 제대로 열림
+    appRouter.go('/friends');
+    await settle(tester);
+    await tester.tap(find.text('윤도하'));
+    await settle(tester);
+    await tester.tap(find.text('대화 속도'));
+    await settle(tester);
+    expect(find.text('윤도하 대화 속도'), findsOneWidget);
+  });
+
   testWidgets('만들기: 예시를 불러와 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
     SharedPreferences.setMockInitialValues({});
     appRouter.go('/add');

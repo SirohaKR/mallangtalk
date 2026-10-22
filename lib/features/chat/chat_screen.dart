@@ -209,9 +209,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'nickname':
-                  askChatNickname(context, ref, chatState.character);
+                  askChatNickname(context, chatState.character);
                 case 'tempo':
-                  pickChatTempo(context, ref, chatState.character);
+                  pickChatTempo(context, chatState.character);
                 case 'restart':
                   notifier.restart();
               }

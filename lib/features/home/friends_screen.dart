@@ -133,7 +133,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
               label: const Text('1:1 채팅'),
               onPressed: () {
                 close();
-                openChat(parentContext, ref, c);
+                openChat(parentContext, c);
               },
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -156,7 +156,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
                     label: const Text('대화 속도'),
                     onPressed: () {
                       close();
-                      pickChatTempo(parentContext, ref, c);
+                      pickChatTempo(parentContext, c);
                     },
                   ),
                 ),

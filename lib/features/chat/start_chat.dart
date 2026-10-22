@@ -11,38 +11,41 @@ import '../../shared/utils/korean.dart';
 
 /// [초보자 노트] 캐릭터와의 대화방을 엽니다.
 /// 처음 대화하는 캐릭터면 먼저 '이 대화에서 쓸 내 별명'을 묻고(설정의 기본 별명이 미리 들어감), 정한 뒤에 대화가 시작됩니다.
-Future<void> openChat(BuildContext context, WidgetRef ref, CharacterModel character) async {
+/// 상태는 [context]가 속한 ProviderScope에서 직접 읽어요. 프로필 시트처럼 먼저 닫히는 화면의 ref를 쓰면
+/// 시트가 닫히는 순간 ref가 사라져서 대화방으로 넘어가지 못하거든요.
+Future<void> openChat(BuildContext context, CharacterModel character) async {
   final router = GoRouter.of(context);
-  final prefs = ref.read(chatPrefsProvider(character.id));
+  final container = ProviderScope.containerOf(context, listen: false);
+  final prefs = container.read(chatPrefsProvider(character.id));
   if (prefs.nickname == null) {
-    final nickname = await askChatNickname(context, ref, character, isFirstTime: true);
+    final nickname = await askChatNickname(context, character, isFirstTime: true);
     if (nickname == null) return;
   }
-  ref.read(chatRoomsProvider.notifier).open(character.id);
-  ref.read(chatRoomProvider(character.id).notifier).begin();
+  container.read(chatRoomsProvider.notifier).open(character.id);
+  container.read(chatRoomProvider(character.id).notifier).begin();
   router.push('/chat/${character.id}');
 }
 
 /// 이 캐릭터와의 대화에서 불릴 내 별명을 묻고 저장합니다. 취소하면 null
 Future<String?> askChatNickname(
   BuildContext context,
-  WidgetRef ref,
   CharacterModel character, {
   bool isFirstTime = false,
 }) async {
-  final current = ref.read(chatPrefsProvider(character.id)).nickname ??
-      ref.read(userProfileProvider).nickname;
+  final container = ProviderScope.containerOf(context, listen: false);
+  final current = container.read(chatPrefsProvider(character.id)).nickname ??
+      container.read(userProfileProvider).nickname;
   final result = await showDialog<String>(
     context: context,
     builder: (_) => _NicknameDialog(character: character, initial: current, isFirstTime: isFirstTime),
   );
   if (result == null) return null;
-  await ref.read(chatPrefsProvider(character.id).notifier).setNickname(result);
+  await container.read(chatPrefsProvider(character.id).notifier).setNickname(result);
   return result;
 }
 
 /// 캐릭터별 대화 속도 고르기
-Future<void> pickChatTempo(BuildContext context, WidgetRef ref, CharacterModel character) {
+Future<void> pickChatTempo(BuildContext context, CharacterModel character) {
   return showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.surfaceWhite,
