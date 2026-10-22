@@ -337,55 +337,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                     ],
-                    if (chatState.isByokAiModeEnabled) ...[
-                      if (!hasApiKey)
-                        GestureDetector(
-                          onTap: () => context.go('/settings'),
-                          child: const Padding(
-                            padding: EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              '설정에서 AI 키를 넣으면 진짜 AI가 답해요 →',
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.systemNotice,
-                            ),
+                    if (chatState.isByokAiModeEnabled && !hasApiKey)
+                      GestureDetector(
+                        onTap: () => context.go('/settings'),
+                        child: const Padding(
+                          padding: EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '설정에서 AI 키를 넣으면 진짜 AI가 답해요 →',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.systemNotice,
                           ),
                         ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          // 대화방에 내가 직접 사진을 찍어 올리는 카메라 버튼!
-                          IconButton(
-                            tooltip: '사진 찍어 올리기',
-                            onPressed: () =>
-                                _showUserPhotoSenderSheet(notifier),
-                            icon: const Icon(
-                              Icons.camera_alt_outlined,
-                              color: AppColors.primaryNavy,
-                            ),
-                          ),
-                          Expanded(
-                            child: TextField(
-                              controller: _inputController,
-                              focusNode: _inputFocus,
-                              autofocus: true,
-                              onChanged: notifier.onUserTypingChanged,
-                              textInputAction: TextInputAction.send,
-                              decoration: const InputDecoration(
-                                hintText: '짧게 여러 번 끊어서 연속으로 보내보세요...',
-                              ),
-                              // 엔터를 눌러도 키보드·커서가 내려가지 않게 (웹에서 연속 입력)
-                              onEditingComplete: () {},
-                              onSubmitted: (_) => _send(notifier),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filled(
-                            onPressed: () => _send(notifier),
-                            icon: const Icon(Icons.send_rounded),
-                          ),
-                        ],
                       ),
-                    ],
+                    const SizedBox(height: 4),
+                    _InputBar(
+                      // 자유대화가 꺼져 있거나 선택지 대사가 쳐지는 중이면 보이기만 하고 못 누름
+                      enabled: chatState.isByokAiModeEnabled &&
+                          chatState.userDraft.isEmpty,
+                      draft: chatState.userDraft,
+                      controller: _inputController,
+                      focusNode: _inputFocus,
+                      onChanged: notifier.onUserTypingChanged,
+                      onCamera: () => _showUserPhotoSenderSheet(notifier),
+                      onSend: () => _send(notifier),
+                    ),
                   ],
                 ),
               ),
@@ -401,6 +376,75 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// 카메라 + 입력칸 + 전송 버튼. 꺼져 있으면 흐리게 보이고 눌리지 않음
+/// [draft]가 있으면 선택지 대사가 입력칸에 쳐지는 모습을 보여 줌
+class _InputBar extends StatelessWidget {
+  const _InputBar({
+    required this.enabled,
+    required this.draft,
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+    required this.onCamera,
+    required this.onSend,
+  });
+
+  final bool enabled;
+  final String draft;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onCamera;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final typing = draft.isNotEmpty;
+    return Row(
+      children: [
+        IconButton(
+          tooltip: '사진 찍어 올리기',
+          onPressed: enabled ? onCamera : null,
+          icon: Icon(
+            Icons.camera_alt_outlined,
+            color: enabled ? AppColors.primaryNavy : AppColors.textMuted,
+          ),
+        ),
+        Expanded(
+          child: enabled
+              ? TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  onChanged: onChanged,
+                  textInputAction: TextInputAction.send,
+                  decoration: const InputDecoration(
+                    hintText: '짧게 여러 번 끊어서 연속으로 보내보세요...',
+                  ),
+                  // 엔터를 눌러도 키보드·커서가 내려가지 않게 (웹에서 연속 입력)
+                  onEditingComplete: () {},
+                  onSubmitted: (_) => onSend(),
+                )
+              : InputDecorator(
+                  key: const ValueKey('locked_input'),
+                  isEmpty: !typing,
+                  decoration: const InputDecoration(
+                    enabled: false,
+                    hintText: '선택지를 골라 대답해요',
+                  ),
+                  child: Text(draft, style: AppTextStyles.chatBubbleBody),
+                ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filled(
+          onPressed: enabled ? onSend : null,
+          icon: const Icon(Icons.send_rounded),
+        ),
+      ],
     );
   }
 }

@@ -40,6 +40,8 @@ class ChatRoomState {
   final StoryProgress progress;
   /// 내가 대화방에서 마지막으로 본 메시지 개수 (채팅방 목록의 안 읽은 숫자 계산용)
   final int seenMessageCount;
+  /// 선택지를 고르면 입력창에 내 대사가 한 글자씩 쳐지는 중인 글 (보내면 비워짐)
+  final String userDraft;
 
   const ChatRoomState({
     required this.character,
@@ -56,6 +58,7 @@ class ChatRoomState {
     this.unlockedCutsceneEventIds = const [],
     this.progress = StoryProgress.playing,
     this.seenMessageCount = 0,
+    this.userDraft = '',
   });
 
   /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
@@ -87,6 +90,7 @@ class ChatRoomState {
     List<String>? unlockedCutsceneEventIds,
     StoryProgress? progress,
     int? seenMessageCount,
+    String? userDraft,
   }) {
     return ChatRoomState(
       character: character,
@@ -106,6 +110,7 @@ class ChatRoomState {
           unlockedCutsceneEventIds ?? this.unlockedCutsceneEventIds,
       progress: progress ?? this.progress,
       seenMessageCount: seenMessageCount ?? this.seenMessageCount,
+      userDraft: userDraft ?? this.userDraft,
     );
   }
 }
@@ -508,6 +513,32 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     state = state.copyWith(messages: updated);
   }
 
+  /// 내 대사를 입력창에 사람이 치듯 한 글자씩 채움 (대화 속도 설정을 따름)
+  /// 중간에 회차가 바뀌면 입력창을 비우고 false
+  Future<bool> _typeUserDraft(String text, bool first, bool Function() stillValid) async {
+    final tempo = ref.read(chatPrefsProvider(arg)).tempo;
+    await Future.delayed(Duration(milliseconds: ((first ? 350 : 450) * tempo * _jitter()).round()));
+    if (!stillValid()) return false;
+    final chars = Characters(text).toList();
+    // 긴 대사도 3초 안쪽으로 끝나게 한 번에 치는 글자 수를 늘림
+    final step = (chars.length / 30).ceil().clamp(1, 10);
+    for (var n = step; n < chars.length + step; n += step) {
+      state = state.copyWith(userDraft: chars.take(n).join());
+      await Future.delayed(Duration(milliseconds: (85 * tempo * _jitter()).round()));
+      if (!stillValid()) {
+        state = state.copyWith(userDraft: '');
+        return false;
+      }
+    }
+    // 다 치고 전송 누르기 전 잠깐
+    await Future.delayed(Duration(milliseconds: (250 * tempo).round()));
+    if (!stillValid()) {
+      state = state.copyWith(userDraft: '');
+      return false;
+    }
+    return true;
+  }
+
   /// [선택지 클릭 시] 내가 고른 대답도 짧게 끊어서 연속 전송한 뒤, 캐릭터가 현실적인 타자 속도로 답장합니다.
   Future<void> selectChoice(ChoiceOption choice) async {
     final runId = _runId;
@@ -521,25 +552,23 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       ],
     );
 
-    // 1. 내 말풍선들을 짧게 끊어서 연속 전송 (처음엔 '1' 표시)
+    // 1. 내 말풍선마다 입력창에 한 글자씩 쳐서 보냄 (처음엔 '1' 표시)
     for (int i = 0; i < choice.userBubbles.length; i++) {
       final piece = choice.userBubbles[i];
-      if (i > 0) {
-        await Future.delayed(const Duration(milliseconds: 380));
-        if (runId != _runId) return;
-      }
+      final text = CharacterModel.fillUserName(piece.text, _nickname, charName: state.character.name);
+      if (!await _typeUserDraft(text, i == 0, () => runId == _runId)) return;
       final myMsg = ChatMessageLog(
         id: 'user_choice_${DateTime.now().millisecondsSinceEpoch}_$i',
         isUser: true,
         speakerCharacterId: 'user',
         speakerName: _nickname,
-        text: CharacterModel.fillUserName(piece.text, _nickname, charName: state.character.name),
+        text: text,
         photoLabel: piece.photoLabel,
         photoImage: piece.photoImage,
         isUnread: true,
         timestamp: DateTime.now(),
       );
-      state = state.copyWith(messages: [...state.messages, myMsg]);
+      state = state.copyWith(userDraft: '', messages: [...state.messages, myMsg]);
     }
 
     // 2. 내가 연속 전송을 마친 뒤 0.7초 후 캐릭터가 읽음('1' 일괄 사라짐)

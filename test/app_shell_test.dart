@@ -315,14 +315,14 @@ void main() {
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
     // 캐릭터 탭은 한 항목씩 화살표로 넘김: 기본 정보 → 캐릭터 정보 → 캐릭터 설정(넓은 칸 + 글자 수)
-    expect(find.text('1/8'), findsOneWidget);
+    expect(find.text('1/9'), findsOneWidget);
     await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('2/8'), findsOneWidget);
+    expect(find.text('2/9'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '시각디자인과 4학년'), findsOneWidget);
     await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('3/8'), findsOneWidget);
+    expect(find.text('3/9'), findsOneWidget);
     final setting = templateScenario().character.worldviewPrompt;
     expect(find.text('${setting.characters.length}자'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, setting), '$setting 커피는 늘 블랙.');

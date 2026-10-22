@@ -63,6 +63,14 @@ class CharacterSheetView extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 3),
                     child: Text.rich(TextSpan(children: [
+                      if (e.characterId != null)
+                        const WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: Icon(Icons.link_rounded, size: 15, color: AppColors.primaryPink),
+                          ),
+                        ),
                       TextSpan(text: e.name, style: AppTextStyles.speakerName.copyWith(color: AppColors.textPrimary)),
                       if (e.role.isNotEmpty) TextSpan(text: '  ${fill(e.role)}', style: AppTextStyles.systemNotice),
                     ])),
@@ -70,6 +78,7 @@ class CharacterSheetView extends StatelessWidget {
               ],
             ),
           ),
+        if (c.authorComment.trim().isNotEmpty) _Card(title: '작가 코멘트', child: body(c.authorComment)),
       ],
     );
   }

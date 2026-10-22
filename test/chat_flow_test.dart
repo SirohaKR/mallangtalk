@@ -157,6 +157,41 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('자유대화가 꺼져 있으면 입력칸은 보이지만 못 쓰고, 선택지 대사는 입력칸에 쳐진 뒤 보내짐', (tester) async {
+    final container = await openChat(tester);
+    expect(find.byKey(const ValueKey('locked_input')), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    final send = tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded));
+    expect(send.onPressed, isNull);
+
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    final before = container.read(chatRoomProvider(dohaId)).messages.where((m) => m.isUser).length;
+    // 입력칸에 글자가 늘어나는 동안에는 아직 말풍선이 안 올라감
+    final drafts = <String>[];
+    int? sentWhileFirstDraft;
+    container.listen<ChatRoomState>(chatRoomProvider(dohaId), (_, next) {
+      if (next.userDraft.isNotEmpty) {
+        drafts.add(next.userDraft);
+        sentWhileFirstDraft ??= next.messages.where((m) => m.isUser).length;
+      }
+    });
+    notifier.selectChoice(container.read(chatRoomProvider(dohaId)).currentChoices.first);
+    for (var i = 0; i < 20 && drafts.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(drafts, isNotEmpty);
+    expect(sentWhileFirstDraft, before);
+    await tester.pump(const Duration(milliseconds: 20));
+    if (container.read(chatRoomProvider(dohaId)).userDraft.isNotEmpty) {
+      expect(find.byKey(const ValueKey('locked_input')), findsOneWidget);
+    }
+
+    await settle(tester);
+    final after = container.read(chatRoomProvider(dohaId));
+    expect(after.userDraft, isEmpty);
+    expect(after.messages.where((m) => m.isUser).length, greaterThan(before));
+  });
+
   testWidgets('특별 이벤트: 그 시간에 대화방에 있으면 한 번만 오고, 다시 해도 또 오지 않음', (tester) async {
     SharedPreferences.setMockInitialValues({...fastTempo});
     final container = await openDohaChat(
