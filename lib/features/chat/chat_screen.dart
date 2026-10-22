@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
+import '../home/friends_screen.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
@@ -86,11 +87,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _inputFocus.requestFocus();
   }
 
+  /// 목록을 거꾸로(reverse) 그려서 맨 아래(최근 톡)가 0 위치. 다시 들어와도 최근 톡부터 보임
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+      if (_scrollController.hasClients && _scrollController.offset > 0) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
         );
@@ -189,7 +191,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            CharacterAvatar(character: chatState.character, radius: 18),
+            // 사진을 누르면 캐릭터 프로필
+            GestureDetector(
+              onTap: () {
+                final entry = ref.read(characterLibraryProvider.notifier).byId(id);
+                if (entry != null) showCharacterProfile(context, entry, inChat: true);
+              },
+              child: Tooltip(
+                message: '프로필 보기',
+                child: CharacterAvatar(character: chatState.character, radius: 18),
+              ),
+            ),
             const SizedBox(width: 10),
             Flexible(
               child: Column(
@@ -271,14 +283,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
+                  reverse: true,
                   padding: AppSpacing.screenPadding,
                   itemCount: chatState.messages.length +
                       (chatState.isCharacterTyping ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index == chatState.messages.length &&
-                        chatState.isCharacterTyping) {
+                  itemBuilder: (context, reversedIndex) {
+                    final typing = chatState.isCharacterTyping ? 1 : 0;
+                    if (reversedIndex == 0 && typing == 1) {
                       return const _TypingIndicatorBubble();
                     }
+                    final index = chatState.messages.length - 1 - (reversedIndex - typing);
                     final msg = chatState.messages[index];
                     if (msg.isSystem) {
                       return _SystemNoticeRow(text: msg.text);
