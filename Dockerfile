@@ -20,7 +20,7 @@ COPY server/pubspec.yaml server/pubspec.lock ./server/
 RUN flutter pub get && cd server && dart pub get
 COPY . .
 RUN flutter build web --release --no-web-resources-cdn
-RUN cd server && dart compile exe bin/server.dart -o /out/server
+RUN mkdir -p /out && cd server && dart compile exe bin/server.dart -o /out/server
 
 FROM debian:bookworm-slim
 # AI 회사 API(https)를 부르려면 인증서 목록이, 유저·캐릭터 DB에는 SQLite가 필요해요
