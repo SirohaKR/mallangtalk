@@ -516,6 +516,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     ('주변 인물', '대화에 이름이 나오는 친구·가족·반려동물. 상세 화면에 보여요'),
     ('비밀 설정', '플레이어에겐 안 보이고, 이야기와 AI 자유대화가 서서히 드러내요'),
     ('말투와 타자 스타일', '제작자와 AI만 보는 말투 참고용'),
+    ('작가 코멘트', '상세 화면 맨 아래에 보이는 제작자의 한마디. 캐릭터 소개, 플레이 팁, 하고 싶은 말'),
   ];
 
   void _goCharPage(int page) {
@@ -536,7 +537,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               Text('${_charPage + 1}/${_charPages.length}', style: AppTextStyles.messageTime),
               const SizedBox(width: AppSpacing.sm),
               Expanded(child: Text(title, style: AppTextStyles.appBarTitle.copyWith(fontSize: 17))),
-              if (_charPage >= 1 && _charPage <= 5)
+              if ((_charPage >= 1 && _charPage <= 5) || _charPage == 8)
                 const Text('플레이어에게 보임', style: AppTextStyles.messageTime),
             ],
           ),
@@ -673,6 +674,13 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           hint: '예) 사실 처음 만난 날부터 좋아했다. 친구 사이가 깨질까 봐 장난으로 넘겨 왔다…',
           onChanged: (v) => d.secret = v,
         );
+      case 8:
+        return BigTextField(
+          fieldKey: _k(d, 'author'),
+          value: d.authorComment,
+          hint: '예) 첫 캐릭터예요! 도하는 진지할 때 말이 짧아지니 그때를 잘 봐 주세요. 공연 이벤트는 꼭 가 보세요…',
+          onChanged: (v) => d.authorComment = v,
+        );
       default:
         return ListView(
           children: [
@@ -745,6 +753,14 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 children: [
+                  if (e.characterId != null)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 4),
+                      child: Tooltip(
+                        message: '내 캐릭터와 연결됨',
+                        child: Icon(Icons.link_rounded, size: 18, color: AppColors.primaryPink),
+                      ),
+                    ),
                   SizedBox(
                     width: 92,
                     child: EditField(fieldKey: _k(e, 'name'), value: e.name, hint: '이름', dense: true,
@@ -771,9 +787,59 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               label: const Text('인물 추가'),
             ),
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _pickMyCharacterAsCast,
+              icon: const Icon(Icons.link_rounded, size: 18),
+              label: const Text('내가 만든 캐릭터 연결'),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// 내가 만든 다른 캐릭터를 골라 주변 인물로 연결 (이름·한줄 소개를 채워 줌, 관계는 직접 고쳐 써요)
+  Future<void> _pickMyCharacterAsCast() async {
+    final d = _draft;
+    final linked = {for (final e in d.cast) e.characterId};
+    final mine = ref
+        .read(characterLibraryProvider)
+        .where((e) => e.source == CharacterSource.created && e.id != d.id && !linked.contains(e.id))
+        .map((e) => e.bundle.character)
+        .toList();
+    final picked = await showModalBottomSheet<CharacterModel>(
+      context: context,
+      backgroundColor: AppColors.surfaceWhite,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: mine.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('연결할 수 있는 내가 만든 캐릭터가 없어요', textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
+              )
+            : ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text('주변 인물로 연결할 내 캐릭터', style: AppTextStyles.appBarTitle),
+                  ),
+                  for (final c in mine)
+                    ListTile(
+                      leading: CharacterAvatar(character: c, radius: 20),
+                      title: Text(c.name),
+                      subtitle: c.tagline.isEmpty ? null : Text(c.tagline, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => Navigator.pop(ctx, c),
+                    ),
+                ],
+              ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => d.cast.add(CastDraft(name: picked.name, role: picked.tagline, characterId: picked.id)));
   }
 
   // ───────────────────────── 호감도 단계 탭 ─────────────────────────

@@ -36,7 +36,7 @@ class HomeShell extends ConsumerWidget {
           const NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
             selectedIcon: Icon(Icons.person_rounded),
-            label: '내 캐릭터',
+            label: '친구',
           ),
           NavigationDestination(
             icon: Badge(

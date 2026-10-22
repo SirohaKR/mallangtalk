@@ -122,19 +122,23 @@ class ExtraCast {
   final String name;
   final String role;
   final String speech;
+  /// 내가 만든 다른 캐릭터를 불러와 연결했으면 그 캐릭터 ID (관계도에 쓰임)
+  final String? characterId;
 
-  const ExtraCast({required this.name, this.role = '', this.speech = ''});
+  const ExtraCast({required this.name, this.role = '', this.speech = '', this.characterId});
 
   factory ExtraCast.fromJson(Map<String, dynamic> json) => ExtraCast(
         name: json['name'] as String? ?? '',
         role: json['role'] as String? ?? '',
         speech: json['speech'] as String? ?? '',
+        characterId: json['character_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
         'name': name,
         if (role.isNotEmpty) 'role': role,
         if (speech.isNotEmpty) 'speech': speech,
+        if (characterId != null) 'character_id': characterId,
       };
 }
 
@@ -171,6 +175,8 @@ class CharacterModel {
   final List<ExtraCast> extraCast;
   /// 캐릭터 대표 색 (#RRGGBB, 비우면 기본 분홍)
   final String themeColor;
+  /// 작가 코멘트: 제작자가 플레이어에게 남기는 한마디 (상세 화면 맨 아래)
+  final String authorComment;
   /// 캐릭터 기본 타자 속도 배율 (0.7 = 손이 빨라서 답장이 빠름, 1.3 = 신중해서 천천히 침)
   final double typingSpeedMultiplier;
   final List<AffectionStage> affectionStages;
@@ -194,6 +200,7 @@ class CharacterModel {
     this.userRole = '',
     this.extraCast = const [],
     this.themeColor = '',
+    this.authorComment = '',
     this.typingSpeedMultiplier = 1.0,
     required this.affectionStages,
     this.isPublished = false,
@@ -230,6 +237,7 @@ class CharacterModel {
           ExtraCast.fromJson(e as Map<String, dynamic>),
       ],
       themeColor: json['theme_color'] as String? ?? '',
+      authorComment: json['author_comment'] as String? ?? '',
       typingSpeedMultiplier:
           (json['typing_speed_multiplier'] as num?)?.toDouble() ?? 1.0,
       affectionStages: [
@@ -258,6 +266,7 @@ class CharacterModel {
         if (userRole.isNotEmpty) 'user_role': userRole,
         if (extraCast.isNotEmpty) 'extra_cast': [for (final e in extraCast) e.toJson()],
         if (themeColor.isNotEmpty) 'theme_color': themeColor,
+        if (authorComment.isNotEmpty) 'author_comment': authorComment,
         'typing_speed_multiplier': typingSpeedMultiplier,
         'affection_stages': [for (final stage in affectionStages) stage.toJson()],
         'is_published': isPublished,
@@ -276,6 +285,7 @@ class CharacterModel {
     String? userRole,
     List<ExtraCast>? extraCast,
     String? themeColor,
+    String? authorComment,
   }) {
     return CharacterModel(
       id: id ?? this.id,
@@ -295,6 +305,7 @@ class CharacterModel {
       userRole: userRole ?? this.userRole,
       extraCast: extraCast ?? this.extraCast,
       themeColor: themeColor ?? this.themeColor,
+      authorComment: authorComment ?? this.authorComment,
       typingSpeedMultiplier: typingSpeedMultiplier,
       affectionStages: affectionStages,
       isPublished: isPublished,

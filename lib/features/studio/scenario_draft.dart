@@ -28,7 +28,9 @@ class CastDraft {
   String name;
   String role;
   String speech;
-  CastDraft({this.name = '', this.role = '', this.speech = ''});
+  /// 내 캐릭터를 불러와 연결했으면 그 ID
+  String? characterId;
+  CastDraft({this.name = '', this.role = '', this.speech = '', this.characterId});
 }
 
 class StageDraft {
@@ -122,6 +124,7 @@ class ScenarioDraft {
   String secret = '';
   String quote = '';
   String themeColor = '';
+  String authorComment = '';
   double typing = 1.0;
   List<PersonalityTrait> traits = [];
   List<CharacterQuote> sampleQuotes = [];
@@ -172,11 +175,12 @@ class ScenarioDraft {
       ..secret = c.secret
       ..quote = c.quote
       ..themeColor = c.themeColor
+      ..authorComment = c.authorComment
       ..typing = c.typingSpeedMultiplier
       ..traits = [...c.traits]
       ..sampleQuotes = [...c.sampleQuotes];
     d.fields.addAll([for (final f in c.profileFields) FieldDraft(label: f.label, value: f.value, isSecret: f.isSecret)]);
-    d.cast.addAll([for (final e in c.extraCast) CastDraft(name: e.name, role: e.role, speech: e.speech)]);
+    d.cast.addAll([for (final e in c.extraCast) CastDraft(name: e.name, role: e.role, speech: e.speech, characterId: e.characterId)]);
     d.stages.addAll([for (final s in c.affectionStages) StageDraft(name: s.stageLabel, start: s.minScore)]);
     final events = [...bundle.events]..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     for (final e in events) {
@@ -288,9 +292,10 @@ class ScenarioDraft {
         userRole: userRole.trim(),
         extraCast: [
           for (final e in cast)
-            if (e.name.trim().isNotEmpty) ExtraCast(name: e.name.trim(), role: e.role.trim(), speech: e.speech.trim()),
+            if (e.name.trim().isNotEmpty) ExtraCast(name: e.name.trim(), role: e.role.trim(), speech: e.speech.trim(), characterId: e.characterId),
         ],
         themeColor: themeColor,
+        authorComment: authorComment.trim(),
         typingSpeedMultiplier: typing,
         affectionStages: buildStages(),
       );

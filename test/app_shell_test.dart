@@ -25,6 +25,33 @@ void main() {
             as Map<String, dynamic>,
       );
 
+  testWidgets('친구 탭: 맨 위 내 프로필, 별을 누르면 즐겨찾기로 올라감', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo, 'my_profile': '{"nickname":"쨋뀨","intro":"고양이 좋아함"}'});
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    expect(find.text('쨋뀨'), findsOneWidget);
+    expect(find.text('고양이 좋아함'), findsOneWidget);
+    expect(find.text('즐겨찾기 1'), findsNothing);
+
+    await tester.tap(find.text('윤도하'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('즐겨찾기'));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.byTooltip('즐겨찾기 빼기'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('즐겨찾기 1'), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('favorites_v1'), [dohaId]);
+  });
+
   testWidgets('채팅 탭에서 안 읽은 톡을 보고, 대화방에 들어가면 읽음 처리', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
@@ -42,7 +69,7 @@ void main() {
     await settle(tester);
 
     // 처음 화면은 내 캐릭터 탭, 기본 캐릭터 윤도하가 있음
-    expect(find.text('내 캐릭터 1'), findsOneWidget);
+    expect(find.text('친구 1'), findsOneWidget);
     expect(find.text('윤도하'), findsOneWidget);
 
     final container = ProviderScope.containerOf(tester.element(find.byType(Scaffold).first));
@@ -90,7 +117,7 @@ void main() {
       child: const MallangTalkApp(),
     ));
     await settle(tester);
-    expect(find.text('내 캐릭터 1'), findsOneWidget);
+    expect(find.text('친구 1'), findsOneWidget);
 
     await tester.tap(find.text('캐릭터 추가'));
     await settle(tester);
@@ -315,14 +342,14 @@ void main() {
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
     // 캐릭터 탭은 한 항목씩 화살표로 넘김: 기본 정보 → 캐릭터 정보 → 캐릭터 설정(넓은 칸 + 글자 수)
-    expect(find.text('1/8'), findsOneWidget);
+    expect(find.text('1/9'), findsOneWidget);
     await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('2/8'), findsOneWidget);
+    expect(find.text('2/9'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '시각디자인과 4학년'), findsOneWidget);
     await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('3/8'), findsOneWidget);
+    expect(find.text('3/9'), findsOneWidget);
     final setting = templateScenario().character.worldviewPrompt;
     expect(find.text('${setting.characters.length}자'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, setting), '$setting 커피는 늘 블랙.');

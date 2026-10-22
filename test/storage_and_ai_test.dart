@@ -34,6 +34,37 @@ void main() {
     expect(find.widgetWithText(ElevatedButton, '다음엔 나도 같이 뛰자고 하기'), findsOneWidget);
   });
 
+  testWidgets('이벤트 중간에 나갔다 들어오면 그 자리(선택지·말풍선)부터 이어짐', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    await openChat(tester);
+    await choose(tester, '지금 바로 같이 찾으러 가겠다고 하기');
+    final before = dohaState(tester);
+    expect(before.currentChoices, isNotEmpty); // 첫 이벤트 두 번째 선택지에서 나감
+    expect(before.completedEventIds, isEmpty);
+
+    // 새로 띄우면 처음부터 다시 치지 않고 같은 대화·같은 선택지
+    final container = await openChat(tester);
+    final after = container.read(chatRoomProvider(dohaId));
+    expect(after.messages.map((m) => m.text), before.messages.map((m) => m.text));
+    expect(after.currentEventId, before.currentEventId);
+    expect(after.currentChoices.map((c) => c.buttonLabel), before.currentChoices.map((c) => c.buttonLabel));
+    expect(after.internalAffection, before.internalAffection);
+
+    // 말풍선을 치던 중에 나가도 이미 온 말풍선은 남고 다음 말풍선부터
+    container.read(chatRoomProvider(dohaId).notifier).selectChoice(after.currentChoices.first);
+    var mid = after;
+    for (var i = 0; i < 60; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      mid = container.read(chatRoomProvider(dohaId));
+      if (mid.messages.length > after.messages.length + 2 && mid.currentChoices.isEmpty) break;
+    }
+    final midTexts = mid.messages.map((m) => m.text).toList();
+    final reopened = (await openChat(tester)).read(chatRoomProvider(dohaId));
+    expect(reopened.messages.length, greaterThanOrEqualTo(after.messages.length));
+    expect(midTexts.take(reopened.messages.length), reopened.messages.map((m) => m.text).take(midTexts.length));
+    expect(reopened.messages.where((m) => m.text == midTexts.last).length, 1); // 같은 말풍선이 두 번 오지 않음
+  });
+
   testWidgets('키가 있으면 자유대화에 AI 답장과 호감도 변화가 반영됨', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
