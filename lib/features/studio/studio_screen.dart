@@ -472,7 +472,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     ('캐릭터 정보', '나이, 직업, 생일처럼 짧은 항목. 자물쇠를 켜면 플레이어에겐 숨겨요'),
     ('캐릭터 설정', '성격, 말투 습관(ㅋㅋ를 자주 씀 등), 취미, 관심사, 나와의 사이. 자세할수록 AI가 잘 따라 해요. 상세 화면에 그대로 보여요'),
     ('세계관 설정', '이야기의 배경이 되는 곳·시대·분위기. 상세 화면에 보여요. 비우면 AI가 채워 줘요'),
-    ('나는 이 이야기에서', '플레이어가 누구인지. {이름}이라고 쓰면 플레이어 별명으로 바뀌어요. 상세 화면에 보여요'),
+    ('나는 이 이야기에서', '플레이어가 누구인지. {{user}}는 플레이어 별명, {{char}}는 캐릭터 이름으로 바뀌어요. 상세 화면에 보여요'),
     ('주변 인물', '대화에 이름이 나오는 친구·가족·반려동물. 상세 화면에 보여요'),
     ('비밀 설정', '플레이어에겐 안 보이고, 이야기와 AI 자유대화가 서서히 드러내요'),
     ('말투와 타자 스타일', '제작자와 AI만 보는 말투 참고용'),
@@ -621,7 +621,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         return BigTextField(
           fieldKey: _k(d, 'role'),
           value: d.userRole,
-          hint: '예) {이름} · 1년 전 교양 수업 팀플에서 만난 친구. 거의 매일 연락하는 사이',
+          hint: '예) {{user}} · 1년 전 교양 수업 팀플에서 {{char}}와 만난 친구. 거의 매일 연락하는 사이',
           onChanged: (v) => d.userRole = v,
         );
       case 5:
@@ -1089,7 +1089,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             const Expanded(
               child: Text(
                 '장면마다 캐릭터 말풍선을 쓰고, 끝에 내가 고를 선택지를 달아요. 선택지가 없는 장면에서 대화가 끝나요. '
-                '{이름}이라고 쓰면 플레이어 별명으로 바뀌어요.',
+                '{{user}}는 플레이어 별명, {{char}}는 캐릭터 이름으로 바뀌어요. 뒤에 붙는 조사도 맞춰 줘요.',
                 style: AppTextStyles.messageTime,
               ),
             ),

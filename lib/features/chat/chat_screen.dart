@@ -188,7 +188,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 children: [
                   Text(chatState.character.name, overflow: TextOverflow.ellipsis),
                   Text(
-                    chatState.character.statusMessage,
+                    CharacterModel.fillUserName(chatState.character.statusMessage, '너',
+                        charName: chatState.character.name),
                     style: AppTextStyles.messageTime,
                     overflow: TextOverflow.ellipsis,
                   ),

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/character_sheet_view.dart';
@@ -41,7 +42,7 @@ class FriendsScreen extends ConsumerWidget {
                       leading: CharacterAvatar(character: c, radius: 24),
                       title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
                       subtitle: Text(
-                        c.statusMessage.isEmpty ? entry.sourceLabel : c.statusMessage,
+                        c.statusMessage.isEmpty ? entry.sourceLabel : CharacterModel.fillUserName(c.statusMessage, '너', charName: c.name),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.systemNotice,
@@ -125,7 +126,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
             Text(c.name, textAlign: TextAlign.center, style: AppTextStyles.appBarTitle.copyWith(fontSize: 20)),
             if (c.statusMessage.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(c.statusMessage, textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
+              Text(CharacterModel.fillUserName(c.statusMessage, '너', charName: c.name), textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
             ],
             const SizedBox(height: AppSpacing.lg),
             ElevatedButton.icon(

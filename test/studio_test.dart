@@ -120,6 +120,21 @@ void main() {
       expect(fill('{이름}. 그리고 {이름}', 'Lia'), 'Lia. 그리고 Lia');
     });
 
+    test('{{user}}·{{char}}도 이름으로 바뀌고 조사가 맞춰짐', () {
+      String fill(String t) => CharacterModel.fillUserName(t, '쨋뀨', charName: '카이엔');
+      expect(fill('{{user}}아, {{char}}이 기다려'), '쨋뀨야, 카이엔이 기다려');
+      expect(fill('{{char}}와 {{user}}는 비밀 친구'), '카이엔과 쨋뀨는 비밀 친구');
+      expect(fill('{{ User }}랑 {이름}'), '쨋뀨랑 쨋뀨');
+      // charName을 안 주면 {{char}}는 그대로
+      expect(CharacterModel.fillUserName('{{char}}', '쨋뀨'), '{{char}}');
+      // AI에게 넘기는 설정은 {{char}}만 채우고 {{user}}는 남김 (자유대화에서 별명으로 채움)
+      const c = CharacterModel(
+        id: 'c', creatorId: 'u', name: '도하', statusMessage: '', avatarUrl: '',
+        worldviewPrompt: '{{char}}는 {{user}}의 남사친이다.', affectionStages: [],
+      );
+      expect(c.aiCharacterSheet, '도하는 {{user}}의 남사친이다.');
+    });
+
     test('AI에게 넘기는 설정에는 세계관·비밀·유저 설정까지 들어감', () {
       final sheet = loadSampleBundle().character.aiCharacterSheet;
       expect(sheet, contains('새벽녘 라디오'));
