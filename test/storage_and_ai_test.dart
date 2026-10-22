@@ -52,6 +52,7 @@ void main() {
     notifier.sendUserMessage(text: '보고 싶다');
     await settle(tester);
 
+    expect(fake.lastProvider, AiProvider.claude); // 예전에 저장한 Claude 키도 그대로 쓰임
     expect(fake.lastModel, 'claude-haiku-5-5');
     expect(fake.lastUserName, '쨋뀨'); // 이 대화에서 정한 별명으로 불림
     expect(fake.lastSystemSheet, contains('비밀(유저는 아직 모름'));
@@ -60,11 +61,34 @@ void main() {
     expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
     expect(container.read(chatRoomProvider(dohaId)).internalAffection, before + 2);
   });
+
+  testWidgets('설정에서 고른 AI 회사의 키와 모델로 자유대화를 부름', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'byok_claude_api_key': 'sk-ant-test-key-1234',
+      'byok_provider': 'gemini',
+      'byok_key_gemini': 'AIza-test-key-5678',
+      'byok_model_gemini': 'gemini-3.8-flash',
+    });
+    final fake = _FakeClaude();
+    final container = await openChat(
+      tester,
+      extra: [claudeChatClientProvider.overrideWithValue(fake)],
+    );
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    notifier.toggleDirectInputMode(true);
+    notifier.sendUserMessage(text: '안녕');
+    await settle(tester);
+
+    expect(fake.lastProvider, AiProvider.gemini);
+    expect(fake.lastModel, 'gemini-3.8-flash');
+  });
 }
 
 class _FakeClaude extends ClaudeChatClient {
   _FakeClaude() : super(dio: Dio());
 
+  AiProvider? lastProvider;
   String? lastModel;
   String? lastUserName;
   String? lastSystemSheet;
@@ -73,6 +97,7 @@ class _FakeClaude extends ClaudeChatClient {
 
   @override
   Future<FreeChatReply> reply({
+    AiProvider provider = AiProvider.claude,
     required String apiKey,
     required String model,
     required CharacterModel character,
@@ -83,6 +108,7 @@ class _FakeClaude extends ClaudeChatClient {
     String userName = '너',
     String userIntro = '',
   }) async {
+    lastProvider = provider;
     lastModel = model;
     lastUserName = userName;
     lastSystemSheet = character.aiCharacterSheet;

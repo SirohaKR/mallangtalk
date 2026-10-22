@@ -245,6 +245,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     });
     try {
       final bundle = await ref.read(claudeStudioClientProvider).generate(
+            provider: byok.provider,
             apiKey: byok.apiKey!,
             model: byok.model,
             brief: StudioBrief(
@@ -293,6 +294,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       final all = [for (var i = 0; i < _draft.events.length; i++) _draft.buildEvent(_draft.events[i], i)];
       final model = all[_draft.events.indexOf(event)];
       final (nodes, step) = await ref.read(claudeStudioClientProvider).writeScript(
+            provider: byok.provider,
             apiKey: byok.apiKey!,
             model: byok.model,
             character: character,

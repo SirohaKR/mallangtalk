@@ -18,9 +18,14 @@ void main() {
     affectionStages: [],
   );
 
-  Future<FreeChatReply> call(_FakeAdapter adapter, {String model = 'claude-opus-5-5'}) {
-    final dio = Dio(BaseOptions(baseUrl: 'https://api.anthropic.com'))..httpClientAdapter = adapter;
+  Future<FreeChatReply> call(
+    _FakeAdapter adapter, {
+    String model = 'claude-opus-5-5',
+    AiProvider provider = AiProvider.claude,
+  }) {
+    final dio = Dio()..httpClientAdapter = adapter;
     return ClaudeChatClient(dio: dio).reply(
+      provider: provider,
       apiKey: 'sk-ant-xyz',
       model: model,
       character: character,
@@ -73,6 +78,50 @@ void main() {
     await call(adapter, model: 'claude-haiku-5-5');
     expect(adapter.lastRequest!.headers.containsKey('anthropic-beta'), isFalse);
     expect(adapter.lastBody!.containsKey('fallbacks'), isFalse);
+  });
+
+  test('ChatGPT는 Chat Completions + json_schema로 부르고 답장을 해석함', () async {
+    final adapter = _FakeAdapter(200, {
+      'choices': [
+        {
+          'finish_reason': 'stop',
+          'message': {'content': jsonEncode({'replies': ['ㅇㅋ'], 'affection_delta': 1})},
+        },
+      ],
+      'usage': {'prompt_tokens': 900, 'completion_tokens': 40},
+    });
+    final reply = await call(adapter, provider: AiProvider.openai, model: 'gpt-6.1-sol');
+    expect(reply.bubbles, ['ㅇㅋ']);
+    expect(adapter.lastRequest!.uri.toString(), 'https://api.openai.com/v1/chat/completions');
+    expect(adapter.lastRequest!.headers['Authorization'], 'Bearer sk-ant-xyz');
+    final body = adapter.lastBody!;
+    expect(body['model'], 'gpt-6.1-sol');
+    expect(body['messages'][0]['role'], 'system');
+    expect(body['response_format']['json_schema']['strict'], true);
+  });
+
+  test('Gemini는 generateContent + JSON 스키마로 부르고 생각 부분은 빼고 읽음', () async {
+    final adapter = _FakeAdapter(200, {
+      'candidates': [
+        {
+          'finishReason': 'STOP',
+          'content': {
+            'parts': [
+              {'text': '음...', 'thought': true},
+              {'text': jsonEncode({'replies': ['굿밤'], 'affection_delta': 2})},
+            ],
+          },
+        },
+      ],
+    });
+    final reply = await call(adapter, provider: AiProvider.gemini, model: 'gemini-3.8-flash');
+    expect(reply.bubbles, ['굿밤']);
+    expect(adapter.lastRequest!.uri.toString(),
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
+    expect(adapter.lastRequest!.headers['x-goog-api-key'], 'sk-ant-xyz');
+    final body = adapter.lastBody!;
+    expect(body['generationConfig']['responseMimeType'], 'application/json');
+    expect(body['systemInstruction']['parts'][0]['text'], contains('편한 친구'));
   });
 
   test('잘못된 키와 거절은 알아들을 수 있는 메시지로', () async {

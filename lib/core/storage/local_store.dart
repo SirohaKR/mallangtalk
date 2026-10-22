@@ -141,15 +141,23 @@ class LocalStore {
   Future<void> saveSeenSpecials(String characterId, List<String> eventIds) =>
       _write('specials_$characterId', List<String>.of(eventIds));
 
-  String? get apiKey => _getString(_apiKeyKey);
-  String? get model => _getString(_modelKey);
+  /// 내 AI 키는 회사마다 따로 저장 (Claude는 예전 키 이름 그대로)
+  String _keyKey(String provider) => provider == 'claude' ? _apiKeyKey : 'byok_key_$provider';
+  String _providerModelKey(String provider) => provider == 'claude' ? _modelKey : 'byok_model_$provider';
 
-  Future<void> saveByok({required String apiKey, required String model}) async {
-    await _write(_apiKeyKey, apiKey);
-    await _write(_modelKey, model);
+  String? get provider => _getString('byok_provider');
+  String? apiKeyOf(String provider) => _getString(_keyKey(provider));
+  String? modelOf(String provider) => _getString(_providerModelKey(provider));
+
+  Future<void> saveByok({required String provider, required String apiKey, required String model}) async {
+    await _write('byok_provider', provider);
+    await _write(_keyKey(provider), apiKey);
+    await _write(_providerModelKey(provider), model);
   }
 
-  Future<void> clearApiKey() => _write(_apiKeyKey, null);
+  Future<void> saveProvider(String provider) => _write('byok_provider', provider);
+
+  Future<void> clearApiKey(String provider) => _write(_keyKey(provider), null);
 
   /// 내 캐릭터 목록 (받아온·만든 캐릭터의 시나리오 전체를 JSON으로). 처음 실행이면 null
   List<Map<String, dynamic>>? loadLibrary() {

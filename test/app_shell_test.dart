@@ -174,6 +174,43 @@ void main() {
     expect(find.text('윤도하 대화 속도'), findsOneWidget);
   });
 
+  testWidgets('설정: 드롭다운으로 AI 회사를 고르고 키와 모델을 저장', (tester) async {
+    SharedPreferences.setMockInitialValues({'byok_claude_api_key': 'sk-ant-old-key-123456'});
+    appRouter.go('/settings');
+    await tester.binding.setSurfaceSize(const Size(420, 1400));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    expect(find.text('Claude (Anthropic)'), findsOneWidget);
+    expect(find.textContaining('저장된 키'), findsOneWidget);
+
+    await tester.tap(find.text('Claude (Anthropic)'));
+    await settle(tester);
+    await tester.tap(find.text('Gemini (Google)').last);
+    await settle(tester);
+    expect(find.textContaining('저장된 키'), findsNothing); // Gemini 키는 아직 없음
+    await tester.enterText(find.widgetWithText(TextField, 'AIza로 시작하는 Gemini API 키'), 'AIza-new-key-0000');
+
+    await tester.tap(find.textContaining('Gemini 4 Argon'));
+    await settle(tester);
+    await tester.tap(find.textContaining('Gemini 3.8 Flash').last);
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
+    await settle(tester);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('byok_provider'), 'gemini');
+    expect(prefs.getString('byok_key_gemini'), 'AIza-new-key-0000');
+    expect(prefs.getString('byok_model_gemini'), 'gemini-3.8-flash');
+    expect(prefs.getString('byok_claude_api_key'), 'sk-ant-old-key-123456'); // Claude 키는 그대로
+  });
+
   testWidgets('만들기: 예시를 불러와 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
     SharedPreferences.setMockInitialValues({});
     appRouter.go('/add');

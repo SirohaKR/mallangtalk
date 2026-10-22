@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/mallangtalk_models.dart';
@@ -42,14 +41,17 @@ class ClaudeStudioClient {
   ClaudeStudioClient({Dio? dio})
       : _dio = dio ??
             Dio(BaseOptions(
-              baseUrl: 'https://api.anthropic.com',
               connectTimeout: const Duration(seconds: 15),
               receiveTimeout: const Duration(minutes: 4),
             ));
 
   final Dio _dio;
 
+  /// 부를 때마다 쓴 토큰 수를 알려 줌 (사용량·금액 측정용)
+  void Function(AiUsage usage)? onUsage;
+
   Future<ScenarioBundle> generate({
+    AiProvider provider = AiProvider.claude,
     required String apiKey,
     required String model,
     required StudioBrief brief,
@@ -58,7 +60,7 @@ class ClaudeStudioClient {
     final total = brief.totalTalks + 1;
     onProgress?.call('이야기 목차를 짜는 중', 0, total);
 
-    final (outline, character) = await _outline(apiKey: apiKey, model: model, brief: brief);
+    final (outline, character) = await _outline(provider: provider, apiKey: apiKey, model: model, brief: brief);
     final characterId = character.id;
     onProgress?.call('대사를 쓰는 중', 1, total);
 
@@ -104,7 +106,7 @@ class ClaudeStudioClient {
       final batch = events.sublist(start, (start + 3).clamp(0, events.length));
       final results = await Future.wait([
         for (final event in batch)
-          writeScript(apiKey: apiKey, model: model, character: character, event: event, outline: events),
+          writeScript(provider: provider, apiKey: apiKey, model: model, character: character, event: event, outline: events),
       ]);
       for (var j = 0; j < batch.length; j++) {
         final (eventNodes, cutsceneStep) = results[j];
@@ -138,6 +140,7 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
 
   /// 목차 + 비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목·대표 대사·성격 막대·대사 예시)를 한 번에 만듦
   Future<(List<Map<String, dynamic>>, CharacterModel)> _outline({
+    required AiProvider provider,
     required String apiKey,
     required String model,
     required StudioBrief brief,
@@ -226,7 +229,7 @@ ${_characterSheet(base)}
 - 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 장면이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
 
-    final json = await _call(apiKey: apiKey, model: model, user: user, schema: schema, maxTokens: 9000);
+    final json = await _call(provider: provider, apiKey: apiKey, model: model, user: user, schema: schema, maxTokens: 9000);
     final talks = [for (final t in json['talks'] as List? ?? const []) t as Map<String, dynamic>];
     if (talks.where((t) => t['kind'] == 'event').isEmpty) {
       throw const ClaudeChatException('AI가 이벤트 목차를 만들지 못했어요. 다시 시도해 주세요.');
@@ -284,6 +287,7 @@ ${_characterSheet(base)}
   /// 대화 하나의 대사(장면·말풍선·선택지)를 씀. 돌려주는 값: (대사 노드, 컷씬이 뜨는 단계)
   /// outline은 앞뒤 흐름을 알려 주려고 넘기는 전체 대화 목록 (지금 쓸 대화 포함)
   Future<(List<ScriptNodeModel>, int?)> writeScript({
+    AiProvider provider = AiProvider.claude,
     required String apiKey,
     required String model,
     required CharacterModel character,
@@ -369,6 +373,7 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
 - 선택지가 없는 장면에서 대화가 끝난다. next_scene은 이 대화 안의 장면 이름만 쓴다.''';
 
     final json = await _call(
+      provider: provider,
       apiKey: apiKey,
       model: model,
       user: user,
@@ -432,60 +437,27 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
   }
 
   Future<Map<String, dynamic>> _call({
+    required AiProvider provider,
     required String apiKey,
     required String model,
     required String user,
     required Map<String, dynamic> schema,
     required int maxTokens,
   }) async {
-    final fallback = model == 'claude-opus-5-5' || model == 'claude-sonnet-5-5';
-    try {
-      final response = await _dio.post<Map<String, dynamic>>(
-        '/v1/messages',
-        options: Options(headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-          if (fallback) 'anthropic-beta': 'server-side-fallback-2026-07-01',
-        }),
-        data: {
-          'model': model,
-          'max_tokens': maxTokens,
-          if (fallback) 'fallbacks': 'default',
-          'system': _system,
-          'messages': [
-            {'role': 'user', 'content': user},
-          ],
-          'output_config': {
-            'effort': 'medium',
-            'format': {'type': 'json_schema', 'schema': schema},
-          },
-        },
-      );
-      final data = response.data ?? const {};
-      if (data['stop_reason'] == 'refusal') {
-        throw const ClaudeChatException('AI가 이 설정으로는 대본을 만들지 않았어요. 설정을 바꿔 보세요.');
-      }
-      if (data['stop_reason'] == 'max_tokens') {
-        throw const ClaudeChatException('대본이 너무 길어서 중간에 끊겼어요. 대화 수를 줄여서 다시 해 보세요.');
-      }
-      final text = [
-        for (final block in data['content'] as List? ?? const [])
-          if (block is Map && block['type'] == 'text') block['text'] as String,
-      ].join();
-      return jsonDecode(text) as Map<String, dynamic>;
-    } on FormatException {
-      throw const ClaudeChatException('AI 응답을 읽지 못했어요. 다시 시도해 주세요.');
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      final body = e.response?.data;
-      final apiMessage = body is Map ? (body['error']?['message'] as String?) : null;
-      throw ClaudeChatException(switch (status) {
-        401 => 'API 키가 올바르지 않아요. 설정에서 다시 확인해 주세요.',
-        429 => '요청이 너무 많거나 크레딧이 부족해요. 잠시 후 다시 시도해 주세요.',
-        _ => 'AI 호출 실패${status != null ? ' ($status)' : ''}: ${apiMessage ?? e.message ?? '네트워크 오류'}',
-      });
-    }
+    final (json, usage) = await callJsonModel(
+      _dio,
+      provider: provider,
+      apiKey: apiKey,
+      model: model,
+      system: _system,
+      user: user,
+      schema: schema,
+      maxTokens: maxTokens,
+      refusalMessage: 'AI가 이 설정으로는 대본을 만들지 않았어요. 설정을 바꿔 보세요.',
+      truncatedMessage: '대본이 너무 길어서 중간에 끊겼어요. 대화 수를 줄여서 다시 해 보세요.',
+    );
+    onUsage?.call(usage);
+    return json;
   }
 }
 

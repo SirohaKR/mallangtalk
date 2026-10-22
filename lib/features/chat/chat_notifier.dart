@@ -629,6 +629,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       state = state.copyWith(isCharacterTyping: true);
       try {
         final reply = await ref.read(claudeChatClientProvider).reply(
+              provider: byok.provider,
               apiKey: byok.apiKey!,
               model: byok.model,
               character: state.character,
