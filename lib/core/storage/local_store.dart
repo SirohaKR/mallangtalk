@@ -107,7 +107,7 @@ class LocalStore {
   static const _apiKeyKey = 'byok_claude_api_key';
   static const _libraryKey = 'library_v1';
   static const _chatRoomsKey = 'chat_rooms_v1';
-  static const _tempoKey = 'chat_tempo';
+  static const _profileKey = 'my_profile';
   static const _modelKey = 'byok_claude_model';
 
   String _runKey(String characterId) => 'run_$characterId';
@@ -168,10 +168,34 @@ class LocalStore {
   Future<void> forgetCharacter(String characterId) async {
     await clearRun(characterId);
     await _write(_albumKey(characterId), null);
+    await _write('tempo_$characterId', null);
+    await _write('nickname_$characterId', null);
   }
 
-  /// 대화 연출 속도 배율 (1.0 = 리얼하게, 작을수록 빠름)
-  double? get chatTempo => double.tryParse(_getString(_tempoKey) ?? '');
+  /// 캐릭터별 대화 속도 배율 (1.0 = 리얼하게, 작을수록 빠름)
+  double? chatTempo(String characterId) =>
+      double.tryParse(_getString('tempo_$characterId') ?? '');
 
-  Future<void> saveChatTempo(double tempo) => _write(_tempoKey, tempo.toString());
+  Future<void> saveChatTempo(String characterId, double tempo) =>
+      _write('tempo_$characterId', tempo.toString());
+
+  /// 설정의 내 기본 프로필 {nickname, intro}
+  Map<String, dynamic>? get myProfile {
+    final raw = _getString(_profileKey);
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveMyProfile(Map<String, dynamic> profile) =>
+      _write(_profileKey, jsonEncode(profile));
+
+  /// 이 캐릭터와의 대화에서 쓰는 내 별명 (없으면 기본 프로필 별명)
+  String? chatNickname(String characterId) => _getString('nickname_$characterId');
+
+  Future<void> saveChatNickname(String characterId, String nickname) =>
+      _write('nickname_$characterId', nickname);
 }

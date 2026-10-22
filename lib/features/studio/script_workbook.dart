@@ -20,18 +20,23 @@ class ScriptWorkbookResult {
 /// [초보자 노트] 제작자가 엑셀로 모든 대사를 직접 쓰고 올릴 수 있게 해 주는 변환기입니다.
 /// - encode: 캐릭터 시나리오 → 엑셀 파일 (템플릿 받기, AI가 만든 대본을 엑셀로 내보내 고치기)
 /// - decode: 엑셀 파일 → 캐릭터 시나리오 (엑셀 대본 올리기)
-/// 시트 구성: 설명 / 캐릭터 / 호감도단계 / 이벤트 / 대사 / 선택지
+/// 시트 구성: 설명 / 캐릭터 / 프로필 / 호감도단계 / 이벤트 / 대사 / 선택지
 class ScriptWorkbook {
   ScriptWorkbook._();
 
   static const sheetGuide = '설명';
   static const sheetCharacter = '캐릭터';
+  static const sheetProfile = '프로필';
   static const sheetStages = '호감도단계';
   static const sheetEvents = '이벤트';
   static const sheetLines = '대사';
   static const sheetChoices = '선택지';
 
-  static const _characterKeys = ['캐릭터ID', '이름', '상태메시지', '성격·세계관', '타자속도'];
+  static const _characterKeys = [
+    '캐릭터ID', '이름', '상태메시지', '성격·세계관', '타자속도', '한줄소개', '태그', '이미지주소',
+    '대표대사', '유저설정', '비밀', '대표색',
+  ];
+  static const _profileHeaders = ['구분', '제목', '내용', '수치·말투', '비밀'];
   static const _stageHeaders = ['단계명', '시작점수', '끝점수'];
   static const _eventHeaders = [
     '이벤트ID', '종류', '순서', '호감도단계', '최소호감도', '최대호감도',
@@ -45,8 +50,17 @@ class ScriptWorkbook {
   static const _guideLines = [
     '말랑톡 대본 템플릿',
     '',
-    '[캐릭터] 이름, 상태메시지, 성격·세계관(말투·습관·취미까지 자세히), 타자속도를 적어요.',
+    '[캐릭터] 이름, 상태메시지, 성격·세계관(말투·습관·취미까지 자세히), 타자속도, 한줄소개, 태그(쉼표로)를 적어요.',
+    '  이미지주소: 인터넷 이미지 주소 (비워 두고 앱에서 사진을 골라도 돼요)',
+    '  대사에 {이름} 이라고 쓰면 플레이어가 정한 별명으로 바뀌어요. 뒤에 붙는 조사(아·이·은·을·과·이랑)도 받침에 맞게 바뀌어요. 예: {이름}아 뭐해? → 쨋뀨야 뭐해?',
     '  타자속도: 번개같이 / 빠릿빠릿 / 보통 / 느긋하게 / 한참 고민 중 하나, 또는 0.5~2.0 숫자 (클수록 천천히 침)',
+    '  대표대사: 상세 화면 맨 위에 뜨는 한 줄. 유저설정: 이 이야기에서 플레이어는 누구인지 (예: {이름} · 1년 전 팀플에서 만난 친구)',
+    '  비밀: 플레이어에겐 안 보이고 AI 자유대화가 서서히 드러내는 설정. 대표색: #E86A92 같은 색 코드 (비워도 됨)',
+    '[프로필] 상세 화면에 보이는 설정 카드예요. 구분에 따라 칸 뜻이 달라요. (시트를 지워도 괜찮아요)',
+    '  항목: 제목=나이·직업·생일 같은 이름, 내용=값, 비밀=O 이면 플레이어에겐 숨김',
+    '  성격: 제목=왼쪽 성향(내향), 내용=오른쪽 성향(외향), 수치=오른쪽으로 기운 정도 0~100',
+    '  대사: 제목=상황(예: 기분 좋을 때), 내용=대사',
+    '  인물: 제목=이름, 내용=관계(예: 룸메이트), 말투=그 사람 말투',
     '[호감도단계] 단계마다 이름과 점수 구간(0~100)을 적어요. 예: 어색한 사이 0~19, 친구 20~49, 썸 50~100',
     '[이벤트] 한 줄이 이야기 하나예요.',
     '  종류: 이벤트(공략에 필요한 호감도 이벤트) / 일상(이벤트 사이사이 일상 톡, 공략엔 필요 없음) / 엔딩',
@@ -90,8 +104,44 @@ class ScriptWorkbook {
       xl.TextCellValue(_characterKeys[4]),
       xl.DoubleCellValue(c.typingSpeedMultiplier),
     ]);
+    characterSheet.appendRow([xl.TextCellValue(_characterKeys[5]), _text(c.tagline)]);
+    characterSheet.appendRow([xl.TextCellValue(_characterKeys[6]), _text(c.tags.join(', '))]);
+    // 직접 올린 사진(data: 주소)은 엑셀 칸에 다 안 들어가서 인터넷 주소일 때만 적음
+    characterSheet.appendRow([
+      xl.TextCellValue(_characterKeys[7]),
+      _text(c.avatarUrl.startsWith('data:') ? null : c.avatarUrl),
+    ]);
+    final extras = [c.quote, c.userRole, c.secret, c.themeColor];
+    for (var i = 0; i < extras.length; i++) {
+      characterSheet.appendRow([xl.TextCellValue(_characterKeys[8 + i]), _text(extras[i])]);
+    }
     characterSheet.setColumnWidth(0, 14);
     characterSheet.setColumnWidth(1, 90);
+
+    final profileSheet = excel[sheetProfile];
+    _header(profileSheet, _profileHeaders);
+    for (final f in c.profileFields) {
+      profileSheet.appendRow([
+        xl.TextCellValue('항목'), xl.TextCellValue(f.label), xl.TextCellValue(f.value), null,
+        f.isSecret ? xl.TextCellValue('O') : null,
+      ]);
+    }
+    for (final t in c.traits) {
+      profileSheet.appendRow([
+        xl.TextCellValue('성격'), xl.TextCellValue(t.left), _text(t.right), xl.IntCellValue(t.percent), null,
+      ]);
+    }
+    for (final q in c.sampleQuotes) {
+      profileSheet.appendRow([xl.TextCellValue('대사'), _text(q.situation), xl.TextCellValue(q.body), null, null]);
+    }
+    for (final e in c.extraCast) {
+      profileSheet.appendRow([
+        xl.TextCellValue('인물'), xl.TextCellValue(e.name), _text(e.role), _text(e.speech), null,
+      ]);
+    }
+    for (final (col, width) in [(0, 8.0), (1, 18.0), (2, 50.0), (3, 20.0), (4, 6.0)]) {
+      profileSheet.setColumnWidth(col, width);
+    }
 
     final stageSheet = excel[sheetStages];
     _header(stageSheet, _stageHeaders);
@@ -274,13 +324,60 @@ class ScriptWorkbook {
       errors.add('[호감도단계] 단계를 하나 이상 적어 주세요.');
     }
 
+    // 프로필 (없어도 됨)
+    final profileFields = <ProfileField>[];
+    final traits = <PersonalityTrait>[];
+    final sampleQuotes = <CharacterQuote>[];
+    final extraCast = <ExtraCast>[];
+    final profileRows = rows(sheetProfile, required: false);
+    for (var i = 0; i < profileRows.length; i++) {
+      final r = profileRows[i];
+      final kind = r['구분']?.trim() ?? '';
+      final title = r['제목']?.trim() ?? '';
+      final body = r['내용']?.trim() ?? '';
+      final extra = r['수치·말투']?.trim() ?? '';
+      switch (kind) {
+        case '항목' when title.isNotEmpty:
+          profileFields.add(ProfileField(
+            label: title,
+            value: body,
+            isSecret: RegExp(r'^(o|O|ㅇ|예|네|비밀|true|1)$').hasMatch(r['비밀']?.trim() ?? ''),
+          ));
+        case '성격' when title.isNotEmpty:
+          traits.add(PersonalityTrait(
+            left: title,
+            right: body.isEmpty ? null : body,
+            percent: (_int(extra) ?? 50).clamp(0, 100),
+          ));
+        case '대사' when body.isNotEmpty:
+          sampleQuotes.add(CharacterQuote(body: body, situation: title));
+        case '인물' when title.isNotEmpty:
+          extraCast.add(ExtraCast(name: title, role: body, speech: extra));
+        default:
+          warnings.add('[프로필] ${i + 2}번째 줄: 구분(항목/성격/대사/인물)과 내용을 확인해 주세요.');
+      }
+    }
+
     final character = CharacterModel(
       id: characterId,
       creatorId: 'me',
       name: name,
       statusMessage: info['상태메시지']?.trim() ?? '',
-      avatarUrl: '',
+      avatarUrl: info['이미지주소']?.trim() ?? '',
+      tagline: info['한줄소개']?.trim() ?? '',
+      tags: [
+        for (final t in (info['태그'] ?? '').split(RegExp(r'[,，#\n]')))
+          if (t.trim().isNotEmpty) t.trim(),
+      ],
       worldviewPrompt: info['성격·세계관']?.trim() ?? info['성격']?.trim() ?? '',
+      quote: info['대표대사']?.trim() ?? '',
+      userRole: info['유저설정']?.trim() ?? '',
+      secret: info['비밀']?.trim() ?? '',
+      themeColor: info['대표색']?.trim() ?? '',
+      profileFields: profileFields,
+      traits: traits,
+      sampleQuotes: sampleQuotes,
+      extraCast: extraCast,
       typingSpeedMultiplier: _typingSpeed(info['타자속도']),
       affectionStages: stages,
     );

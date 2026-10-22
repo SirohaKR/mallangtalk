@@ -46,6 +46,41 @@ void main() {
       expect(back.nodes[decline.nextNodeId]!.stepOrder, 3);
       expect(back.events.firstWhere((e) => e.id == 'evt_gig_tickets').cutsceneTriggerStep, 2);
       expect(bestPathClears(back), isTrue);
+
+      // 캐릭터 설정 카드(프로필 시트)도 그대로
+      final c = back.character;
+      final o = original.character;
+      expect(c.quote, o.quote);
+      expect(c.userRole, o.userRole);
+      expect(c.secret, o.secret);
+      expect(c.themeColor, '#6B8FD6');
+      expect(c.profileFields.map((f) => '${f.label}=${f.value}/${f.isSecret}'),
+          o.profileFields.map((f) => '${f.label}=${f.value}/${f.isSecret}'));
+      expect(c.profileFields.last.isSecret, isTrue);
+      expect(c.traits.map((t) => '${t.left}|${t.right}|${t.percent}'),
+          o.traits.map((t) => '${t.left}|${t.right}|${t.percent}'));
+      expect(c.sampleQuotes.map((q) => q.body), o.sampleQuotes.map((q) => q.body));
+      expect(c.extraCast.map((e) => '${e.name}/${e.role}/${e.speech}'),
+          o.extraCast.map((e) => '${e.name}/${e.role}/${e.speech}'));
+    });
+
+    test('{이름} 뒤 조사는 별명 받침에 맞게 바뀜', () {
+      String fill(String t, String n) => CharacterModel.fillUserName(t, n);
+      expect(fill('{이름}아 뭐해', '쨋뀨'), '쨋뀨야 뭐해');
+      expect(fill('{이름}아 뭐해', '서연'), '서연아 뭐해');
+      expect(fill('{이름}이 그랬잖아', '쨋뀨'), '쨋뀨가 그랬잖아');
+      expect(fill('{이름}이랑 갈래', '쨋뀨'), '쨋뀨랑 갈래');
+      expect(fill('{이름}은 어때', '서연'), '서연은 어때');
+      expect(fill('{이름}. 그리고 {이름}', 'Lia'), 'Lia. 그리고 Lia');
+    });
+
+    test('AI에게 넘기는 설정에는 비밀과 유저 설정까지 들어감', () {
+      final sheet = loadSampleBundle().character.aiCharacterSheet;
+      expect(sheet, contains('경영학과'));
+      expect(sheet, contains('비밀(유저는 아직 모름'));
+      expect(sheet, contains('유저 설정: {이름} · 1년 전'));
+      expect(sheet, contains('준혁 (도하의 룸메이트'));
+      expect(sheet, contains('진짜 마음 처음 팀플 하던 날부터 좋아했음(비밀)'));
     });
 
     test('템플릿(예시 캐릭터)은 바로 올려도 끝까지 플레이할 수 있음', () {
@@ -118,7 +153,8 @@ void main() {
       await container.read(builtinBundlesProvider.future);
       await container.read(sharedPreferencesProvider.future);
       expect(container.read(characterLibraryProvider).map((e) => e.id), [dohaId]);
-      expect(container.read(chatRoomsProvider), [dohaId]);
+      // 친구 목록엔 있지만 대화방은 별명을 정하고 대화를 시작해야 생김
+      expect(container.read(chatRoomsProvider), isEmpty);
 
       await container.read(characterLibraryProvider.notifier)
           .add(templateScenario(), CharacterSource.created);
@@ -131,7 +167,7 @@ void main() {
       expect(entries.map((e) => e.id), [dohaId, 'char_example_seo_ijun']);
       expect(entries.last.source, CharacterSource.created);
       expect(entries.last.bundle.events, hasLength(5));
-      expect(container.read(chatRoomsProvider), ['char_example_seo_ijun', dohaId]);
+      expect(container.read(chatRoomsProvider), ['char_example_seo_ijun']);
 
       await container.read(characterLibraryProvider.notifier).remove(dohaId);
       container = open();
@@ -157,6 +193,7 @@ void main() {
           statusMessage: '바리스타',
           personality: '무뚝뚝하지만 다정한 카페 사장. 말끝을 흐린다.',
           relationship: '단골 카페 사장님',
+          secret: '사실 카페를 접으려다 너 때문에 버티는 중',
           typingSpeedMultiplier: 1.3,
           stages: [
             AffectionStage(minScore: 0, maxScore: 29, stageLabel: '손님'),
@@ -176,6 +213,17 @@ void main() {
 
       expect(bundle.character.name, '한결');
       expect(bundle.character.typingSpeedMultiplier, 1.3);
+      // 목차와 함께 받은 캐릭터 설정 카드
+      expect(bundle.character.tagline, '말없이 라떼를 내미는 사장님');
+      expect(bundle.character.quote, '…오늘도 그거죠?');
+      expect(bundle.character.profileFields.map((f) => f.label), ['나이', '직업']);
+      expect(bundle.character.traits.single.percent, 30);
+      expect(bundle.character.sampleQuotes, hasLength(1));
+      expect(bundle.character.userRole, '단골 카페 사장님');
+      expect(bundle.character.secret, contains('버티는 중'));
+      expect(bundle.character.id, startsWith('char_'));
+      // 대사 요청에는 AI가 채운 설정과 비밀이 같이 들어감
+      expect(adapter.bodies[1]['messages'][0]['content'], allOf(contains('…오늘도 그거죠?'), contains('버티는 중')));
       expect(bundle.events.map((e) => e.eventType), [
         ScenarioEventType.autoStory, ScenarioEventType.daily,
         ScenarioEventType.autoStory, ScenarioEventType.daily, ScenarioEventType.ending,
@@ -207,6 +255,19 @@ class _ScriptedAdapter implements HttpClientAdapter {
         .containsKey('talks');
     final payload = isOutline
         ? {
+            'tagline': '말없이 라떼를 내미는 사장님',
+            'tags': ['카페', '무뚝뚝'],
+            'quote': '…오늘도 그거죠?',
+            'profile_fields': [
+              {'label': '나이', 'value': '29살'},
+              {'label': '직업', 'value': '카페 사장'},
+            ],
+            'traits': [
+              {'left': '내향', 'right': '외향', 'percent': 30},
+            ],
+            'sample_quotes': [
+              {'situation': '바쁠 때', 'body': '…잠깐만요.'},
+            ],
             'talks': [
               _talk('event', '손님', '첫 라떼', '두 잔째 라떼를 건네는 한결'),
               _talk('daily', '손님', '비 오는 오후', ''),

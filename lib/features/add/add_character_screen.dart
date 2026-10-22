@@ -5,12 +5,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
-import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../library/character_library.dart';
-import '../studio/character_import.dart';
-import '../studio/script_workbook.dart';
 import '../studio/studio_screen.dart';
+import '../../shared/utils/korean.dart';
 
 /// [초보자 노트] '캐릭터 추가' 탭: 받아오기(기본 캐릭터·파일) / 만들기(엑셀 대본·AI 생성)
 class AddCharacterScreen extends StatelessWidget {
@@ -38,90 +36,121 @@ class AddCharacterScreen extends StatelessWidget {
   }
 }
 
-/// 받아오기: 앱 기본 캐릭터 + 친구가 보내 준 캐릭터 파일(.json) 또는 엑셀 대본(.xlsx)
-class ImportCharacterTab extends ConsumerStatefulWidget {
+/// 받아오기: 캐릭터 갤러리 (썸네일 · 이름 · 한줄 소개). 누르면 상세 화면에서 친구 추가
+/// 지금은 앱에 들어 있는 기본 캐릭터만 보이고, 4단계 서버가 생기면 다른 사람이 공개한 캐릭터가 여기 올라옵니다.
+class ImportCharacterTab extends ConsumerWidget {
   const ImportCharacterTab({super.key});
 
   @override
-  ConsumerState<ImportCharacterTab> createState() => _ImportCharacterTabState();
-}
-
-class _ImportCharacterTabState extends ConsumerState<ImportCharacterTab> {
-  ScriptWorkbookResult? _picked;
-  List<String> _errors = const [];
-
-  Future<void> _pickFile() async {
-    final file = await FileIO.pick(extensions: ['json', 'xlsx']);
-    if (file == null) return;
-    setState(() {
-      try {
-        _picked = readCharacterFile(file);
-        _errors = const [];
-      } on ScriptWorkbookException catch (e) {
-        _picked = null;
-        _errors = e.errors;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final builtins = ref.watch(builtinBundlesProvider).valueOrNull ?? const [];
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gallery = ref.watch(builtinBundlesProvider).valueOrNull ?? const [];
     final mine = ref.watch(characterLibraryProvider).map((e) => e.id).toSet();
 
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
-        child: ListView(
+        child: GridView.builder(
           padding: const EdgeInsets.all(AppSpacing.lg),
-          children: [
-            const Text('기본 캐릭터', style: AppTextStyles.appBarTitle),
-            const SizedBox(height: 4),
-            const Text('공개 캐릭터 둘러보기는 서버가 생기면 여기에 열려요.', style: AppTextStyles.systemNotice),
-            const SizedBox(height: AppSpacing.sm),
-            for (final bundle in builtins)
-              _CharacterCard(
-                bundle: bundle,
-                added: mine.contains(bundle.character.id),
-                onAdd: () => _add(bundle, CharacterSource.builtin),
-              ),
-            const SizedBox(height: AppSpacing.xl),
-            const Text('파일로 받아오기', style: AppTextStyles.appBarTitle),
-            const SizedBox(height: 4),
-            const Text(
-              '다른 사람이 보내 준 캐릭터 파일(.json)이나 엑셀 대본(.xlsx)을 열어요.',
-              style: AppTextStyles.systemNotice,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.file_open_outlined, size: 18),
-              label: const Text('파일 고르기'),
-              onPressed: _pickFile,
-            ),
-            if (_errors.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.md),
-              ProblemList(title: '이 파일은 열 수 없어요', items: _errors, isError: true),
-            ],
-            if (_picked != null) ...[
-              const SizedBox(height: AppSpacing.md),
-              _CharacterCard(
-                bundle: _picked!.bundle,
-                added: false,
-                replaces: mine.contains(_picked!.bundle.character.id),
-                onAdd: () => _add(_picked!.bundle, CharacterSource.imported, clearPicked: true),
-              ),
-              if (_picked!.warnings.isNotEmpty)
-                ProblemList(title: '확인해 보면 좋은 점', items: _picked!.warnings),
-            ],
-          ],
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: AppSpacing.md,
+            crossAxisSpacing: AppSpacing.md,
+            childAspectRatio: 0.62,
+          ),
+          itemCount: gallery.length,
+          itemBuilder: (context, index) {
+            final bundle = gallery[index];
+            return GalleryCard(
+              character: bundle.character,
+              isFriend: mine.contains(bundle.character.id),
+              onTap: () => context.push('/gallery/${bundle.character.id}'),
+            );
+          },
         ),
       ),
     );
   }
+}
 
-  Future<void> _add(ScenarioBundle bundle, CharacterSource source, {bool clearPicked = false}) async {
-    await addCharacterAndAnnounce(context, ref, bundle, source);
-    if (clearPicked && mounted) setState(() => _picked = null);
+/// 갤러리 카드: 썸네일 + 이름 + 한줄 소개 + 태그
+class GalleryCard extends StatelessWidget {
+  const GalleryCard({super.key, required this.character, required this.isFriend, required this.onTap});
+
+  final CharacterModel character;
+  final bool isFriend;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceWhite,
+          borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+          border: Border.all(color: AppColors.borderLight),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CharacterImage(character: character, fontSize: 52),
+                  if (isFriend)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryPink,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '친구',
+                          style: AppTextStyles.messageTime.copyWith(
+                            color: AppColors.surfaceWhite,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(character.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(
+                    character.tagline.isNotEmpty ? character.tagline : character.statusMessage,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.systemNotice,
+                  ),
+                  if (character.tags.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      character.tags.take(3).map((t) => '#$t').join(' '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.messageTime.copyWith(color: AppColors.primaryPink),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -134,84 +163,9 @@ Future<void> addCharacterAndAnnounce(
 ) async {
   await ref.read(characterLibraryProvider.notifier).add(bundle, source);
   if (!context.mounted) return;
-  final router = GoRouter.of(context);
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text('${bundle.character.name}을(를) 내 캐릭터에 추가했어요'),
-      action: SnackBarAction(
-        label: '채팅하기',
-        onPressed: () {
-          ref.read(chatRoomsProvider.notifier).open(bundle.character.id);
-          router.push('/chat/${bundle.character.id}');
-        },
-      ),
-    ),
+    SnackBar(content: Text('${josa(bundle.character.name, '을', '를')} 친구로 추가했어요. 내 캐릭터에서 대화를 시작해 보세요')),
   );
-}
-
-class _CharacterCard extends StatelessWidget {
-  const _CharacterCard({
-    required this.bundle,
-    required this.added,
-    required this.onAdd,
-    this.replaces = false,
-  });
-
-  final ScenarioBundle bundle;
-  final bool added;
-  final bool replaces;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = bundle.character;
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceWhite,
-        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: AppColors.borderLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              CharacterAvatar(character: c, radius: 22),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
-                    if (c.statusMessage.isNotEmpty)
-                      Text(c.statusMessage, style: AppTextStyles.systemNotice, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(ScenarioSummary.of(bundle).line, style: AppTextStyles.messageTime.copyWith(height: 1.4)),
-          if (c.affectionStages.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              '단계: ${c.affectionStages.map((s) => s.stageLabel).join(' → ')}',
-              style: AppTextStyles.messageTime.copyWith(height: 1.4),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          added
-              ? const OutlinedButton(onPressed: null, child: Text('추가됨'))
-              : ElevatedButton(
-                  onPressed: onAdd,
-                  child: Text(replaces ? '내 캐릭터에 덮어쓰기' : '내 캐릭터에 추가'),
-                ),
-        ],
-      ),
-    );
-  }
 }
 
 /// 오류·주의 목록 카드

@@ -9,6 +9,8 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
+import '../../shared/widgets/character_avatar.dart';
+import '../../shared/widgets/character_sheet_view.dart';
 import '../add/add_character_screen.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
@@ -42,6 +44,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   final _status = TextEditingController();
   final _personality = TextEditingController();
   final _relationship = TextEditingController();
+  final _tagline = TextEditingController();
+  final _tags = TextEditingController();
+  final _secret = TextEditingController();
+  String _avatar = '';
   double _typing = 1.0;
   final List<_StageDraft> _stages = [
     _StageDraft('어색한 사이', 0),
@@ -62,7 +68,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
 
   @override
   void dispose() {
-    for (final c in [_name, _status, _personality, _relationship]) {
+    for (final c in [_name, _status, _personality, _relationship, _tagline, _tags, _secret]) {
       c.dispose();
     }
     for (final s in _stages) {
@@ -103,6 +109,20 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     });
   }
 
+  Future<void> _importCharacterFile() async {
+    final file = await FileIO.pick(extensions: ['json']);
+    if (file == null) return;
+    setState(() {
+      try {
+        _excelResult = readCharacterFile(file);
+        _excelErrors = const [];
+      } on ScriptWorkbookException catch (e) {
+        _excelResult = null;
+        _excelErrors = e.errors;
+      }
+    });
+  }
+
   // ───────────── AI ─────────────
 
   List<AffectionStage>? _buildStages() {
@@ -125,6 +145,13 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       statusMessage: _status.text,
       personality: _personality.text,
       relationship: _relationship.text,
+      tagline: _tagline.text,
+      tags: [
+        for (final t in _tags.text.split(RegExp(r'[,#\s]+')))
+          if (t.trim().isNotEmpty) t.trim(),
+      ],
+      secret: _secret.text,
+      avatarUrl: _avatar,
       typingSpeedMultiplier: _typing,
       stages: stages ?? const [],
       eventsPerStage: _eventsPerStage,
@@ -250,6 +277,11 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           '이미 있는 캐릭터의 대본이 궁금하면 내 캐릭터 → 프로필 → 엑셀로 내보내기',
           style: AppTextStyles.messageTime,
         ),
+        TextButton.icon(
+          icon: const Icon(Icons.file_open_outlined, size: 18),
+          label: const Text('캐릭터 파일(.json) 가져오기'),
+          onPressed: _importCharacterFile,
+        ),
         if (_excelErrors.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
           ProblemList(title: '고쳐야 할 곳이 있어요', items: _excelErrors, isError: true),
@@ -259,6 +291,15 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           _ResultCard(
             bundle: _excelResult!.bundle,
             warnings: _excelResult!.warnings,
+            onPickImage: () async {
+              final image = await pickProfileImage();
+              if (image == null || !mounted) return;
+              final r = _excelResult!;
+              setState(() => _excelResult = ScriptWorkbookResult(
+                    r.bundle.copyWithCharacter(r.bundle.character.copyWith(avatarUrl: image)),
+                    r.warnings,
+                  ));
+            },
             onAdd: () async {
               await addCharacterAndAnnounce(
                   context, ref, _excelResult!.bundle, CharacterSource.created);
@@ -275,7 +316,48 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     return [
       const Text('캐릭터 설정', style: AppTextStyles.appBarTitle),
       const SizedBox(height: AppSpacing.sm),
+      Row(
+        children: [
+          SizedBox(
+            width: 72,
+            height: 72,
+            child: CharacterImage(
+              character: CharacterModel(
+                id: 'draft',
+                creatorId: 'me',
+                name: _name.text.isEmpty ? '?' : _name.text,
+                statusMessage: '',
+                avatarUrl: _avatar,
+                worldviewPrompt: '',
+                affectionStages: const [],
+              ),
+              borderRadius: 16,
+              fontSize: 28,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('프로필 사진', style: AppTextStyles.speakerName),
+                const Text('갤러리 썸네일과 대화방 프로필에 쓰여요', style: AppTextStyles.messageTime),
+                TextButton(
+                  onPressed: () async {
+                    final image = await pickProfileImage();
+                    if (image != null && mounted) setState(() => _avatar = image);
+                  },
+                  child: Text(_avatar.isEmpty ? '사진 고르기' : '사진 바꾸기'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
       _Field(controller: _name, label: '이름', hint: '예: 윤도하'),
+      _Field(controller: _tagline, label: '한줄 소개', hint: '비우면 AI가 지어 줘요. 예: 1년째 매일 연락하는 남사친'),
+      _Field(controller: _tags, label: '태그', hint: '쉼표로 구분. 예: 남사친, 장난꾸러기, 고양이집사'),
       _Field(controller: _status, label: '상태메시지', hint: '예: 두부 집사 / 토요일 홍대'),
       _Field(
         controller: _personality,
@@ -283,7 +365,13 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         hint: '나이, 직업, 말투 습관(ㅋㅋ를 자주 씀 등), 취미, 관심사, 숨기고 있는 마음까지 자세할수록 좋아요',
         lines: 5,
       ),
-      _Field(controller: _relationship, label: '나와의 관계', hint: '예: 알게 된 지 1년 된 남사친'),
+      _Field(controller: _relationship, label: '나는 이 이야기에서 (유저 설정)', hint: '예: {이름} · 1년 전 교양 팀플에서 만난 친구'),
+      _Field(controller: _secret, label: '비밀 설정 (선택)', hint: '플레이어에겐 안 보이고 이야기 속에서 서서히 드러나요. 예: 사실 처음 만난 날부터 좋아했음', lines: 2),
+      const Padding(
+        padding: EdgeInsets.only(bottom: AppSpacing.md),
+        child: Text('대표 대사, 프로필 항목(나이·직업 등), 성격 막대, 대사 예시는 AI가 설정을 보고 채워 줘요.',
+            style: AppTextStyles.systemNotice),
+      ),
       const SizedBox(height: AppSpacing.sm),
       const Text('타자 스타일', style: AppTextStyles.speakerName),
       const SizedBox(height: 6),
@@ -370,6 +458,12 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         _ResultCard(
           bundle: _aiResult!,
           warnings: const [],
+          onPickImage: () async {
+            final image = await pickProfileImage();
+            if (image == null || !mounted) return;
+            setState(() => _aiResult =
+                _aiResult!.copyWithCharacter(_aiResult!.character.copyWith(avatarUrl: image)));
+          },
           onExport: () => FileIO.save(
             fileName: '${FileIO.safeName(_aiResult!.character.name)}_대본.xlsx',
             bytes: ScriptWorkbook.encode(_aiResult!),
@@ -627,12 +721,14 @@ class _ResultCard extends StatelessWidget {
     required this.bundle,
     required this.warnings,
     required this.onAdd,
+    required this.onPickImage,
     this.onExport,
   });
 
   final ScenarioBundle bundle;
   final List<String> warnings;
   final VoidCallback onAdd;
+  final VoidCallback onPickImage;
   final VoidCallback? onExport;
 
   @override
@@ -652,10 +748,38 @@ class _ResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('${c.name} 준비 완료', style: AppTextStyles.appBarTitle),
-          const SizedBox(height: 4),
+          Row(
+            children: [
+              CharacterAvatar(character: c, radius: 28),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${c.name} 준비 완료', style: AppTextStyles.appBarTitle),
+                    if (c.tagline.isNotEmpty) Text(c.tagline, style: AppTextStyles.systemNotice),
+                    if (c.tags.isNotEmpty)
+                      Text(c.tags.map((t) => '#$t').join(' '),
+                          style: AppTextStyles.messageTime.copyWith(color: AppColors.primaryPink)),
+                  ],
+                ),
+              ),
+              TextButton(onPressed: onPickImage, child: const Text('사진 바꾸기')),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
           Text(ScenarioSummary.of(bundle).line, style: AppTextStyles.messageTime.copyWith(height: 1.4)),
           const SizedBox(height: AppSpacing.sm),
+          if (c.quote.isNotEmpty || c.profileFields.isNotEmpty || c.traits.isNotEmpty)
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: const Text('캐릭터 설정 미리보기', style: AppTextStyles.speakerName),
+                children: [CharacterSheetView(character: c)],
+              ),
+            ),
           for (final entry in byStage.entries)
             if (entry.value.isNotEmpty)
               Padding(

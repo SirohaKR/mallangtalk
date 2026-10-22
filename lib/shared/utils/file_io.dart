@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 
 /// 고른 파일 (이름 + 내용)
@@ -39,4 +41,26 @@ class FileIO {
     final cleaned = name.replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_');
     return cleaned.isEmpty ? 'character' : cleaned;
   }
+}
+
+/// [초보자 노트] 프로필 사진을 골라 384px 크기로 줄인 뒤 data: 주소로 돌려줍니다.
+/// (캐릭터 파일 안에 그대로 저장되니까 너무 크면 브라우저 저장 공간을 금방 채워서 줄여 둠)
+Future<String?> pickProfileImage() async {
+  final file = await FileIO.pick(extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif']);
+  if (file == null) return null;
+  final codec = await ui.instantiateImageCodec(file.bytes);
+  final first = await codec.getNextFrame();
+  final source = first.image;
+  final scale = 384 / (source.width > source.height ? source.width : source.height);
+  final width = scale < 1 ? (source.width * scale).round() : source.width;
+  final height = scale < 1 ? (source.height * scale).round() : source.height;
+  final resizedCodec = await ui.instantiateImageCodec(
+    file.bytes,
+    targetWidth: width,
+    targetHeight: height,
+  );
+  final resized = (await resizedCodec.getNextFrame()).image;
+  final png = await resized.toByteData(format: ui.ImageByteFormat.png);
+  if (png == null) return null;
+  return 'data:image/png;base64,${base64Encode(png.buffer.asUint8List())}';
 }

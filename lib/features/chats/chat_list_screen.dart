@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../chat/chat_notifier.dart';
+import '../chat/start_chat.dart';
 import '../library/character_library.dart';
 
 /// [초보자 노트] '채팅' 탭: 대화 중인 캐릭터 목록. 마지막 말풍선과 안 읽은 톡 숫자를 카톡처럼 보여줍니다.
@@ -105,7 +106,7 @@ class _ChatRoomTile extends ConsumerWidget {
             ),
         ],
       ),
-      onTap: () => context.push('/chat/$characterId'),
+      onTap: () => openChat(context, ref, room.character),
     );
   }
 

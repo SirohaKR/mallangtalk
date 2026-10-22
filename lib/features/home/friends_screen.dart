@@ -8,10 +8,14 @@ import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
+import '../../shared/widgets/character_sheet_view.dart';
 import '../chat/chat_notifier.dart';
+import '../chat/start_chat.dart';
 import '../library/character_library.dart';
+import '../settings/user_profile.dart';
 import '../studio/character_import.dart';
 import '../studio/script_workbook.dart';
+import '../../shared/utils/korean.dart';
 
 /// [초보자 노트] '내 캐릭터' 탭: 받아오거나 만든 캐릭터 목록. 누르면 프로필이 뜨고 거기서 1:1 채팅을 시작합니다.
 class FriendsScreen extends ConsumerWidget {
@@ -141,8 +145,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
               label: const Text('1:1 채팅'),
               onPressed: () {
                 close();
-                ref.read(chatRoomsProvider.notifier).open(c.id);
-                router.push('/chat/${c.id}');
+                openChat(parentContext, ref, c);
               },
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -161,13 +164,24 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: OutlinedButton.icon(
+                    icon: const Icon(Icons.speed_rounded, size: 18),
+                    label: const Text('대화 속도'),
+                    onPressed: () {
+                      close();
+                      pickChatTempo(parentContext, ref, c);
+                    },
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton.icon(
                     icon: const Icon(Icons.replay_rounded, size: 18),
                     label: const Text('처음부터'),
                     onPressed: () {
                       close();
                       ref.read(chatRoomProvider(c.id).notifier).restart();
                       messenger.showSnackBar(
-                        SnackBar(content: Text('${c.name}와의 대화를 처음부터 시작했어요 (앨범은 그대로)')),
+                        SnackBar(content: Text('${josa(c.name, '과', '와')}의 대화를 처음부터 시작했어요 (앨범은 그대로)')),
                       );
                     },
                   ),
@@ -206,7 +220,8 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.lg),
+            CharacterSheetView(character: c, nickname: ref.watch(chatNicknameProvider(c.id))),
             TextButton(
               style: TextButton.styleFrom(foregroundColor: AppColors.primaryPink),
               onPressed: () async {
@@ -232,7 +247,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 ref.read(chatRoomsProvider.notifier).leave(c.id);
                 await ref.read(characterLibraryProvider.notifier).remove(c.id);
                 ref.invalidate(chatRoomProvider(c.id));
-                messenger.showSnackBar(SnackBar(content: Text('${c.name}을(를) 지웠어요')));
+                messenger.showSnackBar(SnackBar(content: Text('${josa(c.name, '을', '를')} 지웠어요')));
               },
               child: const Text('캐릭터 삭제'),
             ),

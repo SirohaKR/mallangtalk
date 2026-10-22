@@ -78,6 +78,8 @@ class ClaudeChatClient {
     required String? currentEventTitle,
     required List<ChatMessageLog> history,
     required List<String> newUserMessages,
+    String userName = '너',
+    String userIntro = '',
   }) async {
     final transcript = history
         .where((m) => !m.isSystem)
@@ -87,7 +89,7 @@ class ClaudeChatClient {
         .toList()
         .reversed
         .map((m) {
-      final who = m.isUser ? '나' : character.name;
+      final who = m.isUser ? userName : character.name;
       final photo = m.hasPhoto ? ' [사진: ${m.photoLabel}]' : '';
       return '$who: ${m.text}$photo';
     }).join('\n');
@@ -96,7 +98,10 @@ class ClaudeChatClient {
 너는 메신저 연애 시뮬레이션 게임 속 캐릭터 "${character.name}"이다. 아래 설정을 지키며 유저와 카톡을 주고받는다.
 
 [캐릭터 설정]
-${character.worldviewPrompt}
+${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
+
+[유저]
+이름(별명): $userName${userIntro.isNotEmpty ? '\n소개: $userIntro' : ''}
 
 [현재 관계]
 ${character.name}에게 유저는 지금 "$stageLabel" 단계다.${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}

@@ -14,8 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const dohaId = 'char_yoon_doha';
 
-/// 테스트에서는 '입력 중' 연출을 빠르게 (설정의 대화 속도와 같은 값)
-const fastTempo = {'chat_tempo': '0.2'};
+/// 테스트에서는 '입력 중' 연출을 빠르게 (대화방의 캐릭터별 대화 속도) + 별명을 정해 둔 상태
+const fastTempo = {'tempo_$dohaId': '0.2', 'nickname_$dohaId': '쨋뀨'};
 
 ScenarioBundle loadSampleBundle() => ScenarioBundle.fromJson(
       jsonDecode(File('assets/scenarios/sample_character.json').readAsStringSync())
@@ -89,9 +89,4 @@ Future<void> choose(WidgetTester tester, String label) async {
   await tester.tap(button);
   await settle(tester);
   await skipDailyTalks(tester);
-}
-
-Future<void> closeCutscene(WidgetTester tester) async {
-  await tester.tap(find.textContaining('화면을 탭하면 계속'));
-  await settle(tester);
 }

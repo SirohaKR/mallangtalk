@@ -21,7 +21,6 @@ void main() {
     SharedPreferences.setMockInitialValues({...fastTempo});
     await openChat(tester);
     await choose(tester, '지금 바로 같이 찾으러 가겠다고 하기');
-    await closeCutscene(tester);
     await choose(tester, '다음엔 직접 두부 보러 가겠다고 하기');
     expect(find.text('화요일 오전 6:40'), findsOneWidget);
 
@@ -54,6 +53,8 @@ void main() {
     await settle(tester);
 
     expect(fake.lastModel, 'claude-haiku-5-5');
+    expect(fake.lastUserName, '쨋뀨'); // 이 대화에서 정한 별명으로 불림
+    expect(fake.lastSystemSheet, contains('비밀(유저는 아직 모름'));
     expect(fake.lastNewMessages, ['두부 잘 있어?', '보고 싶다']);
     expect(fake.lastHistory.any((m) => m.text == '보고 싶다'), isFalse);
     expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
@@ -65,6 +66,8 @@ class _FakeClaude extends ClaudeChatClient {
   _FakeClaude() : super(dio: Dio());
 
   String? lastModel;
+  String? lastUserName;
+  String? lastSystemSheet;
   List<String> lastNewMessages = const [];
   List<ChatMessageLog> lastHistory = const [];
 
@@ -77,8 +80,12 @@ class _FakeClaude extends ClaudeChatClient {
     required String? currentEventTitle,
     required List<ChatMessageLog> history,
     required List<String> newUserMessages,
+    String userName = '너',
+    String userIntro = '',
   }) async {
     lastModel = model;
+    lastUserName = userName;
+    lastSystemSheet = character.aiCharacterSheet;
     lastNewMessages = newUserMessages;
     lastHistory = history;
     return const FreeChatReply(

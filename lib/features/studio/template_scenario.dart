@@ -8,8 +8,32 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
         'creator_id': 'me',
         'name': '서이준',
         'status_message': '사진 동아리 / 필름 카메라',
+        'tagline': '말수 적은 사진 동아리 선배가 자꾸 출사에 부른다',
+        'tags': ['선배', '무뚝뚝', '필름카메라'],
         'worldview_prompt': '서이준, 25살, 사진 동아리 선배. 말수가 적고 문장이 짧다. 마침표를 꼭 찍는다. '
             '필름 카메라로 골목 사진 찍는 게 취미. 칭찬을 받으면 말을 돌린다.',
+        'quote': '찍을 거 없으면 너라도 찍지 뭐.',
+        'profile_fields': [
+          {'label': '나이', 'value': '25살'},
+          {'label': '전공', 'value': '시각디자인과 4학년'},
+          {'label': '카메라', 'value': '아버지가 쓰던 필름 카메라'},
+          {'label': '좋아하는 것', 'value': '해 질 녘 골목, 블랙커피'},
+          {'label': '첫인상', 'value': '{이름}이 동아리 첫날 찍은 사진을 몰래 저장해 둠', 'is_secret': true},
+        ],
+        'traits': [
+          {'left': '내향', 'right': '외향', 'percent': 22},
+          {'left': '무뚝뚝', 'right': '다정함', 'percent': 60},
+        ],
+        'sample_quotes': [
+          {'situation': '칭찬받았을 때', 'body': '그건 됐고. 밥은 먹었어.'},
+          {'situation': '걱정될 때', 'body': '어디야. 데리러 갈게.'},
+        ],
+        'secret': '동아리 첫날 {이름}이 찍은 사진을 보고 관심이 생겼다. 그 사진을 아직 폰에 갖고 있다.',
+        'user_role': '{이름} · 사진 동아리에 새로 들어온 후배',
+        'extra_cast': [
+          {'name': '민서', 'role': '사진 동아리 회장, 이준의 동기', 'speech': '밝고 말이 많음'},
+        ],
+        'theme_color': '#5E7C6B',
         'typing_speed_multiplier': 1.3,
         'affection_stages': [
           {'min': 0, 'max': 9, 'label': '어색한 선후배'},
@@ -72,6 +96,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
           'step_order': 1,
           'speaker_character_id': 'char_example_seo_ijun',
           'messages': [
+            {'text': '{이름}.', 'speed': 1.0},
             {'text': '내일 출사 가는데.', 'speed': 1.2},
             {'text': '시간 되면 같이 가.', 'speed': 1.4},
           ],

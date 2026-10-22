@@ -7,7 +7,7 @@ import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
-import '../settings/chat_tempo.dart';
+import '../settings/user_profile.dart';
 
 /// 공략 진행 상황 (대화방 하단에 '다시 하기' 버튼을 띄울지 판단하는 용도)
 enum StoryProgress {
@@ -32,8 +32,6 @@ class ChatRoomState {
   final List<String> acquiredFlags;
   /// 이번 회차에 끝낸 이벤트 ID 목록
   final List<String> completedEventIds;
-  /// 지금 전체 화면으로 띄워져 있는 컷씬(CG)의 이벤트
-  final ScenarioEventModel? activeCutscene;
   /// 지금까지 수집한 컷씬의 이벤트 ID (앨범용, '다시 하기'를 해도 유지됨)
   final List<String> unlockedCutsceneEventIds;
   final StoryProgress progress;
@@ -52,7 +50,6 @@ class ChatRoomState {
     this.previewPhotoLabel,
     this.acquiredFlags = const [],
     this.completedEventIds = const [],
-    this.activeCutscene,
     this.unlockedCutsceneEventIds = const [],
     this.progress = StoryProgress.playing,
     this.seenMessageCount = 0,
@@ -84,8 +81,6 @@ class ChatRoomState {
     bool clearPreviewPhoto = false,
     List<String>? acquiredFlags,
     List<String>? completedEventIds,
-    ScenarioEventModel? activeCutscene,
-    bool clearActiveCutscene = false,
     List<String>? unlockedCutsceneEventIds,
     StoryProgress? progress,
     int? seenMessageCount,
@@ -104,8 +99,6 @@ class ChatRoomState {
           : (previewPhotoLabel ?? this.previewPhotoLabel),
       acquiredFlags: acquiredFlags ?? this.acquiredFlags,
       completedEventIds: completedEventIds ?? this.completedEventIds,
-      activeCutscene:
-          clearActiveCutscene ? null : (activeCutscene ?? this.activeCutscene),
       unlockedCutsceneEventIds:
           unlockedCutsceneEventIds ?? this.unlockedCutsceneEventIds,
       progress: progress ?? this.progress,
@@ -132,8 +125,6 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   bool _isUserCurrentlyTypingText = false;
   /// 내가 연속으로 보낸 메시지들을 모아두는 버퍼
   final List<String> _pendingUserBurstTexts = [];
-  /// 컷씬 팝업이 닫힐 때까지 대화 진행을 멈춰두는 장치
-  Completer<void>? _cutsceneClosed;
   /// '다시 하기'를 누르면 숫자가 바뀌어서, 이전 회차에서 아직 돌던 연출을 멈추게 함
   int _runId = 0;
 
@@ -170,8 +161,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       }
       return restored;
     }
-    final runId = _runId;
-    Future.microtask(() => _advance(runId));
+    // 처음 대화하는 캐릭터는 내 별명을 정한 뒤(begin)부터 대화가 시작됨
+    if (ref.read(chatPrefsProvider(characterId)).nickname != null) {
+      _started = true;
+      final runId = _runId;
+      Future.microtask(() => _advance(runId));
+    }
     return _freshRunState(unlockedCutscenes: album);
   }
 
@@ -186,16 +181,24 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     );
   }
 
+  bool _started = false;
+
+  /// 별명을 정하고 대화방에 처음 들어올 때 대화 시작 (이미 시작했으면 아무 일 없음)
+  void begin() {
+    if (_started || state.messages.isNotEmpty) return;
+    _started = true;
+    _advance(_runId);
+  }
+
   /// 처음부터 다시 플레이 (수집한 컷씬은 그대로 남김)
   void restart() {
     _runId++;
     _userBurstReplyTimer?.cancel();
     _pendingUserBurstTexts.clear();
-    _cutsceneClosed?.complete();
-    _cutsceneClosed = null;
     state = _freshRunState(unlockedCutscenes: state.unlockedCutsceneEventIds)
         .copyWith(isByokAiModeEnabled: state.isByokAiModeEnabled);
     _store.clearRun(_bundle.character.id);
+    _started = true;
     _advance(_runId);
   }
 
@@ -271,11 +274,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
     state = state.copyWith(currentStepOrder: node.stepOrder);
 
-    // 제작자가 지정한 단계의 대사가 끝나면 컷씬(CG) 팝업 → 닫을 때까지 대기
+    // 제작자가 지정한 단계의 대사까지 보면 그 장면(CG)이 앨범에 모임 (대화는 멈추지 않음)
     final event = _eventById(node.eventId);
     if (event != null && event.cutsceneTriggerStep == node.stepOrder) {
-      await _showCutscene(event);
-      if (runId != _runId) return;
+      _collectCutscene(event);
     }
 
     if (node.choices.isEmpty) {
@@ -285,24 +287,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     state = state.copyWith(currentChoices: node.choices);
   }
 
-  Future<void> _showCutscene(ScenarioEventModel event) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    _cutsceneClosed = Completer<void>();
+  void _collectCutscene(ScenarioEventModel event) {
+    if (state.unlockedCutsceneEventIds.contains(event.id)) return;
     state = state.copyWith(
-      activeCutscene: event,
-      unlockedCutsceneEventIds: {
-        ...state.unlockedCutsceneEventIds,
-        event.id,
-      }.toList(),
+      unlockedCutsceneEventIds: [...state.unlockedCutsceneEventIds, event.id],
     );
     _store.saveAlbum(_bundle.character.id, state.unlockedCutsceneEventIds);
-    await _cutsceneClosed!.future;
-  }
-
-  void closeCutscene() {
-    state = state.copyWith(clearActiveCutscene: true);
-    _cutsceneClosed?.complete();
-    _cutsceneClosed = null;
   }
 
   /// 이벤트 하나를 끝내고 다음 이벤트로 넘어가거나, 공략 완료/막힘을 판정합니다.
@@ -397,7 +387,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 캐릭터 타자 속도 × 설정의 대화 속도
   double get _pace =>
-      state.character.typingSpeedMultiplier * ref.read(chatTempoProvider);
+      state.character.typingSpeedMultiplier * ref.read(chatPrefsProvider(arg)).tempo;
+
+  /// 이 대화에서 불리는 내 별명
+  String get _nickname => ref.read(chatNicknameProvider(arg));
 
   /// ±15% 정도 들쭉날쭉하게 (매번 똑같은 박자면 기계 같아서)
   double _jitter() => 0.85 + _random.nextDouble() * 0.3;
@@ -412,7 +405,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     await Future.delayed(Duration(milliseconds: (500 * pace * _jitter()).round()));
     if (!stillValid()) return false;
 
-    final chars = Characters(bubble.text).length;
+    final chars = Characters(CharacterModel.fillUserName(bubble.text, _nickname)).length;
     final typingMs = ((700 + chars * 150) * bubble.speedFactor * pace * _jitter())
         .clamp(450 * pace, 9000 * pace)
         .round();
@@ -440,7 +433,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       isUser: false,
       speakerCharacterId: state.character.id,
       speakerName: state.character.name,
-      text: bubble.text,
+      text: CharacterModel.fillUserName(bubble.text, _nickname),
       photoLabel: bubble.photoLabel,
       timestamp: DateTime.now(),
     );
@@ -489,8 +482,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         id: 'user_choice_${DateTime.now().millisecondsSinceEpoch}_$i',
         isUser: true,
         speakerCharacterId: 'user',
-        speakerName: '나',
-        text: piece.text,
+        speakerName: _nickname,
+        text: CharacterModel.fillUserName(piece.text, _nickname),
         photoLabel: piece.photoLabel,
         isUnread: true,
         timestamp: DateTime.now(),
@@ -534,7 +527,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       id: 'user_burst_${DateTime.now().millisecondsSinceEpoch}',
       isUser: true,
       speakerCharacterId: 'user',
-      speakerName: '나',
+      speakerName: _nickname,
       text: trimmed.isEmpty ? '사진을 보냈습니다.' : trimmed,
       photoLabel: photoLabel,
       isUnread: true, // 내가 연속으로 보내는 동안에는 계속 '1'이 유지됨!
@@ -591,6 +584,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               model: byok.model,
               character: state.character,
               stageLabel: _currentStageLabel(),
+              userName: _nickname,
+              userIntro: ref.read(userProfileProvider).intro,
               currentEventTitle: state.currentEventId != null
                   ? _eventById(state.currentEventId!)?.title
                   : null,

@@ -5,9 +5,11 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
-import '../../shared/widgets/cutscene_view.dart';
+import '../../shared/widgets/character_avatar.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
+import '../settings/user_profile.dart';
+import 'start_chat.dart';
 import 'chat_notifier.dart';
 
 /// [초보자 노트] 리얼 메신저 스타일 채팅 화면입니다.
@@ -176,17 +178,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: AppColors.myBubble,
-              child: Text(
-                chatState.character.name.characters.first,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primaryNavy,
-                ),
-              ),
-            ),
+            CharacterAvatar(character: chatState.character, radius: 18),
             const SizedBox(width: 10),
             Flexible(
               child: Column(
@@ -208,6 +200,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             tooltip: '앨범',
             onPressed: () => context.push('/chat/$id/album'),
             icon: const Icon(Icons.photo_library_outlined),
+          ),
+          PopupMenuButton<String>(
+            tooltip: '대화 설정',
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (value) {
+              switch (value) {
+                case 'nickname':
+                  askChatNickname(context, ref, chatState.character);
+                case 'tempo':
+                  pickChatTempo(context, ref, chatState.character);
+                case 'restart':
+                  notifier.restart();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'nickname',
+                child: Text('내 별명: ${ref.read(chatNicknameProvider(id))}'),
+              ),
+              const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
+              const PopupMenuItem(value: 'restart', child: Text('처음부터 다시')),
+            ],
           ),
           // [AI 자유대화 ON/OFF] 토글: 켜면 선택지 아래에 직접 입력창이 열림
           Padding(
@@ -364,13 +378,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onClose: notifier.closePhotoPreview,
             ),
 
-          // 4. 제작자가 지정한 단계에서 뜨는 컷씬(CG) 전체 화면 팝업
-          if (chatState.activeCutscene != null)
-            CutsceneView(
-              event: chatState.activeCutscene!,
-              footer: '새로운 장면을 앨범에 모았어요 · 화면을 탭하면 계속',
-              onClose: notifier.closeCutscene,
-            ),
         ],
       ),
     );

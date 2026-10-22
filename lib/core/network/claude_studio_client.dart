@@ -10,6 +10,11 @@ class StudioBrief {
   final String statusMessage;
   final String personality; // 성격·말투·취미·세계관
   final String relationship; // 나와의 관계 (예: 알게 된 지 1년 된 남사친)
+  final String tagline; // 갤러리 한줄 소개 (비우면 AI가 지어 줌)
+  final List<String> tags;
+  /// 비밀 설정 (플레이어에겐 안 보이고 이야기 속에서 서서히 드러남)
+  final String secret;
+  final String avatarUrl; // 직접 올린 프로필 사진 (data: 주소)
   final double typingSpeedMultiplier;
   final List<AffectionStage> stages;
   final int eventsPerStage;
@@ -20,6 +25,10 @@ class StudioBrief {
     required this.statusMessage,
     required this.personality,
     required this.relationship,
+    this.tagline = '',
+    this.tags = const [],
+    this.secret = '',
+    this.avatarUrl = '',
     required this.typingSpeedMultiplier,
     required this.stages,
     this.eventsPerStage = 2,
@@ -66,7 +75,8 @@ class ClaudeStudioClient {
     final total = brief.totalTalks + 1;
     onProgress?.call('이야기 목차를 짜는 중', 0, total);
 
-    final outline = await _outline(apiKey: apiKey, model: model, brief: brief);
+    final (outline, profile) = await _outline(apiKey: apiKey, model: model, brief: brief);
+    final character = profile.copyWith(id: characterId);
     onProgress?.call('대사를 쓰는 중', 1, total);
 
     final events = <ScenarioEventModel>[];
@@ -107,6 +117,7 @@ class ClaudeStudioClient {
             apiKey: apiKey,
             model: model,
             brief: brief,
+            sheet: character,
             event: event,
             synopsis: outline[events.indexOf(event)]['synopsis'] as String? ?? '',
             outline: outline,
@@ -133,25 +144,15 @@ class ClaudeStudioClient {
       }
     }
 
-    final character = CharacterModel(
-      id: characterId,
-      creatorId: 'me',
-      name: brief.name.trim(),
-      statusMessage: brief.statusMessage.trim(),
-      avatarUrl: '',
-      worldviewPrompt: brief.worldviewPrompt,
-      typingSpeedMultiplier: brief.typingSpeedMultiplier,
-      affectionStages: brief.stages,
-    );
     finalEvents.sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     return balanceScenario(ScenarioBundle(character: character, events: finalEvents, nodes: nodes));
   }
 
-  String _characterSheet(StudioBrief brief) => '''
+  String _characterSheet(StudioBrief brief, [CharacterModel? sheet]) => '''
 [캐릭터]
 이름: ${brief.name}
 상태메시지: ${brief.statusMessage}
-${brief.worldviewPrompt}
+${sheet?.aiCharacterSheet ?? brief.worldviewPrompt}${brief.secret.trim().isNotEmpty && sheet == null ? '\n비밀(유저는 아직 모름, 서서히 드러냄): ${brief.secret.trim()}' : ''}
 
 [호감도 단계] (낮은 단계부터)
 ${brief.stages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}점)').join('\n')}''';
@@ -160,9 +161,10 @@ ${brief.stages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}점)').
 너는 메신저 연애 시뮬레이션 게임 "말랑톡"의 시나리오 작가다. 유저는 카톡으로 캐릭터와 대화하며 호감도를 쌓는다.
 - 대사는 실제 카톡처럼 짧게 끊어 친다. 괄호 지문, 행동 묘사, 나레이션은 쓰지 않는다. 이모지는 거의 안 쓴다.
 - 캐릭터의 말투·습관·취미가 대사마다 살아 있어야 한다. 단계보다 앞서 나가는 고백이나 스킨십은 쓰지 않는다.
-- 유저 이름은 모르므로 "너"라고 부른다. 유저 성별은 정하지 않는다.''';
+- 유저는 평소 "너"라고 부르고, 이름을 부를 때만 {이름} 이라고 쓴다(앱이 플레이어 별명으로 바꿔 넣는다). 유저 성별은 정하지 않는다.''';
 
-  Future<List<Map<String, dynamic>>> _outline({
+  /// 목차 + 캐릭터 프로필(한줄 소개·태그·대표 대사·프로필 항목·성격 막대·대사 예시)을 한 번에 만듦
+  Future<(List<Map<String, dynamic>>, CharacterModel)> _outline({
     required String apiKey,
     required String model,
     required StudioBrief brief,
@@ -188,14 +190,62 @@ ${brief.stages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}점)').
           },
         },
       },
-      'required': ['talks'],
+      'required': ['tagline', 'tags', 'quote', 'profile_fields', 'traits', 'sample_quotes', 'talks'],
       'additionalProperties': false,
+    };
+    (schema['properties'] as Map)['tagline'] = {
+      'type': 'string',
+      'description': '캐릭터 갤러리에 보일 한줄 소개 (30자 이내, 궁금해지게)',
+    };
+    (schema['properties'] as Map)['tags'] = {
+      'type': 'array',
+      'items': {'type': 'string'},
+      'description': '캐릭터 태그 3~5개, # 없이',
+    };
+    (schema['properties'] as Map)['quote'] = {
+      'type': 'string',
+      'description': '캐릭터를 한 번에 보여주는 대표 대사 한 줄',
+    };
+    (schema['properties'] as Map)['profile_fields'] = {
+      'type': 'array',
+      'description': '프로필 항목 4~6개. 예: 나이, 직업, 생일, 키, 좋아하는 것, 싫어하는 것',
+      'items': {
+        'type': 'object',
+        'properties': {'label': {'type': 'string'}, 'value': {'type': 'string'}},
+        'required': ['label', 'value'],
+        'additionalProperties': false,
+      },
+    };
+    (schema['properties'] as Map)['traits'] = {
+      'type': 'array',
+      'description': '성격 막대 3~4개. left↔right 양쪽 성향과 right 쪽으로 기운 정도(0~100)',
+      'items': {
+        'type': 'object',
+        'properties': {
+          'left': {'type': 'string'},
+          'right': {'type': 'string'},
+          'percent': {'type': 'integer'},
+        },
+        'required': ['left', 'right', 'percent'],
+        'additionalProperties': false,
+      },
+    };
+    (schema['properties'] as Map)['sample_quotes'] = {
+      'type': 'array',
+      'description': '상황별 대사 예시 3개 (말투가 드러나게)',
+      'items': {
+        'type': 'object',
+        'properties': {'situation': {'type': 'string'}, 'body': {'type': 'string'}},
+        'required': ['situation', 'body'],
+        'additionalProperties': false,
+      },
     };
 
     final user = '''
 ${_characterSheet(brief)}
 
-이 캐릭터의 이야기 목차를 짜 줘. 시간 순서대로 나열한다.
+먼저 캐릭터 프로필(tagline, tags, quote, profile_fields, traits, sample_quotes)을 설정에 맞게 채우고,
+이 캐릭터의 이야기 목차(talks)를 짜 줘. 목차는 시간 순서대로 나열한다.
 - 각 호감도 단계마다 호감도 이벤트(kind=event) ${brief.eventsPerStage}개와 일상 대화(kind=daily) ${brief.dailiesPerStage}개.
   이벤트는 관계가 한 발짝 나아가는 사건, 일상 대화는 취미·하루 얘기처럼 가벼운 잡담이다.
 - 이벤트 중 절반 정도에는 cutscene(앨범 장면)을 넣는다. 일상 대화의 cutscene은 빈 문자열.
@@ -217,13 +267,46 @@ ${_characterSheet(brief)}
     final endings = talks.where((t) => t['kind'] == 'ending').toList();
     talks.removeWhere((t) => t['kind'] == 'ending');
     if (endings.isNotEmpty) talks.add(endings.first);
-    return talks;
+    final tags = [
+      for (final t in json['tags'] as List? ?? const [])
+        if ((t as String).trim().isNotEmpty) t.replaceAll('#', '').trim(),
+    ].take(5).toList();
+    final aiTagline = (json['tagline'] as String? ?? '').trim();
+    final profile = CharacterModel(
+      id: 'draft',
+      creatorId: 'me',
+      name: brief.name.trim(),
+      statusMessage: brief.statusMessage.trim(),
+      avatarUrl: brief.avatarUrl,
+      tagline: brief.tagline.trim().isNotEmpty ? brief.tagline.trim() : aiTagline,
+      tags: brief.tags.isNotEmpty ? brief.tags : tags,
+      worldviewPrompt: brief.personality.trim(),
+      quote: (json['quote'] as String? ?? '').trim(),
+      profileFields: [
+        for (final f in json['profile_fields'] as List? ?? const [])
+          ProfileField.fromJson(f as Map<String, dynamic>),
+      ].where((f) => f.label.isNotEmpty && f.value.isNotEmpty).toList(),
+      traits: [
+        for (final t in json['traits'] as List? ?? const [])
+          PersonalityTrait.fromJson(t as Map<String, dynamic>),
+      ].where((t) => t.left.isNotEmpty).toList(),
+      sampleQuotes: [
+        for (final q in json['sample_quotes'] as List? ?? const [])
+          CharacterQuote.fromJson(q as Map<String, dynamic>),
+      ].where((q) => q.body.isNotEmpty).toList(),
+      secret: brief.secret.trim(),
+      userRole: brief.relationship.trim(),
+      typingSpeedMultiplier: brief.typingSpeedMultiplier,
+      affectionStages: brief.stages,
+    );
+    return (talks, profile);
   }
 
   Future<(List<ScriptNodeModel>, int?)> _script({
     required String apiKey,
     required String model,
     required StudioBrief brief,
+    required CharacterModel sheet,
     required ScenarioEventModel event,
     required String synopsis,
     required List<Map<String, dynamic>> outline,
@@ -286,7 +369,7 @@ ${_characterSheet(brief)}
         .join('\n');
 
     final user = '''
-${_characterSheet(brief)}
+${_characterSheet(brief, sheet)}
 
 [전체 목차]
 $storySoFar

@@ -5,6 +5,8 @@
 /// 3. 호감도 점수는 화면에 노출하지 않고 내부에서만 계산
 /// 4. 모든 모델에 fromJson이 있어서 assets/scenarios/*.json 시나리오 파일(나중엔 서버 DB 응답)을 그대로 읽어옴
 
+import '../utils/korean.dart';
+
 /// 1. 호감도 구간 정의 모델 (내부 판정 및 아이콘 색상 변화용)
 class AffectionStage {
   final int minScore;
@@ -58,14 +60,115 @@ class TypingStyle {
   }
 }
 
+/// 캐릭터 프로필 항목 (나이: 24세 같은 것). 비밀 항목은 상세 화면엔 안 보이고 AI만 참고
+class ProfileField {
+  final String label;
+  final String value;
+  final bool isSecret;
+
+  const ProfileField({required this.label, required this.value, this.isSecret = false});
+
+  factory ProfileField.fromJson(Map<String, dynamic> json) => ProfileField(
+        label: json['label'] as String? ?? '',
+        value: json['value'] as String? ?? '',
+        isSecret: json['is_secret'] == true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'label': label,
+        'value': value,
+        if (isSecret) 'is_secret': true,
+      };
+}
+
+/// 성격 막대 (내향 ←30%→ 외향). right가 없으면 한쪽짜리 (신중함 80%)
+class PersonalityTrait {
+  final String left;
+  final String? right;
+  final int percent;
+
+  const PersonalityTrait({required this.left, this.right, this.percent = 50});
+
+  factory PersonalityTrait.fromJson(Map<String, dynamic> json) => PersonalityTrait(
+        left: json['left'] as String? ?? '',
+        right: json['right'] as String?,
+        percent: ((json['percent'] as num?)?.toInt() ?? 50).clamp(0, 100),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'left': left,
+        if (right != null && right!.isNotEmpty) 'right': right,
+        'percent': percent,
+      };
+}
+
+/// 캐릭터를 보여주는 대표 대사 예시 (상황과 함께). AI 자유대화가 말투를 따라 할 때도 씀
+class CharacterQuote {
+  final String body;
+  final String situation;
+
+  const CharacterQuote({required this.body, this.situation = ''});
+
+  factory CharacterQuote.fromJson(Map<String, dynamic> json) => CharacterQuote(
+        body: json['body'] as String? ?? '',
+        situation: json['situation'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {'body': body, if (situation.isNotEmpty) 'situation': situation};
+}
+
+/// 대화에 이름이 나오는 주변 인물 (친구, 가족, 반려동물 등)
+class ExtraCast {
+  final String name;
+  final String role;
+  final String speech;
+
+  const ExtraCast({required this.name, this.role = '', this.speech = ''});
+
+  factory ExtraCast.fromJson(Map<String, dynamic> json) => ExtraCast(
+        name: json['name'] as String? ?? '',
+        role: json['role'] as String? ?? '',
+        speech: json['speech'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (role.isNotEmpty) 'role': role,
+        if (speech.isNotEmpty) 'speech': speech,
+      };
+}
+
 /// 2. 캐릭터 기본 설정 모델 (DB 테이블: characters)
+/// 설정 항목은 쨋뀨의 캐릭터 아카이브 loreshelf(인물·유저·기타 인물 카드)를 참고했어요.
 class CharacterModel {
   final String id;
   final String creatorId;
   final String name;
   final String statusMessage; // 카톡 프로필 상태메시지
+  /// 프로필·썸네일 이미지 (앱 안 이미지 경로, 인터넷 주소, 또는 직접 올린 사진의 data: 주소). 비우면 이름 첫 글자 카드
   final String avatarUrl;
+  /// 받아오기 갤러리에 보이는 한줄 소개
+  final String tagline;
+  /// 갤러리 태그 (예: 남사친, 고양이집사)
+  final List<String> tags;
+  /// 상세 설명 (성격·말투·습관·취미·세계관). AI 생성과 자유대화의 핵심 설정
   final String worldviewPrompt;
+  /// 대표 대사 한 줄 (상세 화면 맨 위)
+  final String quote;
+  /// 프로필 항목 (나이, 직업, 생일, MBTI 등)
+  final List<ProfileField> profileFields;
+  /// 성격 막대
+  final List<PersonalityTrait> traits;
+  /// 대사 예시
+  final List<CharacterQuote> sampleQuotes;
+  /// 비밀 설정 (화면엔 안 보이고, 이야기와 AI가 천천히 드러내는 것)
+  final String secret;
+  /// 유저 설정: 이 이야기에서 나는 누구인지 (예: {이름} · 1년 전 팀플에서 만난 친구)
+  final String userRole;
+  /// 주변 인물
+  final List<ExtraCast> extraCast;
+  /// 캐릭터 대표 색 (#RRGGBB, 비우면 기본 분홍)
+  final String themeColor;
   /// 캐릭터 기본 타자 속도 배율 (0.7 = 손이 빨라서 답장이 빠름, 1.3 = 신중해서 천천히 침)
   final double typingSpeedMultiplier;
   final List<AffectionStage> affectionStages;
@@ -77,7 +180,17 @@ class CharacterModel {
     required this.name,
     required this.statusMessage,
     required this.avatarUrl,
+    this.tagline = '',
+    this.tags = const [],
     required this.worldviewPrompt,
+    this.quote = '',
+    this.profileFields = const [],
+    this.traits = const [],
+    this.sampleQuotes = const [],
+    this.secret = '',
+    this.userRole = '',
+    this.extraCast = const [],
+    this.themeColor = '',
     this.typingSpeedMultiplier = 1.0,
     required this.affectionStages,
     this.isPublished = false,
@@ -90,7 +203,29 @@ class CharacterModel {
       name: json['name'] as String,
       statusMessage: json['status_message'] as String? ?? '',
       avatarUrl: json['avatar_url'] as String? ?? '',
+      tagline: json['tagline'] as String? ?? '',
+      tags: [for (final t in json['tags'] as List? ?? const []) t as String],
       worldviewPrompt: json['worldview_prompt'] as String? ?? '',
+      quote: json['quote'] as String? ?? '',
+      profileFields: [
+        for (final f in json['profile_fields'] as List? ?? const [])
+          ProfileField.fromJson(f as Map<String, dynamic>),
+      ],
+      traits: [
+        for (final t in json['traits'] as List? ?? const [])
+          PersonalityTrait.fromJson(t as Map<String, dynamic>),
+      ],
+      sampleQuotes: [
+        for (final q in json['sample_quotes'] as List? ?? const [])
+          CharacterQuote.fromJson(q as Map<String, dynamic>),
+      ],
+      secret: json['secret'] as String? ?? '',
+      userRole: json['user_role'] as String? ?? '',
+      extraCast: [
+        for (final e in json['extra_cast'] as List? ?? const [])
+          ExtraCast.fromJson(e as Map<String, dynamic>),
+      ],
+      themeColor: json['theme_color'] as String? ?? '',
       typingSpeedMultiplier:
           (json['typing_speed_multiplier'] as num?)?.toDouble() ?? 1.0,
       affectionStages: [
@@ -107,11 +242,94 @@ class CharacterModel {
         'name': name,
         'status_message': statusMessage,
         'avatar_url': avatarUrl,
+        if (tagline.isNotEmpty) 'tagline': tagline,
+        if (tags.isNotEmpty) 'tags': tags,
         'worldview_prompt': worldviewPrompt,
+        if (quote.isNotEmpty) 'quote': quote,
+        if (profileFields.isNotEmpty) 'profile_fields': [for (final f in profileFields) f.toJson()],
+        if (traits.isNotEmpty) 'traits': [for (final t in traits) t.toJson()],
+        if (sampleQuotes.isNotEmpty) 'sample_quotes': [for (final q in sampleQuotes) q.toJson()],
+        if (secret.isNotEmpty) 'secret': secret,
+        if (userRole.isNotEmpty) 'user_role': userRole,
+        if (extraCast.isNotEmpty) 'extra_cast': [for (final e in extraCast) e.toJson()],
+        if (themeColor.isNotEmpty) 'theme_color': themeColor,
         'typing_speed_multiplier': typingSpeedMultiplier,
         'affection_stages': [for (final stage in affectionStages) stage.toJson()],
         'is_published': isPublished,
       };
+
+  CharacterModel copyWith({
+    String? id,
+    String? avatarUrl,
+    String? tagline,
+    List<String>? tags,
+    String? quote,
+    List<ProfileField>? profileFields,
+    List<PersonalityTrait>? traits,
+    List<CharacterQuote>? sampleQuotes,
+    String? secret,
+    String? userRole,
+    List<ExtraCast>? extraCast,
+    String? themeColor,
+  }) {
+    return CharacterModel(
+      id: id ?? this.id,
+      creatorId: creatorId,
+      name: name,
+      statusMessage: statusMessage,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      tagline: tagline ?? this.tagline,
+      tags: tags ?? this.tags,
+      worldviewPrompt: worldviewPrompt,
+      quote: quote ?? this.quote,
+      profileFields: profileFields ?? this.profileFields,
+      traits: traits ?? this.traits,
+      sampleQuotes: sampleQuotes ?? this.sampleQuotes,
+      secret: secret ?? this.secret,
+      userRole: userRole ?? this.userRole,
+      extraCast: extraCast ?? this.extraCast,
+      themeColor: themeColor ?? this.themeColor,
+      typingSpeedMultiplier: typingSpeedMultiplier,
+      affectionStages: affectionStages,
+      isPublished: isPublished,
+    );
+  }
+
+  /// AI에게 넘길 캐릭터 설정 전체 (비밀 포함)
+  String get aiCharacterSheet {
+    final lines = <String>[
+      worldviewPrompt.trim(),
+      if (profileFields.isNotEmpty)
+        '프로필: ${profileFields.map((f) => '${f.label} ${f.value}${f.isSecret ? '(비밀)' : ''}').join(', ')}',
+      if (traits.isNotEmpty)
+        '성격: ${traits.map((t) => t.right == null ? '${t.left} ${t.percent}%' : '${t.left}↔${t.right} ${t.percent}%(오른쪽 쪽으로)').join(', ')}',
+      if (quote.isNotEmpty) '대표 대사: "$quote"',
+      if (sampleQuotes.isNotEmpty)
+        '대사 예시:\n${sampleQuotes.map((q) => '- ${q.situation.isNotEmpty ? '(${q.situation}) ' : ''}${q.body}').join('\n')}',
+      if (userRole.isNotEmpty) '유저 설정: $userRole',
+      if (extraCast.isNotEmpty)
+        '주변 인물:\n${extraCast.map((e) => '- ${e.name}${e.role.isNotEmpty ? ' (${e.role})' : ''}${e.speech.isNotEmpty ? ' 말투: ${e.speech}' : ''}').join('\n')}',
+      if (secret.isNotEmpty) '비밀(유저는 아직 모름, 서서히 드러냄): $secret',
+    ];
+    return lines.where((l) => l.isNotEmpty).join('\n');
+  }
+
+  /// 대사 속 {이름} 자리에 내 별명을 넣음 (제작자가 대본에 {이름}이라고 쓰면 플레이어마다 다르게 불림)
+  /// 바로 뒤 조사는 별명 받침에 맞게 바꿈: {이름}아 → 쨋뀨야 / 서연아, {이름}이 → 쨋뀨가 / 서연이
+  static String fillUserName(String text, String nickname) => text.replaceAllMapped(
+        _namePattern,
+        (m) {
+          final particle = m.group(1);
+          if (particle == null) return nickname;
+          final pair = _particlePairs.firstWhere((p) => p.contains(particle));
+          return josa(nickname, pair[0], pair[1]);
+        },
+      );
+
+  static final _namePattern = RegExp(r'\{이름\}(이랑|랑|이야|아|야|이|가|은|는|을|를|과|와)?');
+  static const _particlePairs = [
+    ['아', '야'], ['이랑', '랑'], ['이야', '야'], ['이', '가'], ['은', '는'], ['을', '를'], ['과', '와'],
+  ];
 
   /// 점수가 속한 호감도 단계 (구간 밖이면 가장 가까운 단계)
   AffectionStage? stageFor(int score) {
@@ -408,6 +626,9 @@ class ScenarioBundle {
         'events': [for (final e in events) e.toJson()],
         'script_nodes': [for (final n in nodes.values) n.toJson()],
       };
+
+  ScenarioBundle copyWithCharacter(CharacterModel character) =>
+      ScenarioBundle(character: character, events: events, nodes: nodes);
 
   /// 이 이벤트가 열리는 호감도 구간. 단계 이름이 있으면 그 단계 시작 점수부터 열리고,
   /// 일상 대화는 그 단계 끝 점수까지만 나옵니다.

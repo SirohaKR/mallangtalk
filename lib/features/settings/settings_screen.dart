@@ -5,7 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'byok_settings.dart';
-import 'chat_tempo.dart';
+import 'user_profile.dart';
 
 /// [초보자 노트] 내 Claude API 키(BYOK)를 넣고 자유대화에 쓸 모델을 고르는 설정 화면입니다.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -18,10 +18,14 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _keyController = TextEditingController();
   late String _model = ref.read(byokSettingsProvider).model;
+  late final _nickname = TextEditingController(text: ref.read(userProfileProvider).nickname);
+  late final _intro = TextEditingController(text: ref.read(userProfileProvider).intro);
 
   @override
   void dispose() {
     _keyController.dispose();
+    _nickname.dispose();
+    _intro.dispose();
     super.dispose();
   }
 
@@ -33,7 +37,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(byokSettingsProvider);
     final notifier = ref.read(byokSettingsProvider.notifier);
-    final tempo = ref.watch(chatTempoProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -43,6 +46,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
+              const Text('내 프로필', style: AppTextStyles.appBarTitle),
+              const SizedBox(height: 6),
+              const Text(
+                '캐릭터와 대화를 처음 시작할 때 이 별명이 기본으로 들어가요. 캐릭터마다 대화방 메뉴에서 따로 바꿀 수 있어요.',
+                style: AppTextStyles.systemNotice,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              const Text('기본 별명', style: AppTextStyles.speakerName),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _nickname,
+                maxLength: 12,
+                decoration: const InputDecoration(hintText: '캐릭터가 나를 부를 이름'),
+              ),
+              const Text('나에 대한 한줄 소개', style: AppTextStyles.speakerName),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _intro,
+                maxLength: 60,
+                decoration: const InputDecoration(hintText: '예: 디자인과 3학년, 고양이 좋아함 (AI 자유대화에서 참고해요)'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  await ref.read(userProfileProvider.notifier)
+                      .save(nickname: _nickname.text, intro: _intro.text);
+                  _toast('내 프로필을 저장했어요');
+                },
+                child: const Text('프로필 저장'),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              const Divider(),
+              const SizedBox(height: AppSpacing.md),
               const Text('내 AI 키', style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
@@ -116,30 +151,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: const Text('저장'),
               ),
               const SizedBox(height: AppSpacing.xl),
-              const Divider(),
-              const SizedBox(height: AppSpacing.md),
-              const Text('대화 속도', style: AppTextStyles.appBarTitle),
-              const SizedBox(height: 6),
               const Text(
-                '캐릭터의 "입력 중" 시간에 곱해져요. 캐릭터마다 성격에 맞는 타자 속도는 따로 있어요.',
-                style: AppTextStyles.systemNotice,
-              ),
-              for (final option in ChatTempoOption.all)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  onTap: () => ref.read(chatTempoProvider.notifier).set(option.tempo),
-                  leading: Icon(
-                    tempo == option.tempo
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.radio_button_off_rounded,
-                    color: tempo == option.tempo ? AppColors.primaryPink : AppColors.textMuted,
-                  ),
-                  title: Text(option.label),
-                  subtitle: Text(option.note, style: AppTextStyles.systemNotice),
-                ),
-              const SizedBox(height: AppSpacing.md),
-              const Text(
-                '대화를 처음부터 다시 하려면 내 캐릭터 → 프로필 → 처음부터',
+                '대화 속도와 이 대화에서 쓸 별명은 캐릭터마다 대화방 오른쪽 위 메뉴에서 바꿔요.',
                 style: AppTextStyles.messageTime,
               ),
             ],

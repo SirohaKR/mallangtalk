@@ -5,7 +5,10 @@ import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
 
 /// 앱에 기본으로 들어 있는 캐릭터 시나리오 파일 목록 ('캐릭터 추가 > 받아오기'에 보임)
-const builtinScenarioAssets = ['assets/scenarios/sample_character.json'];
+const builtinScenarioAssets = [
+  'assets/scenarios/sample_character.json',
+  'assets/scenarios/example_seo_ijun.json',
+];
 
 /// [초보자 노트] 앱 안에 들어 있는 기본 캐릭터들을 읽어오는 FutureProvider입니다.
 /// 4단계에서 서버가 생기면 '받아오기' 목록은 서버의 공개 캐릭터 목록으로 바뀝니다.
@@ -53,8 +56,9 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
     _builtins = ref.watch(builtinBundlesProvider).requireValue;
     final saved = _store.loadLibrary();
     if (saved == null) {
+      // 처음 실행하면 대표 기본 캐릭터 하나만 친구로 넣어 둠 (나머지는 받아오기 갤러리에서)
       return [
-        for (final bundle in _builtins)
+        for (final bundle in _builtins.take(1))
           LibraryEntry(bundle: bundle, source: CharacterSource.builtin, addedAt: DateTime.now()),
       ];
     }
@@ -97,6 +101,16 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
 
   LibraryEntry? byId(String id) => state.where((e) => e.id == id).firstOrNull;
 
+  /// 캐릭터 정보만 바꾸기 (프로필 사진·한줄 소개 등)
+  Future<void> updateCharacter(CharacterModel character) async {
+    final entry = byId(character.id);
+    if (entry == null) return;
+    await add(
+      entry.bundle.copyWithCharacter(character),
+      entry.source == CharacterSource.builtin ? CharacterSource.imported : entry.source,
+    );
+  }
+
   /// 캐릭터 추가 (같은 ID가 있으면 새 내용으로 교체하고, 그 캐릭터 대화방은 새 내용으로 다시 열림)
   Future<void> add(ScenarioBundle bundle, CharacterSource source) async {
     final existing = byId(bundle.character.id);
@@ -134,9 +148,7 @@ class ChatRoomsNotifier extends Notifier<List<String>> {
   List<String> build() {
     final entries = ref.watch(characterLibraryProvider);
     final ids = entries.map((e) => e.id).toSet();
-    // 처음 실행하면 기본 캐릭터와의 대화방을 하나 열어 둠
-    final rooms = ref.watch(localStoreProvider).loadChatRooms() ??
-        [for (final e in entries) if (e.source == CharacterSource.builtin) e.id];
+    final rooms = ref.watch(localStoreProvider).loadChatRooms() ?? const <String>[];
     return [for (final id in rooms) if (ids.contains(id)) id];
   }
 
