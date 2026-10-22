@@ -42,7 +42,7 @@ class ClaudeStudioClient {
       : _dio = dio ??
             Dio(BaseOptions(
               connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(minutes: 4),
+              receiveTimeout: const Duration(minutes: 6),
             ));
 
   final Dio _dio;
@@ -342,12 +342,19 @@ ${_characterSheet(base)}
       'additionalProperties': false,
     };
 
-    final kindText = switch (event.eventType) {
-      ScenarioEventType.daily => '일상 대화 (가벼운 잡담, 장면 1~2개)',
-      ScenarioEventType.ending => '엔딩 (장면 1~2개, 마지막 장면은 선택지 1개 또는 없음)',
-      ScenarioEventType.special => '특별 이벤트 (그 시간대 분위기의 짧은 톡, 장면 1~2개)',
-      _ => '호감도 이벤트 (장면 2~4개, 선택에 따라 갈림길 1개 정도)',
+    // [초보자 노트] 대화 분량: 호감도 이벤트·엔딩은 캐릭터 말풍선 20개쯤(쨋뀨 요청), 일상·특별은 그 절반쯤
+    final (kindText, bubbleRange) = switch (event.eventType) {
+      ScenarioEventType.daily => ('일상 대화 (가벼운 잡담, 장면 2~3개)', '8~12'),
+      ScenarioEventType.ending => ('엔딩 (장면 4~5개, 마지막 장면은 선택지 1개 또는 없음)', '18~22'),
+      ScenarioEventType.special => ('특별 이벤트 (그 시간대 분위기의 톡, 장면 2~3개)', '8~12'),
+      _ => ('호감도 이벤트 (장면 4~6개, 선택에 따라 갈림길 1~2개)', '18~22'),
     };
+    // 좋은 선택만 골랐을 때 이 대화에서 오를 호감도: 단계 점수 폭을 그 단계의 호감도 이벤트 수로 나눈 만큼
+    final stage = character.stageNamed(event.stageLabel);
+    final storyInStage = outline.where((o) => o.isAffectionEvent && o.stageLabel == event.stageLabel).length;
+    final affectionBudget = event.isAffectionEvent && stage != null
+        ? ((stage.maxScore - stage.minScore + 1) / (storyInStage == 0 ? 1 : storyInStage)).round().clamp(4, 30)
+        : null;
     final storySoFar = outline
         .map((o) => '- [${o.stageLabel ?? ''}] ${o.title}${o.id == event.id ? '  ← 지금 쓸 대화' : ''}')
         .join('\n');
@@ -367,9 +374,10 @@ ${event.isSpecial ? '실제 시간: ${event.realTime?.label ?? ''} 에 대화방
 ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTitle} → 이 장면이 떠오르는 단계를 cutscene_step으로. 좋은 선택을 하면 반드시 지나가는 단계여야 한다.' : '앨범 장면 없음 → cutscene_step은 0'}
 
 규칙:
-- 캐릭터가 먼저 톡을 보내며 시작한다. 장면마다 캐릭터 말풍선 2~5개.
+- 캐릭터가 먼저 톡을 보내며 시작한다. 장면마다 캐릭터 말풍선 3~5개.
+- 분량: 좋은 선택을 따라 끝까지 읽었을 때 캐릭터 말풍선이 모두 합쳐 $bubbleRange개가 되게 쓴다. 짧게 끊어 치는 카톡처럼, 한 말풍선은 한두 문장.
 - 선택지는 2~3개. user_messages는 유저가 보내는 짧은 톡 1~3개.
-- affection: 캐릭터 마음에 쏙 드는 답 +4~+6, 무난한 답 +1~+3, 서운한 답 0. 음수는 쓰지 않는다.
+- affection: 캐릭터 마음에 쏙 드는 답 +2~+4, 무난한 답 +1, 서운한 답 0. 음수는 쓰지 않는다.${affectionBudget != null ? '\n- 좋은 답만 골랐을 때 이 대화에서 오르는 호감도 합이 약 $affectionBudget점이 되게 맞춘다.' : ''}
 - 선택지가 없는 장면에서 대화가 끝난다. next_scene은 이 대화 안의 장면 이름만 쓴다.''';
 
     final json = await _call(
@@ -378,7 +386,7 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
       model: model,
       user: user,
       schema: schema,
-      maxTokens: 12000,
+      maxTokens: 24000, // 말풍선 20개 + 보이지 않는 생각까지 넉넉히
     );
     final scenes = [for (final s in json['scenes'] as List? ?? const []) s as Map<String, dynamic>];
     String nodeId(String scene) => '${event.id}_${scene.trim()}';

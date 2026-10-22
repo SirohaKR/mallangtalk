@@ -80,10 +80,31 @@ int tokens(String text, AiProvider p) {
   return (hangul * hangulTokens[p]! + other / otherCharsPerToken).round();
 }
 
-/// 예시 캐릭터 이벤트를 AI 대본 응답 모양(scenes)으로 바꿈 → 실제 대본과 비슷한 길이의 가짜 응답
-Map<String, dynamic> asScript(ScenarioBundle b, ScenarioEventModel e) {
+/// 좋은 선택만 골랐을 때 지나가는 캐릭터 말풍선 수
+int pathBubbles(ScenarioBundle b, ScenarioEventModel e) {
+  var count = 0;
+  var node = b.firstNodeOf(e.id);
+  var guard = 0;
+  while (node != null && guard++ < 30) {
+    count += node.characterBubbles.length;
+    if (node.choices.isEmpty) break;
+    final best = node.choices.reduce((a, c) => c.affectionDelta > a.affectionDelta ? c : a);
+    node = best.nextNodeId != null ? b.nodes[best.nextNodeId] : null;
+  }
+  return count;
+}
+
+/// 예시 캐릭터 이벤트를 AI 대본 응답 모양(scenes)으로 바꿈 → 실제 대본과 비슷한 길이의 가짜 응답.
+/// target을 주면 좋은 선택 길의 말풍선이 그 수쯤 되게 말풍선을 늘림 (AI에게 시키는 분량과 맞춤)
+Map<String, dynamic> asScript(ScenarioBundle b, ScenarioEventModel e, {int? target}) {
   final nodes = b.nodes.values.where((n) => n.eventId == e.id).toList()
     ..sort((x, y) => x.stepOrder.compareTo(y.stepOrder));
+  final factor = target == null ? 1.0 : target / pathBubbles(b, e).clamp(1, 999);
+  List<ScriptBubblePiece> padded(List<ScriptBubblePiece> lines) {
+    final n = (lines.length * factor).round().clamp(1, 99);
+    return [for (var i = 0; i < n; i++) lines[i % lines.length]];
+  }
+
   return {
     'scenes': [
       for (final n in nodes)
@@ -91,7 +112,8 @@ Map<String, dynamic> asScript(ScenarioBundle b, ScenarioEventModel e) {
           'scene': n.id,
           'step': n.stepOrder,
           'lines': [
-            for (final l in n.characterBubbles) {'text': l.text, 'speed': l.speedFactor, 'photo': l.photoLabel ?? ''},
+            for (final l in padded(n.characterBubbles))
+              {'text': l.text, 'speed': l.speedFactor, 'photo': l.photoLabel ?? ''},
           ],
           'choices': [
             for (final c in n.choices)
@@ -113,7 +135,10 @@ double playSeconds(ScenarioBundle b, ScenarioEventModel e, {required double pace
   var ms = e.timeNotice != null ? 900.0 : 0.0;
   var node = b.firstNodeOf(e.id);
   var guard = 0;
+  var bubbles = 0, choices = 0;
   while (node != null && guard++ < 30) {
+    bubbles += node.characterBubbles.length;
+    if (node.choices.isNotEmpty) choices++;
     for (final bubble in node.characterBubbles) {
       final chars = bubble.text.runes.length;
       final typing = ((700 + chars * 150) * bubble.speedFactor * pace).clamp(450 * pace, 9000 * pace);
@@ -125,6 +150,9 @@ double playSeconds(ScenarioBundle b, ScenarioEventModel e, {required double pace
     ms += thinkPerChoice * 1000 + 380 * (best.userBubbles.length - 1) + 700;
     node = best.nextNodeId != null ? b.nodes[best.nextNodeId] : null;
   }
+  // 말풍선을 늘린 가짜 대본은 장면 수가 그대로라, 실제처럼 말풍선 4개쯤마다 선택지 하나를 고른다고 보고 고르는 시간을 더함
+  final expectedChoices = bubbles ~/ 4;
+  if (expectedChoices > choices) ms += (expectedChoices - choices) * (thinkPerChoice * 1000 + 700);
   return ms / 1000 + 1.2;
 }
 
@@ -136,9 +164,11 @@ String kindOf(ScenarioEventModel e) => switch (e.eventType) {
     };
 
 class Recorder implements HttpClientAdapter {
-  Recorder(this.samples);
+  Recorder(this.samples, {this.targets});
 
   final Map<String, List<(ScenarioBundle, ScenarioEventModel)>> samples;
+  /// 종류별 목표 말풍선 수 (null이면 예시 대본 길이 그대로)
+  final Map<String, int>? targets;
   final requests = <String>[];
   final responses = <String>[];
   final kinds = <String>[];
@@ -167,7 +197,7 @@ class Recorder implements HttpClientAdapter {
       final list = samples[kind]!;
       final i = _used.update(kind, (v) => v + 1, ifAbsent: () => 0);
       final (b, e) = list[i % list.length];
-      answer = asScript(b, e);
+      answer = asScript(b, e, target: targets?[kind]);
     }
     final text = jsonEncode(answer);
     responses.add(text);
@@ -248,13 +278,17 @@ void main() {
       }
     }
 
-    final recorder = Recorder(samples);
-    final client = ClaudeStudioClient(dio: Dio()..httpClientAdapter = recorder);
-    final brief = const StudioBrief(character: prince, eventsPerStage: 4, dailiesPerStage: 5, specials: 4);
-    final bundle = await client.generate(apiKey: 'test', model: 'claude-opus-5-5', brief: brief);
-
     final out = StringBuffer();
     void line([String s = '']) => out.writeln(s);
+    final brief = const StudioBrief(character: prince, eventsPerStage: 4, dailiesPerStage: 5, specials: 4);
+
+    // 0) 예전 길이(예시 대본 그대로)와 지금 AI 규칙(이벤트·엔딩 말풍선 약 20개, 일상·특별 약 10개)을 둘 다 만들어 봄
+    final old = Recorder(samples);
+    final oldBundle = await ClaudeStudioClient(dio: Dio()..httpClientAdapter = old)
+        .generate(apiKey: 'test', model: 'claude-opus-5-5', brief: brief);
+    final recorder = Recorder(samples, targets: {'event': 20, 'ending': 20, 'daily': 10, 'special': 10});
+    final bundle = await ClaudeStudioClient(dio: Dio()..httpClientAdapter = recorder)
+        .generate(apiKey: 'test', model: 'claude-opus-5-5', brief: brief);
 
     final byKind = <String, int>{};
     for (final e in bundle.events) {
@@ -264,18 +298,33 @@ void main() {
         '특별 ${byKind['special']}, 엔딩 ${byKind['ending']} · API 호출 ${recorder.requests.length}번');
     line();
 
-    // 1) 플레이 시간: 예시 캐릭터 대화를 종류별로 평균 내서 50개 구성에 곱함
-    for (final tempo in [1.0, 0.6]) {
-      final pace = prince.typingSpeedMultiplier * tempo;
-      double avg(String kind) {
-        final list = samples[kind]!;
-        return list.map((s) => playSeconds(s.$1, s.$2, pace: pace)).reduce((a, b) => a + b) / list.length;
+    // 1) 플레이 시간: 만들어진 50개 대화를 좋은 선택만 골라 끝까지 본다고 보고 합산
+    for (final (label, b) in [('예전 길이', oldBundle), ('말풍선 20개', bundle)]) {
+      for (final tempo in [1.0, 0.6]) {
+        final pace = prince.typingSpeedMultiplier * tempo;
+        final secs = <String, List<double>>{};
+        final bubbles = <String, List<int>>{};
+        for (final e in b.events) {
+          secs.putIfAbsent(kindOf(e), () => []).add(playSeconds(b, e, pace: pace));
+          bubbles.putIfAbsent(kindOf(e), () => []).add(pathBubbles(b, e));
+        }
+        double avg(String k) => secs[k]!.reduce((x, y) => x + y) / secs[k]!.length;
+        double avgB(String k) => bubbles[k]!.reduce((x, y) => x + y) / bubbles[k]!.length;
+        final total = secs.values.expand((v) => v).reduce((x, y) => x + y);
+        line('$label · 대화 속도 x$tempo: 이벤트 평균 말풍선 ${avgB('event').round()}개·${avg('event').round()}초, '
+            '일상 ${avgB('daily').round()}개·${avg('daily').round()}초, 특별 ${avg('special').round()}초 → 합계 ${(total / 60).round()}분');
       }
-
-      final total = byKind.entries.map((k) => avg(k.key) * k.value).reduce((a, b) => a + b);
-      line('플레이(대화 속도 x$tempo, 타자 스타일 느긋하게 1.3): 이벤트 평균 ${avg('event').round()}초, '
-          '일상 ${avg('daily').round()}초, 특별 ${avg('special').round()}초 → 합계 ${(total / 60).round()}분');
     }
+    line();
+
+    // 예전 길이 기준 금액 (비교용)
+    String costOf(Recorder r, AiProvider p, AiModelOption m) {
+      final inTok = r.requests.map((x) => tokens(x, p)).reduce((a, b) => a + b);
+      final outTok = (r.responses.map((x) => tokens(x, p)).reduce((a, b) => a + b) * (1 + scriptThinkingRatio)).round();
+      final usd = inTok / 1e6 * m.inputUsdPerMTok + outTok / 1e6 * m.outputUsdPerMTok;
+      return '${(usd * wonPerUsd).round()}원';
+    }
+    line('예전 길이 AI로 만들기 1번: ${[for (final p in AiProvider.values) for (final m in p.models) '${m.label} ${costOf(old, p, m)}'].join(', ')}');
     line();
 
     // 2) AI로 만들기 사용량
