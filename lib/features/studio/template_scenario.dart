@@ -255,7 +255,7 @@ ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
     });
 
 /// [초보자 노트] 만들기 화면의 '예시: 카이엔(설정만)'. 캐릭터 탭 8쪽만 채워 둔 로판 아카데미 황자님이에요.
-/// 호감도 단계는 빈 초안과 같은 기본값이고, 이벤트·대사는 비어 있어서 단계를 정한 뒤 AI로 만들기를 눌러 보기 좋아요.
+/// 호감도 단계는 쨋뀨가 정한 5단계(비밀친구~좋아해)이고, 이벤트·대사는 비어 있어서 AI로 만들기를 눌러 보기 좋아요.
 ScenarioBundle kaienScenario() => ScenarioBundle(
       character: CharacterModel(
         id: 'char_${DateTime.now().millisecondsSinceEpoch}',
@@ -314,9 +314,11 @@ ScenarioBundle kaienScenario() => ScenarioBundle(
           CharacterQuote(situation: '화났을 때', body: '{{user}}, 지금 그 말 다시 해 보실래요?'),
         ],
         affectionStages: const [
-          AffectionStage(minScore: 0, maxScore: 19, stageLabel: '어색한 사이'),
-          AffectionStage(minScore: 20, maxScore: 44, stageLabel: '친구'),
-          AffectionStage(minScore: 45, maxScore: 100, stageLabel: '썸'),
+          AffectionStage(minScore: 0, maxScore: 29, stageLabel: '비밀친구'),
+          AffectionStage(minScore: 30, maxScore: 59, stageLabel: '가면 너머'),
+          AffectionStage(minScore: 60, maxScore: 79, stageLabel: '소문'),
+          AffectionStage(minScore: 80, maxScore: 98, stageLabel: '이성'),
+          AffectionStage(minScore: 99, maxScore: 100, stageLabel: '좋아해'),
         ],
       ),
       events: const [],

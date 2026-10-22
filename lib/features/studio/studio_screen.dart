@@ -154,7 +154,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           _replaceDraft(ScenarioDraft.fromBundle(templateScenario())..id = 'char_${DateTime.now().millisecondsSinceEpoch}');
         }
       case 'example_kaien':
-        if (await _confirm('카이엔 불러오기', '로판 아카데미 황자님 카이엔의 캐릭터 설정(8쪽)으로 채워요. 호감도 단계부터는 직접 정하면 돼요. 지금 적은 내용은 지워져요.', '불러오기')) {
+        if (await _confirm('카이엔 불러오기', '로판 아카데미 황자님 카이엔의 캐릭터 설정(8쪽)과 호감도 단계 5개로 채워요. 지금 적은 내용은 지워져요.', '불러오기')) {
           _replaceDraft(ScenarioDraft.fromBundle(kaienScenario()));
         }
       case 'import':
