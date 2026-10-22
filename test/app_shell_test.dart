@@ -199,9 +199,9 @@ void main() {
     expect(find.textContaining('저장된 키'), findsNothing); // Gemini 키는 아직 없음
     await tester.enterText(find.widgetWithText(TextField, 'AIza로 시작하는 Gemini API 키'), 'AIza-new-key-0000');
 
-    await tester.tap(find.textContaining('Gemini 4 Argon'));
+    await tester.tap(find.textContaining('Gemini 3.8 Flash')); // Gemini는 무료 한도가 있는 Flash가 기본
     await settle(tester);
-    await tester.tap(find.textContaining('Gemini 3.8 Flash').last);
+    await tester.tap(find.textContaining('Gemini 3.5 Flash-Lite').last);
     await settle(tester);
     await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
     await settle(tester);
@@ -209,7 +209,7 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('byok_provider'), 'gemini');
     expect(prefs.getString('byok_key_gemini'), 'AIza-new-key-0000');
-    expect(prefs.getString('byok_model_gemini'), 'gemini-3.8-flash');
+    expect(prefs.getString('byok_model_gemini'), 'gemini-3.5-flash-lite');
     expect(prefs.getString('byok_claude_api_key'), 'sk-ant-old-key-123456'); // Claude 키는 그대로
   });
 
