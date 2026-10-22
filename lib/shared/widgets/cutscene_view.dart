@@ -3,23 +3,27 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../models/mallangtalk_models.dart';
+import 'character_avatar.dart';
 
 /// 컷씬(CG) 전체 화면 팝업. 이미지 경로가 있으면 이미지를, 없으면 장면 제목 카드를 보여줍니다.
 class CutsceneView extends StatelessWidget {
   final ScenarioEventModel event;
+  /// 보여 줄 사진 주소 (캐릭터 파일의 'img:번호'를 풀어서 넘김). 없으면 이벤트에 적힌 주소
+  final String? imageUrl;
   final String footer;
   final VoidCallback onClose;
 
   const CutsceneView({
     super.key,
     required this.event,
+    this.imageUrl,
     required this.footer,
     required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = event.cutsceneImageUrl;
+    final photo = CharacterImage.providerFor(imageUrl ?? event.cutsceneImageUrl ?? '');
     final placeholder = Container(
       height: 320,
       width: double.infinity,
@@ -60,11 +64,11 @@ class CutsceneView extends StatelessWidget {
                     style: AppTextStyles.appBarTitle.copyWith(color: AppColors.myBubble),
                   ),
                   const SizedBox(height: 16),
-                  if (imageUrl != null && imageUrl.isNotEmpty)
+                  if (photo != null)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-                      child: Image.network(
-                        imageUrl,
+                      child: Image(
+                        image: photo,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => placeholder,
                       ),

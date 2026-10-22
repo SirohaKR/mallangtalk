@@ -531,6 +531,7 @@ ScenarioBundle _scaleDeltas(ScenarioBundle bundle, double factor) {
   return ScenarioBundle(
     character: bundle.character,
     events: bundle.events,
+    images: bundle.images,
     nodes: {
       for (final n in bundle.nodes.values)
         n.id: ScriptNodeModel(

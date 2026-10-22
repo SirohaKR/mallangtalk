@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
+import 'photo_encode_stub.dart' if (dart.library.js_interop) 'photo_encode_web.dart';
 
 /// 고른 파일 (이름 + 내용)
 class PickedFile {
@@ -62,4 +63,13 @@ Future<String?> pickProfileImage() async {
   final png = await resized.toByteData(format: ui.ImageByteFormat.png);
   if (png == null) return null;
   return 'data:image/png;base64,${base64Encode(png.buffer.asUint8List())}';
+}
+
+/// [초보자 노트] 사진 말풍선·컷씬에 넣을 사진을 골라 긴 쪽 960px로 줄인 뒤 data: 주소로 돌려줍니다.
+/// 웹에서는 JPEG로 줄여서 한 장에 100~200KB 정도예요. 캐릭터 파일 안에 저장되니 너무 많이 넣으면
+/// 브라우저 저장 공간(약 5MB)이 찰 수 있어요. (DB 저장 단계에서 서버로 옮길 예정)
+Future<String?> pickPhoto() async {
+  final file = await FileIO.pick(extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif']);
+  if (file == null) return null;
+  return encodePhoto(file.bytes, 960);
 }

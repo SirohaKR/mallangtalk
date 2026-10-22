@@ -587,11 +587,14 @@ class ScriptBubblePiece {
   final double speedFactor;
   /// 대화방에 사진을 찍어 올리는 말풍선일 경우 사진 제목/경로
   final String? photoLabel;
+  /// 진짜 사진 (캐릭터 파일의 images 안 번호. 없으면 설명만 있는 사진 카드)
+  final String? photoImage;
 
   const ScriptBubblePiece({
     required this.text,
     this.speedFactor = 1.0,
     this.photoLabel,
+    this.photoImage,
   });
 
   bool get hasPhoto => photoLabel != null && photoLabel!.isNotEmpty;
@@ -601,6 +604,7 @@ class ScriptBubblePiece {
       text: json['text'] as String? ?? '',
       speedFactor: (json['speed'] as num?)?.toDouble() ?? 1.0,
       photoLabel: json['photo'] as String?,
+      photoImage: json['photo_image'] as String?,
     );
   }
 
@@ -608,6 +612,7 @@ class ScriptBubblePiece {
         'text': text,
         if (speedFactor != 1.0) 'speed': speedFactor,
         if (hasPhoto) 'photo': photoLabel,
+        if (hasPhoto && photoImage != null) 'photo_image': photoImage,
       };
 }
 
@@ -704,12 +709,25 @@ class ScenarioBundle {
   final CharacterModel character;
   final List<ScenarioEventModel> events; // chapterOrder 순으로 정렬됨
   final Map<String, ScriptNodeModel> nodes; // 노드 ID로 바로 찾기
+  /// 제작자가 올린 사진 (번호 → data: 주소). 사진 말풍선과 컷씬이 'img:번호'로 가리킴.
+  /// 같은 사진을 대화 기록마다 또 저장하지 않으려고 한곳에 모아 둠
+  final Map<String, String> images;
 
   const ScenarioBundle({
     required this.character,
     required this.events,
     required this.nodes,
+    this.images = const {},
   });
+
+  static const imagePrefix = 'img:';
+
+  /// 'img:번호'면 images에서 찾은 주소, 그 밖의 주소(http·data·assets)는 그대로
+  String? resolveImage(String? ref) {
+    if (ref == null || ref.isEmpty) return null;
+    if (ref.startsWith(imagePrefix)) return images[ref.substring(imagePrefix.length)];
+    return ref;
+  }
 
   factory ScenarioBundle.fromJson(Map<String, dynamic> json) {
     final events = [
@@ -724,6 +742,10 @@ class ScenarioBundle {
           (node as Map<String, dynamic>)['id'] as String:
               ScriptNodeModel.fromJson(node),
       },
+      images: {
+        for (final entry in (json['images'] as Map? ?? const {}).entries)
+          if (entry.value is String) entry.key as String: entry.value as String,
+      },
     );
   }
 
@@ -732,10 +754,11 @@ class ScenarioBundle {
         'character': character.toJson(),
         'events': [for (final e in events) e.toJson()],
         'script_nodes': [for (final n in nodes.values) n.toJson()],
+        if (images.isNotEmpty) 'images': images,
       };
 
   ScenarioBundle copyWithCharacter(CharacterModel character) =>
-      ScenarioBundle(character: character, events: events, nodes: nodes);
+      ScenarioBundle(character: character, events: events, nodes: nodes, images: images);
 
   /// 이 이벤트가 열리는 호감도 구간. 단계 이름이 있으면 그 단계 시작 점수부터 열리고,
   /// 일상 대화는 그 단계 끝 점수까지만 나옵니다.
@@ -771,6 +794,7 @@ class ChatMessageLog {
   final String speakerName;
   final String text;
   final String? photoLabel; // 사진 말풍선일 경우 사진 설명/경로
+  final String? photoImage; // 진짜 사진 번호 (캐릭터 파일의 images에서 찾음. 기록에는 번호만 저장)
   final bool isUnread;      // 카톡 읽음 '1' 표시 여부
   final DateTime timestamp;
 
@@ -782,6 +806,7 @@ class ChatMessageLog {
     required this.speakerName,
     required this.text,
     this.photoLabel,
+    this.photoImage,
     this.isUnread = false,
     required this.timestamp,
   });
@@ -797,6 +822,7 @@ class ChatMessageLog {
         'speaker_name': speakerName,
         'text': text,
         if (photoLabel != null) 'photo': photoLabel,
+        if (photoImage != null) 'photo_image': photoImage,
         'is_unread': isUnread,
         'timestamp': timestamp.toIso8601String(),
       };
@@ -810,6 +836,7 @@ class ChatMessageLog {
       speakerName: json['speaker_name'] as String? ?? '',
       text: json['text'] as String? ?? '',
       photoLabel: json['photo'] as String?,
+      photoImage: json['photo_image'] as String?,
       isUnread: json['is_unread'] as bool? ?? false,
       timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
     );
@@ -824,6 +851,7 @@ class ChatMessageLog {
       speakerName: speakerName,
       text: text,
       photoLabel: photoLabel,
+      photoImage: photoImage,
       isUnread: isUnread ?? this.isUnread,
       timestamp: timestamp,
     );

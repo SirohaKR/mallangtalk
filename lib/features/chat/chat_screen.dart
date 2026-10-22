@@ -25,11 +25,14 @@ class ChatRoomPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final exists = ref.watch(characterBundleProvider(characterId).select((b) => b != null));
+    final exists = ref
+        .watch(characterBundleProvider(characterId).select((b) => b != null));
     if (!exists) {
       return Scaffold(
         appBar: AppBar(),
-        body: const Center(child: Text('이 캐릭터는 내 캐릭터 목록에 없어요', style: AppTextStyles.systemNotice)),
+        body: const Center(
+            child: Text('이 캐릭터는 내 캐릭터 목록에 없어요',
+                style: AppTextStyles.systemNotice)),
       );
     }
     return ChatScreen(characterId: characterId);
@@ -46,8 +49,12 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
+  /// 크게 보고 있는 사진 (진짜 사진이 있을 때만)
+  String? _previewImage;
+
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
   /// 엔터로 보낸 뒤에도 입력창에 커서를 그대로 둬서 연달아 칠 수 있게 함
   final FocusNode _inputFocus = FocusNode();
 
@@ -154,6 +161,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final chatState = ref.watch(chatRoomProvider(id));
     final notifier = ref.read(chatRoomProvider(id).notifier);
     final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.canUseAi));
+    final bundle = ref.watch(characterBundleProvider(id));
 
     ref.listen<ChatRoomState>(chatRoomProvider(id), (prev, next) {
       if (prev?.messages.length != next.messages.length ||
@@ -175,7 +183,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         leading: IconButton(
           tooltip: '채팅방 목록',
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => context.canPop() ? context.pop() : context.go('/chats'),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/chats'),
         ),
         titleSpacing: 0,
         title: Row(
@@ -186,9 +195,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(chatState.character.name, overflow: TextOverflow.ellipsis),
+                  Text(chatState.character.name,
+                      overflow: TextOverflow.ellipsis),
                   Text(
-                    CharacterModel.fillUserName(chatState.character.statusMessage, '너',
+                    CharacterModel.fillUserName(
+                        chatState.character.statusMessage, '너',
                         charName: chatState.character.name),
                     style: AppTextStyles.messageTime,
                     overflow: TextOverflow.ellipsis,
@@ -272,10 +283,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     if (msg.isSystem) {
                       return _SystemNoticeRow(text: msg.text);
                     }
+                    final image = bundle?.resolveImage(msg.photoImage);
                     return _MessageBubbleRow(
                       message: msg,
+                      photoUrl: image,
                       onPhotoTap: msg.hasPhoto
-                          ? () => notifier.openPhotoPreview(msg.photoLabel!)
+                          ? () {
+                              setState(() => _previewImage = image);
+                              notifier.openPhotoPreview(msg.photoLabel!);
+                            }
                           : null,
                     );
                   },
@@ -309,8 +325,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                if (choice.userBubbles.any((b) => b.hasPhoto)) ...[
-                                  const Icon(Icons.photo_camera_outlined, size: 17),
+                                if (choice.userBubbles
+                                    .any((b) => b.hasPhoto)) ...[
+                                  const Icon(Icons.photo_camera_outlined,
+                                      size: 17),
                                   const SizedBox(width: 6),
                                 ],
                                 Flexible(child: Text(choice.buttonLabel)),
@@ -319,7 +337,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                     ],
-
                     if (chatState.isByokAiModeEnabled) ...[
                       if (!hasApiKey)
                         GestureDetector(
@@ -339,7 +356,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           // 대화방에 내가 직접 사진을 찍어 올리는 카메라 버튼!
                           IconButton(
                             tooltip: '사진 찍어 올리기',
-                            onPressed: () => _showUserPhotoSenderSheet(notifier),
+                            onPressed: () =>
+                                _showUserPhotoSenderSheet(notifier),
                             icon: const Icon(
                               Icons.camera_alt_outlined,
                               color: AppColors.primaryNavy,
@@ -378,9 +396,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (chatState.previewPhotoLabel != null)
             _PhotoViewerModal(
               photoLabel: chatState.previewPhotoLabel!,
+              photoUrl: _previewImage,
               onClose: notifier.closePhotoPreview,
             ),
-
         ],
       ),
     );
@@ -390,15 +408,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 /// 말풍선(텍스트 + 대화방 사진 카드 + 읽음 '1') 위젯
 class _MessageBubbleRow extends StatelessWidget {
   final ChatMessageLog message;
+
+  /// 진짜 사진 주소 (없으면 설명 카드)
+  final String? photoUrl;
   final VoidCallback? onPhotoTap;
 
   const _MessageBubbleRow({
     required this.message,
+    this.photoUrl,
     this.onPhotoTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final photo = message.hasPhoto ? CharacterImage.providerFor(photoUrl ?? '') : null;
     final isUser = message.isUser;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -424,7 +447,23 @@ class _MessageBubbleRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 사진이 포함된 말풍선이면 대화방 안에 사진 카드 표시!
-                  if (message.hasPhoto) ...[
+                  if (photo != null) ...[
+                    GestureDetector(
+                      onTap: onPhotoTap,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image(
+                            image: photo,
+                            width: 220,
+                            fit: BoxFit.cover,
+                            semanticLabel: message.photoLabel,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else if (message.hasPhoto) ...[
                     GestureDetector(
                       onTap: onPhotoTap,
                       child: Container(
@@ -459,7 +498,8 @@ class _MessageBubbleRow extends StatelessWidget {
                       ),
                     ),
                   ],
-                  Text(message.text, style: AppTextStyles.chatBubbleBody),
+                  if (message.text.isNotEmpty || !message.hasPhoto)
+                    Text(message.text, style: AppTextStyles.chatBubbleBody),
                 ],
               ),
             ),
@@ -510,13 +550,16 @@ class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
               for (var i = 0; i < 3; i++) ...[
                 if (i > 0) const SizedBox(width: 5),
                 Transform.translate(
-                  offset: Offset(0, -3 * _bounce((_controller.value - i * 0.18) % 1.0)),
+                  offset: Offset(
+                      0, -3 * _bounce((_controller.value - i * 0.18) % 1.0)),
                   child: Container(
                     width: 7,
                     height: 7,
                     decoration: BoxDecoration(
                       color: AppColors.textMuted.withValues(
-                        alpha: 0.45 + 0.55 * _bounce((_controller.value - i * 0.18) % 1.0),
+                        alpha: 0.45 +
+                            0.55 *
+                                _bounce((_controller.value - i * 0.18) % 1.0),
                       ),
                       shape: BoxShape.circle,
                     ),
@@ -541,10 +584,12 @@ class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
 /// 대화방에 올라온 사진을 탭했을 때 전체 화면으로 보여주는 모달
 class _PhotoViewerModal extends StatelessWidget {
   final String photoLabel;
+  final String? photoUrl;
   final VoidCallback onClose;
 
   const _PhotoViewerModal({
     required this.photoLabel,
+    this.photoUrl,
     required this.onClose,
   });
 
@@ -564,32 +609,38 @@ class _PhotoViewerModal extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                height: 240,
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.chatRoomBackground,
+              if (CharacterImage.providerFor(photoUrl ?? '') case final photo?)
+                ClipRRect(
                   borderRadius: BorderRadius.circular(12),
+                  child: Image(image: photo, fit: BoxFit.contain),
+                )
+              else
+                Container(
+                  height: 240,
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.chatRoomBackground,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.image_rounded,
+                        size: 52,
+                        color: AppColors.primaryPink,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        photoLabel,
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.chatBubbleBody,
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.image_rounded,
-                      size: 52,
-                      color: AppColors.primaryPink,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      photoLabel,
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.chatBubbleBody,
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,

@@ -86,6 +86,41 @@ void main() {
       expect(d.toBundle().firstNodeOf(event.id)!.choices.single.nextNodeId, isNull);
     });
 
+    test('올린 사진은 캐릭터 파일에 한 번만 저장되고, 말풍선·컷씬은 번호로 가리킴', () {
+      const photo = 'data:image/jpeg;base64,AAAA';
+      final d = ScenarioDraft.blank()..name = '한결';
+      final event = d.events.single
+        ..title = '첫 라떼'
+        ..cutsceneImage = photo; // 설명 없이 사진만 올려도 컷씬이 됨
+      event.scenes.first.lines
+        ..first.text = '이거 봐'
+        ..add(LineDraft(photoImage: photo))
+        ..add(LineDraft(photo: '설명만 있는 사진'));
+
+      final bundle = ScenarioBundle.fromJson(jsonDecode(jsonEncode(d.toBundle().toJson())) as Map<String, dynamic>);
+      expect(bundle.images.length, 1); // 같은 사진은 하나로
+      final bubbles = bundle.firstNodeOf(event.id)!.characterBubbles;
+      expect(bubbles[1].photoImage, startsWith('img:'));
+      expect(bubbles[1].photoLabel, '사진');
+      expect(bundle.resolveImage(bubbles[1].photoImage), photo);
+      expect(bubbles[2].photoImage, isNull);
+      final e = bundle.events.first;
+      expect(e.cutscenePhotoTitle, '첫 라떼');
+      expect(bundle.resolveImage(e.cutsceneImageUrl), photo);
+
+      // 대화 기록에는 사진 번호만 남음
+      final log = ChatMessageLog(
+        id: 'm', isUser: false, speakerCharacterId: 'c', speakerName: '한결', text: '',
+        photoLabel: bubbles[1].photoLabel, photoImage: bubbles[1].photoImage, timestamp: DateTime(2026),
+      );
+      expect(jsonEncode(log.toJson()), isNot(contains('base64')));
+
+      // 다시 편집기로 열면 사진이 그대로 있음
+      final back = ScenarioDraft.fromBundle(bundle);
+      expect(back.events.single.cutsceneImage, photo);
+      expect(back.events.single.scenes.first.lines[1].photoImage, photo);
+    });
+
     test('저장 전에 고칠 곳을 알려 줌', () {
       final d = ScenarioDraft.blank();
       d.stages.first.start = 5;

@@ -910,7 +910,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               if (e.kind != DraftKind.ending && e.stage.isNotEmpty) e.stage,
               if (e.kind == DraftKind.special) _windowLabel(e),
               if (e.kind != DraftKind.special && e.notice.isNotEmpty) e.notice,
-              if (e.cutscene.isNotEmpty && e.kind != DraftKind.daily) '컷씬',
+              if (e.hasCutscene) '컷씬',
               '말풍선 $lines개',
             ].join(' · '),
             style: AppTextStyles.messageTime,
@@ -991,6 +991,16 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 label: '컷씬 (선택)',
                 hint: '앨범에 모이는 장면 설명. 비우면 컷씬 없음. 몇 번째 장면에서 모일지는 대사 탭에서 골라요',
                 onChanged: (v) => setState(() => e.cutscene = v),
+              ),
+            if (e.kind != DraftKind.daily)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: PhotoPickRow(
+                  image: e.cutsceneImage,
+                  pickLabel: '컷씬 사진 올리기',
+                  note: '사진이 없으면 설명 카드로 보여요',
+                  onChanged: (v) => setState(() => e.cutsceneImage = v),
+                ),
               ),
             Wrap(
               spacing: 4,
@@ -1102,7 +1112,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       return const Center(child: Text('이벤트 탭에서 대화를 먼저 추가해 주세요', style: AppTextStyles.systemNotice));
     }
     final event = d.events.contains(_scriptEvent) ? _scriptEvent! : d.events.first;
-    final hasCutscene = event.cutscene.trim().isNotEmpty && event.kind != DraftKind.daily;
+    final hasCutscene = event.hasCutscene;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
@@ -1249,13 +1259,15 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 ),
               ),
               IconButton(
-                tooltip: line.photo.isEmpty ? '사진 말풍선으로' : '사진 빼기',
+                tooltip: line.photo.isEmpty && line.photoImage.isEmpty ? '사진 말풍선으로' : '사진 빼기',
                 onPressed: () => setState(() {
-                  line.photo = line.photo.isEmpty ? '사진' : '';
+                  final on = line.photo.isEmpty && line.photoImage.isEmpty;
+                  line.photo = on ? '사진' : '';
+                  if (!on) line.photoImage = '';
                   _version++;
                 }),
                 icon: Icon(Icons.image_outlined, size: 20,
-                    color: line.photo.isEmpty ? AppColors.textMuted : AppColors.primaryPink),
+                    color: line.photo.isEmpty && line.photoImage.isEmpty ? AppColors.textMuted : AppColors.primaryPink),
               ),
               IconButton(
                 tooltip: '말풍선 빼기',
@@ -1264,12 +1276,22 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               ),
             ],
           ),
-          if (line.photo.isNotEmpty)
+          if (line.photo.isNotEmpty || line.photoImage.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(top: 4, right: 96),
               child: EditField(fieldKey: _k(line, 'photo'), value: line.photo, hint: '보내는 사진 설명', dense: true,
                   onChanged: (v) => line.photo = v),
             ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: PhotoPickRow(
+                image: line.photoImage,
+                pickLabel: '사진 올리기',
+                note: '사진이 없으면 설명 카드로 보여요',
+                onChanged: (v) => setState(() => line.photoImage = v),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1344,6 +1366,52 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 사진 고르기 줄: 올린 사진 미리보기 + 올리기/바꾸기 + 빼기
+class PhotoPickRow extends StatelessWidget {
+  const PhotoPickRow({
+    super.key,
+    required this.image,
+    required this.pickLabel,
+    required this.note,
+    required this.onChanged,
+  });
+
+  final String image;
+  final String pickLabel;
+  final String note;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = CharacterImage.providerFor(image);
+    return Row(
+      children: [
+        if (provider != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image(image: provider, width: 56, height: 56, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 8),
+        ],
+        OutlinedButton.icon(
+          icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+          label: Text(provider == null ? pickLabel : '사진 바꾸기'),
+          onPressed: () async {
+            final picked = await pickPhoto();
+            if (picked != null) onChanged(picked);
+          },
+        ),
+        if (provider != null)
+          TextButton(onPressed: () => onChanged(''), child: const Text('사진 빼기'))
+        else ...[
+          const SizedBox(width: 8),
+          Expanded(child: Text(note, style: AppTextStyles.messageTime)),
+        ],
+      ],
     );
   }
 }
