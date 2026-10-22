@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
+import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/cutscene_view.dart';
 import '../chat/chat_notifier.dart';
 import '../library/character_library.dart';
@@ -53,6 +54,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                   for (final event in cutsceneEvents)
                     _AlbumTile(
                       event: event,
+                      imageUrl: bundle.resolveImage(event.cutsceneImageUrl),
                       isUnlocked: unlocked.contains(event.id),
                       onTap: () => setState(() => _viewing = event),
                     ),
@@ -63,6 +65,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
           if (_viewing != null)
             CutsceneView(
               event: _viewing!,
+              imageUrl: bundle.resolveImage(_viewing!.cutsceneImageUrl),
               footer: '화면을 탭하면 닫혀요',
               onClose: () => setState(() => _viewing = null),
             ),
@@ -74,17 +77,50 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 
 class _AlbumTile extends StatelessWidget {
   final ScenarioEventModel event;
+  /// 컷씬 진짜 사진 (모은 뒤에만 썸네일로 보여 줌)
+  final String? imageUrl;
   final bool isUnlocked;
   final VoidCallback onTap;
 
   const _AlbumTile({
     required this.event,
+    this.imageUrl,
     required this.isUnlocked,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final photo = isUnlocked ? CharacterImage.providerFor(imageUrl ?? '') : null;
+    if (photo != null) {
+      return GestureDetector(
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image(image: photo, fit: BoxFit.cover),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  color: Colors.black.withValues(alpha: 0.45),
+                  child: Text(
+                    event.title,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.messageTime.copyWith(color: AppColors.surfaceWhite),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: isUnlocked ? onTap : null,
       child: Container(

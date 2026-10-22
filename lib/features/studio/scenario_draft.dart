@@ -41,7 +41,9 @@ class LineDraft {
   String text;
   double speed;
   String photo;
-  LineDraft({this.text = '', this.speed = 1.0, this.photo = ''});
+  /// 올린 진짜 사진 (data: 주소). 비우면 설명만 있는 사진 카드
+  String photoImage;
+  LineDraft({this.text = '', this.speed = 1.0, this.photo = '', this.photoImage = ''});
 }
 
 class ChoiceDraft {
@@ -72,8 +74,10 @@ class EventDraft {
   String notice;
   String stage;
   String synopsis;
-  /// 컷씬(앨범 장면) 설명. 비우면 컷씬 없음
+  /// 컷씬(앨범 장면) 설명. 설명과 사진이 둘 다 비면 컷씬 없음
   String cutscene;
+  /// 컷씬으로 보여 줄 진짜 사진 (data: 주소). 비우면 설명 카드
+  String cutsceneImage;
   int fromHour;
   int toHour;
   String date;
@@ -90,6 +94,7 @@ class EventDraft {
     this.stage = '',
     this.synopsis = '',
     this.cutscene = '',
+    this.cutsceneImage = '',
     this.fromHour = 22,
     this.toHour = 2,
     this.date = '',
@@ -98,6 +103,10 @@ class EventDraft {
     this.keptStage = '',
     List<SceneDraft>? scenes,
   }) : scenes = scenes ?? [SceneDraft()];
+
+  /// 설명이나 사진이 있으면 컷씬 (일상 대화는 컷씬 없음)
+  bool get hasCutscene =>
+      kind != DraftKind.daily && (cutscene.trim().isNotEmpty || cutsceneImage.isNotEmpty);
 }
 
 class ScenarioDraft {
@@ -185,7 +194,12 @@ class ScenarioDraft {
         n.id: SceneDraft(
           lines: [
             for (final b in n.characterBubbles)
-              LineDraft(text: b.text, speed: b.speedFactor, photo: b.photoLabel ?? ''),
+              LineDraft(
+                text: b.text,
+                speed: b.speedFactor,
+                photo: b.photoLabel ?? '',
+                photoImage: bundle.resolveImage(b.photoImage) ?? '',
+              ),
           ],
         ),
     };
@@ -223,6 +237,7 @@ class ScenarioDraft {
       stage: stage,
       synopsis: e.synopsis,
       cutscene: e.cutscenePhotoTitle ?? '',
+      cutsceneImage: bundle.resolveImage(e.cutsceneImageUrl) ?? '',
       fromHour: e.realTime?.fromHour ?? 22,
       toHour: e.realTime?.toHour ?? 2,
       date: e.realTime?.date ?? '',
@@ -284,7 +299,7 @@ class ScenarioDraft {
 
   ScenarioEventModel buildEvent(EventDraft e, int order) {
     final cutsceneIndex = e.scenes.indexWhere((s) => s.cutsceneHere);
-    final hasCutscene = e.cutscene.trim().isNotEmpty && e.kind != DraftKind.daily;
+    final hasCutscene = e.hasCutscene;
     return ScenarioEventModel(
       id: e.id,
       characterId: id,
@@ -301,7 +316,8 @@ class ScenarioDraft {
       requiredFlags: e.requiredFlags,
       requiredAffection: e.stage == e.keptStage ? e.keptMin : 0,
       synopsis: e.synopsis.trim(),
-      cutscenePhotoTitle: hasCutscene ? e.cutscene.trim() : null,
+      cutscenePhotoTitle: hasCutscene ? (e.cutscene.trim().isEmpty ? e.title.trim() : e.cutscene.trim()) : null,
+      cutsceneImageUrl: hasCutscene ? imageRef(e.cutsceneImage) : null,
       // 컷씬 장면을 안 골랐으면 첫 장면에서
       cutsceneTriggerStep: hasCutscene ? (cutsceneIndex < 0 ? 0 : cutsceneIndex) + 1 : null,
       realTime: e.kind == DraftKind.special
@@ -323,11 +339,12 @@ class ScenarioDraft {
         speakerCharacterId: id,
         characterBubbles: [
           for (final l in scene.lines)
-            if (l.text.trim().isNotEmpty || l.photo.trim().isNotEmpty)
+            if (l.text.trim().isNotEmpty || l.photo.trim().isNotEmpty || l.photoImage.isNotEmpty)
               ScriptBubblePiece(
                 text: l.text.trim(),
                 speedFactor: l.speed,
-                photoLabel: l.photo.trim().isEmpty ? null : l.photo.trim(),
+                photoLabel: l.photo.trim().isEmpty ? (l.photoImage.isEmpty ? null : '사진') : l.photo.trim(),
+                photoImage: imageRef(l.photoImage),
               ),
         ],
         choices: [
@@ -365,8 +382,35 @@ class ScenarioDraft {
         nodes[n.id] = n;
       }
     }
-    return ScenarioBundle(character: buildCharacter(), events: events, nodes: nodes);
+    return ScenarioBundle(character: buildCharacter(), events: events, nodes: nodes, images: collectImages());
   }
+
+  /// 올린 사진(data: 주소)을 캐릭터 파일 안의 'img:번호'로. 같은 사진은 같은 번호라 한 번만 저장됨.
+  /// http 주소 같은 다른 주소는 그대로 둠
+  static String? imageRef(String image) {
+    if (image.isEmpty) return null;
+    if (!image.startsWith('data:')) return image;
+    return '${ScenarioBundle.imagePrefix}${imageId(image)}';
+  }
+
+  /// 사진 내용으로 만든 짧은 번호 (FNV-1a)
+  static String imageId(String dataUrl) {
+    var hash = 0x811c9dc5;
+    for (final unit in dataUrl.codeUnits) {
+      hash = ((hash ^ unit) * 0x01000193) & 0xFFFFFFFF;
+    }
+    return 'p${hash.toRadixString(16).padLeft(8, '0')}_${dataUrl.length}';
+  }
+
+  /// 초안에 올린 사진을 모두 모아 번호 → 사진 표로
+  Map<String, String> collectImages() => {
+        for (final e in events) ...{
+          if (e.hasCutscene && e.cutsceneImage.startsWith('data:')) imageId(e.cutsceneImage): e.cutsceneImage,
+          for (final scene in e.scenes)
+            for (final l in scene.lines)
+              if (l.photoImage.startsWith('data:')) imageId(l.photoImage): l.photoImage,
+        },
+      };
 
   // ───────────────────────── 확인 ─────────────────────────
 
@@ -432,7 +476,7 @@ class ScenarioDraft {
       out.add('좋은 선택만 골라도 모든 호감도 이벤트를 열 수 없어요. 저장할 때 호감도를 자동으로 맞출 수 있어요.');
     }
     for (final e in events) {
-      if (e.cutscene.trim().isNotEmpty && e.kind != DraftKind.daily && !e.scenes.any((s) => s.cutsceneHere)) {
+      if (e.hasCutscene && !e.scenes.any((s) => s.cutsceneHere)) {
         out.add('"${e.title}" 컷씬이 몇 번째 장면에서 모이는지 안 골라서 첫 장면으로 정했어요.');
       }
     }

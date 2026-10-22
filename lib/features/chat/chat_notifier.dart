@@ -484,6 +484,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       speakerName: state.character.name,
       text: CharacterModel.fillUserName(bubble.text, _nickname, charName: state.character.name),
       photoLabel: bubble.photoLabel,
+      photoImage: bubble.photoImage,
       timestamp: DateTime.now(),
     );
     state = state.copyWith(
@@ -534,6 +535,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         speakerName: _nickname,
         text: CharacterModel.fillUserName(piece.text, _nickname, charName: state.character.name),
         photoLabel: piece.photoLabel,
+        photoImage: piece.photoImage,
         isUnread: true,
         timestamp: DateTime.now(),
       );
