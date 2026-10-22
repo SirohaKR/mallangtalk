@@ -5,7 +5,7 @@ import 'ai_provider.dart';
 
 /// 말랑톡 서버에서 앱을 열었을 때 서버가 알려 준 정보 (키 자체는 절대 안 옴)
 class ServerInfo {
-  /// 앱을 띄운 서버 주소 (예: http://192.168.0.10:8080)
+  /// 앱을 띄운 서버 주소 (예: http://192.168.0.10:5200)
   final String baseUrl;
 
   /// 서버 .env에 키가 들어 있는 AI 회사

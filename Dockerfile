@@ -29,6 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY --from=build /out/server /app/server
 COPY --from=build /src/build/web /app/web
-ENV WEB_DIR=/app/web PORT=8080
-EXPOSE 8080
+ENV WEB_DIR=/app/web PORT=5200
+EXPOSE 5200
 CMD ["/app/server"]

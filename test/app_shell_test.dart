@@ -223,7 +223,7 @@ void main() {
         sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
         clockProvider.overrideWithValue(testNow),
         serverInfoProvider.overrideWith((ref) async => const ServerInfo(
-              baseUrl: 'http://localhost:8080',
+              baseUrl: 'http://localhost:5200',
               providers: {AiProvider.claude},
               needsAccessCode: true,
             )),

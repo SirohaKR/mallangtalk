@@ -97,7 +97,7 @@ void main() {
       extra: [
         claudeChatClientProvider.overrideWithValue(fake),
         serverInfoProvider.overrideWith((ref) async => const ServerInfo(
-              baseUrl: 'http://nas.local:8080',
+              baseUrl: 'http://nas.local:5200',
               providers: {AiProvider.gemini},
               needsAccessCode: true,
             )),
@@ -110,7 +110,7 @@ void main() {
 
     expect(fake.lastProvider, AiProvider.gemini);
     expect(fake.lastApiKey, '');
-    expect(fake.lastRelay?.baseUrl, 'http://nas.local:8080');
+    expect(fake.lastRelay?.baseUrl, 'http://nas.local:5200');
     expect(fake.lastRelay?.accessCode, 'mallang');
     expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
   });

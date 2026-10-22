@@ -20,7 +20,7 @@ class ServerConfig {
 
   final int port;
 
-  const ServerConfig({required this.keys, this.accessCode, this.webDir, this.port = 8080});
+  const ServerConfig({required this.keys, this.accessCode, this.webDir, this.port = 5200});
 
   /// .env 파일 내용과 환경 변수를 합쳐서 설정을 만듦 (환경 변수가 우선)
   factory ServerConfig.fromEnv(Map<String, String> env) {
@@ -40,7 +40,7 @@ class ServerConfig {
       },
       accessCode: read('ACCESS_CODE'),
       webDir: read('WEB_DIR'),
-      port: int.tryParse(read('PORT') ?? '') ?? 8080,
+      port: int.tryParse(read('PORT') ?? '') ?? 5200,
     );
   }
 }

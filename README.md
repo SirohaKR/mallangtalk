@@ -97,7 +97,7 @@ cd mallangtalk
 flutter pub get
 
 # 2. Flutter Web 로컬 개발 서버 실행
-flutter run -d chrome --web-port=8080
+flutter run -d chrome --web-port=5201
 
 # 3. 테스트 (샘플 전체 플레이, 일상 대화 순서, 진행 저장, 편집기 초안 변환, 특별 이벤트, AI 생성·자유대화 요청 형식, 하단 탭 흐름)
 flutter test
@@ -111,7 +111,7 @@ flutter test
 cp .env.example .env            # 쓸 AI 회사 키와 ACCESS_CODE(선택)를 채움
 flutter build web --no-web-resources-cdn
 cd server && dart pub get && dart run bin/server.dart
-# → http://localhost:8080 접속. 설정 탭에 '말랑톡 서버에서 열었어요'가 보이면 성공
+# → http://localhost:5200 접속. 설정 탭에 '말랑톡 서버에서 열었어요'가 보이면 성공
 ```
 
 ACCESS_CODE를 정했으면 앱 설정 탭의 `서버 접속 코드`에 같은 값을 넣어 주세요. claude.ai 플레이 링크는 바깥 주소 호출이 막혀 있어서 서버를 쓸 수 없고, 거기서는 계속 내 키(BYOK)로만 AI를 부를 수 있어요(Claude 키만 동작).
@@ -162,4 +162,4 @@ docker compose up -d --build
 
 이미지 안에서 Flutter(3.47.7)로 앱 화면을 빌드하고 서버를 실행 파일 하나로 만들어서, 처음 빌드는 10분 넘게 걸릴 수 있어요. 집 밖에서도 열리게 할 거면 `.env`의 `ACCESS_CODE`를 꼭 정해 주세요(안 정하면 주소를 아는 누구나 내 키로 AI를 부를 수 있어요).
 
-배포 후 Synology DSM의 **역방향 프록시(Reverse Proxy)** 설정에서 외부 HTTPS 도메인을 컨테이너 포트(기본 `8080`)로 연결하면 모바일 및 PC 브라우저에서 즉시 접속할 수 있습니다.
+배포 후 Synology DSM의 **역방향 프록시(Reverse Proxy)** 설정에서 외부 HTTPS 도메인을 컨테이너 포트(기본 `5200`, `.env`의 PORT로 변경)로 연결하면 모바일 및 PC 브라우저에서 즉시 접속할 수 있습니다.

@@ -143,11 +143,11 @@ void main() {
       'usage': {'input': 10, 'output': 5},
     });
     final reply = await call(adapter,
-        provider: AiProvider.gemini, relay: const AiRelay('http://nas.local:8080', accessCode: 'mallang'));
+        provider: AiProvider.gemini, relay: const AiRelay('http://nas.local:5200', accessCode: 'mallang'));
 
     expect(reply.bubbles, ['서버에서 왔어']);
     final req = adapter.lastRequest!;
-    expect(req.uri.toString(), 'http://nas.local:8080/api/ai/json');
+    expect(req.uri.toString(), 'http://nas.local:5200/api/ai/json');
     expect(req.headers['x-access-code'], 'mallang');
     expect(req.headers.containsKey('x-goog-api-key'), isFalse);
     final body = adapter.lastBody!;
@@ -160,7 +160,7 @@ void main() {
   test('서버가 돌려준 오류 문장을 그대로 보여 줌', () async {
     final adapter = _FakeAdapter(401, {'error': '접속 코드가 맞지 않아요. 설정에서 서버 접속 코드를 확인해 주세요.'});
     await expectLater(
-      call(adapter, relay: const AiRelay('http://nas.local:8080')),
+      call(adapter, relay: const AiRelay('http://nas.local:5200')),
       throwsA(isA<ClaudeChatException>().having((e) => e.message, 'message', contains('접속 코드'))),
     );
   });
