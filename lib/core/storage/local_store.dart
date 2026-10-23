@@ -200,7 +200,7 @@ class LocalStore {
   // AI 키·로그인 표·만들던 초안은 이 기기에만 두고, 아래 값만 서버와 맞춰요.
 
   static const _syncedExact = {'my_profile', 'favorites_v1', 'chat_rooms_v1', 'library_v1'};
-  static const _syncedPrefixes = ['run_', 'album_', 'specials_', 'tempo_', 'nickname_'];
+  static const _syncedPrefixes = ['run_', 'album_', 'specials_', 'tempo_', 'nickname_', 'persona_'];
   static const _syncTimesKey = 'sync_ts_v1';
 
   static bool isSyncedKey(String key) => _syncedExact.contains(key) || _syncedPrefixes.any(key.startsWith);
@@ -365,6 +365,7 @@ class LocalStore {
     await _write(_albumKey(characterId), null);
     await _write('tempo_$characterId', null);
     await _write('nickname_$characterId', null);
+    await _write('persona_$characterId', null);
     await _write('specials_$characterId', null);
   }
 
@@ -400,4 +401,10 @@ class LocalStore {
 
   Future<void> saveChatNickname(String characterId, String nickname) =>
       _write('nickname_$characterId', nickname);
+
+  /// 이 캐릭터와의 대화에서 쓰는 내 설정(페르소나). 없으면 기본 페르소나
+  String? chatPersona(String characterId) => _getString('persona_$characterId');
+
+  Future<void> saveChatPersona(String characterId, String persona) =>
+      _write('persona_$characterId', persona);
 }

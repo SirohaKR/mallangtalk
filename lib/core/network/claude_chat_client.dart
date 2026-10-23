@@ -85,6 +85,7 @@ class ClaudeChatClient {
     required List<String> newUserMessages,
     String userName = '너',
     String userIntro = '',
+    String userPersona = '',
     FreeTalkPace pace = FreeTalkPace.open,
     List<String> memories = const [],
   }) async {
@@ -108,7 +109,7 @@ class ClaudeChatClient {
 ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 
 [유저]
-이름(별명): $userName${userIntro.isNotEmpty ? '\n소개: $userIntro' : ''}
+이름(별명): $userName${userIntro.isNotEmpty ? '\n소개: $userIntro' : ''}${userPersona.isNotEmpty ? '\n유저 설정(페르소나, 캐릭터는 이 설정을 이미 알고 있는 것처럼 대한다):\n$userPersona' : ''}
 
 [현재 관계]
 ${character.name}에게 유저는 지금 "$stageLabel" 단계다.${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
