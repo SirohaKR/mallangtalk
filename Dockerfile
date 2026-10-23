@@ -19,7 +19,8 @@ COPY packages ./packages
 COPY server/pubspec.yaml server/pubspec.lock ./server/
 RUN flutter pub get && cd server && dart pub get
 COPY . .
-RUN flutter build web --release --no-web-resources-cdn
+# 빌드 시각을 앱 설정 맨 아래에 보여 줘서, 새 버전이 떴는지 확인할 수 있게 함
+RUN flutter build web --release --no-web-resources-cdn --dart-define=BUILD_TIME="$(date -u +%Y-%m-%d\ %H:%M) UTC"
 RUN mkdir -p /out && cd server && dart compile exe bin/server.dart -o /out/server
 
 FROM debian:bookworm-slim

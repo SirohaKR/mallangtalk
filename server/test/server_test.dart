@@ -117,11 +117,15 @@ USE_SERVER_AI_KEYS=true
     final dir = await Directory.systemTemp.createTemp('mallangtalk_web');
     addTearDown(() => dir.delete(recursive: true));
     File('${dir.path}/index.html').writeAsStringSync('<html>말랑톡</html>');
+    File('${dir.path}/main.dart.js').writeAsStringSync('// app');
     final handler = buildHandler(ServerConfig(keys: const {}, webDir: dir.path), store: Store.open(':memory:'));
     final response = await handler(shelf.Request('GET', Uri.parse('http://localhost/')));
     expect(response.statusCode, 200);
     expect(await response.readAsString(), contains('말랑톡'));
     expect(response.headers['cache-control'], 'no-cache');
+    // 앱 코드도 새 빌드가 바로 반영되게
+    final js = await handler(shelf.Request('GET', Uri.parse('http://localhost/main.dart.js')));
+    expect(js.headers['cache-control'], 'no-cache');
   });
 
   test('서버 키는 기본으로 잠겨 있어서 .env에 키가 있어도 앱에 알리지 않고 대신 부르지도 않음', () async {

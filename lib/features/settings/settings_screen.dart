@@ -309,6 +309,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 '대화 속도와 이 대화에서 쓸 별명은 캐릭터마다 대화방 오른쪽 위 메뉴에서 바꿔요.',
                 style: AppTextStyles.messageTime,
               ),
+              // 새로 빌드한 앱이 떴는지 확인용 (나스 Docker 빌드 때 정해짐)
+              if (appBuild.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text('앱 빌드: $appBuild', style: AppTextStyles.messageTime),
+              ],
             ],
           ),
         ),
@@ -350,3 +355,6 @@ class _ServerCard extends StatelessWidget {
     );
   }
 }
+
+/// 앱을 빌드한 시각 (Dockerfile에서 --dart-define=BUILD_TIME으로 넣음, 개발 중에는 비어 있음)
+const appBuild = String.fromEnvironment('BUILD_TIME');
