@@ -37,6 +37,13 @@ class ServerCharacter {
       );
 }
 
+/// 기기 연동 저장값 하나 (값은 String 또는 List<String>, 지웠으면 null)
+class SyncedValue {
+  final Object? value;
+  final int updatedAt;
+  const SyncedValue(this.value, this.updatedAt);
+}
+
 /// [초보자 노트] 말랑톡 서버의 계정·캐릭터 API를 부르는 클라이언트입니다. (서버 쪽은 server/lib/accounts.dart)
 class MallangtalkApi {
   MallangtalkApi({required this.baseUrl, this.token, Dio? dio})
@@ -97,6 +104,25 @@ class MallangtalkApi {
   }
 
   Future<void> deleteCharacter(String id) => _send('DELETE', '/api/characters/${Uri.encodeComponent(id)}');
+
+  /// 기기 연동: 서버에 저장된 내 앱 저장값 전부 {키: (값, 바뀐 시각 ms)}. 값은 글자·글자 목록, 지운 값은 null
+  Future<Map<String, SyncedValue>> myState() async {
+    final json = await _send('GET', '/api/my/state');
+    return {
+      for (final MapEntry(:key, :value) in (json['items'] as Map? ?? const {}).entries)
+        if (value is Map && value['updated_at'] is int)
+          '$key': SyncedValue(_plain(value['value']), value['updated_at'] as int),
+    };
+  }
+
+  Future<void> saveMyState(Map<String, SyncedValue> items) => _send('PUT', '/api/my/state', data: {
+        'items': [
+          for (final MapEntry(:key, :value) in items.entries)
+            {'key': key, 'value': value.value, 'updated_at': value.updatedAt},
+        ],
+      });
+
+  static Object? _plain(Object? value) => value is List ? [for (final v in value) '$v'] : value is String ? value : null;
 
   List<ServerCharacter> _characters(Map<String, dynamic> json) {
     final list = <ServerCharacter>[];

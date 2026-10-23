@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/models/mallangtalk_models.dart';
+import '../network/mallangtalk_api.dart' show SyncedValue;
 
 /// [초보자 노트] 브라우저 저장소(웹에서는 localStorage)를 여는 FutureProvider입니다.
 /// 앱이 뜰 때 한 번만 열고, 아래 LocalStore가 이걸 감싸서 씁니다.
@@ -15,8 +17,65 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences?>((ref) async
 });
 
 final localStoreProvider = Provider<LocalStore>(
-  (ref) => LocalStore(ref.watch(sharedPreferencesProvider).requireValue),
+  (ref) => LocalStore(
+    ref.watch(sharedPreferencesProvider).requireValue,
+    onSyncedWrite: ref.watch(syncOutboxProvider).mark,
+  ),
 );
+
+/// [초보자 노트] 기기 연동할 저장값이 바뀌면 여기에 모였다가, 잠깐 뒤 한꺼번에 서버로 올라가요.
+/// (로그인하기 전이나 서버 없이 열면 sender가 없어서 그냥 모으기만 함)
+class SyncOutbox {
+  final Set<String> _dirty = {};
+  Timer? _timer;
+  bool _sending = false;
+
+  /// 모인 키를 서버로 보내는 함수 (로그인하면 연동 쪽에서 끼움)
+  Future<void> Function(Set<String> keys)? sender;
+
+  static const delay = Duration(milliseconds: 1500);
+
+  void mark(String key) {
+    _dirty.add(key);
+    _schedule(delay);
+  }
+
+  void _schedule(Duration after) {
+    if (sender == null) return;
+    _timer?.cancel();
+    _timer = Timer(after, flush);
+  }
+
+  /// 모인 걸 지금 보냄. 실패하면 다시 모아 뒀다가 조금 뒤에 다시
+  Future<void> flush() async {
+    final send = sender;
+    if (send == null || _dirty.isEmpty || _sending) return;
+    final keys = {..._dirty};
+    _dirty.clear();
+    _sending = true;
+    try {
+      await send(keys);
+    } catch (_) {
+      _dirty.addAll(keys);
+      _schedule(const Duration(seconds: 15));
+    } finally {
+      _sending = false;
+    }
+    if (_dirty.isNotEmpty) _schedule(delay);
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+    sender = null;
+  }
+}
+
+final syncOutboxProvider = Provider<SyncOutbox>((ref) {
+  final outbox = SyncOutbox();
+  ref.onDispose(outbox.stop);
+  return outbox;
+});
 
 /// 이벤트가 끝날 때마다 저장해 두는 진행 기록 (이벤트 중간에 새로고침하면 그 이벤트는 처음부터)
 class SavedRun {
@@ -75,10 +134,13 @@ class SavedRun {
 /// 4단계에서 서버가 생기면 진행 기록과 앨범은 서버 DB(user_play_sessions, user_unlocked_gallery)로 옮기고,
 /// AI 키는 기획대로 계속 브라우저에만 둡니다.
 class LocalStore {
-  LocalStore(this._prefs);
+  LocalStore(this._prefs, {this.onSyncedWrite});
 
   final SharedPreferences? _prefs;
   final Map<String, Object> _memory = {};
+
+  /// 기기 연동할 값이 바뀌었을 때 알림 (서버로 올리려고)
+  final void Function(String key)? onSyncedWrite;
 
   String? _getString(String key) {
     try {
@@ -97,6 +159,17 @@ class LocalStore {
   }
 
   Future<void> _write(String key, Object? value) async {
+    await _put(key, value);
+    if (!isSyncedKey(key)) return;
+    final times = _syncTimes;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final before = times[key] ?? 0;
+    times[key] = now > before ? now : before + 1;
+    await _saveSyncTimes(times);
+    onSyncedWrite?.call(key);
+  }
+
+  Future<void> _put(String key, Object? value) async {
     if (value == null) {
       _memory.remove(key);
     } else {
@@ -115,6 +188,77 @@ class LocalStore {
     } catch (_) {
       // 저장소가 가득 찼거나 막혀도 메모리 값으로 계속 진행
     }
+  }
+
+  // ───────────── 기기 연동 (같은 계정이면 PC·폰이 같은 값) ─────────────
+  // AI 키·로그인 표·만들던 초안은 이 기기에만 두고, 아래 값만 서버와 맞춰요.
+
+  static const _syncedExact = {'my_profile', 'favorites_v1', 'chat_rooms_v1', 'library_v1'};
+  static const _syncedPrefixes = ['run_', 'album_', 'specials_', 'tempo_', 'nickname_'];
+  static const _syncTimesKey = 'sync_ts_v1';
+
+  static bool isSyncedKey(String key) => _syncedExact.contains(key) || _syncedPrefixes.any(key.startsWith);
+
+  /// 키마다 마지막으로 바뀐 시각 (ms). 연동 전부터 있던 값은 기록이 없음
+  /// (LocalStore가 새로 만들어져도 어긋나지 않게 매번 저장소에서 읽음)
+  Map<String, int> get _syncTimes {
+    try {
+      final raw = jsonDecode(_getString(_syncTimesKey) ?? '{}') as Map;
+      return {for (final e in raw.entries) '${e.key}': (e.value as num).toInt()};
+    } catch (_) {
+      return <String, int>{};
+    }
+  }
+
+  Future<void> _saveSyncTimes(Map<String, int> times) => _put(_syncTimesKey, jsonEncode(times));
+
+  int? syncedAt(String key) => _syncTimes[key];
+
+  /// 저장값 그대로 (String 또는 List<String>, 없으면 null)
+  Object? rawValue(String key) {
+    Object? value;
+    try {
+      value = _prefs?.get(key);
+    } catch (_) {}
+    value ??= _memory[key];
+    return value is List ? [for (final v in value) '$v'] : value;
+  }
+
+  /// 이 기기에 있는 연동 대상 키 전부 (지운 기록이 있는 키 포함)
+  Set<String> syncedKeys() {
+    Set<String> keys;
+    try {
+      keys = {...?_prefs?.getKeys(), ..._memory.keys};
+    } catch (_) {
+      keys = {..._memory.keys};
+    }
+    return {
+      for (final k in {...keys, ..._syncTimes.keys})
+        if (isSyncedKey(k)) k,
+    };
+  }
+
+  /// 서버에서 받은 값으로 바꿈 (다시 올리지 않음)
+  Future<void> applyRemote(String key, SyncedValue remote) async {
+    await _put(key, remote.value);
+    await _saveSyncTimes(_syncTimes..[key] = remote.updatedAt);
+  }
+
+  /// 시각만 기록 (연동 전부터 있던 값을 그대로 쓰기로 했을 때)
+  Future<void> markSynced(String key, int updatedAt) async {
+    await _saveSyncTimes(_syncTimes..[key] = updatedAt);
+  }
+
+  /// 이 기기가 마지막으로 연동한 계정 (다른 계정으로 바꿔 로그인하면 이전 계정 값을 지우려고)
+  String? get syncUser => _getString('sync_user');
+  Future<void> saveSyncUser(String username) => _put('sync_user', username);
+
+  /// 연동 대상 값을 이 기기에서 모두 지움 (다른 계정으로 로그인했을 때)
+  Future<void> clearSynced() async {
+    for (final key in syncedKeys()) {
+      await _put(key, null);
+    }
+    await _saveSyncTimes({});
   }
 
   static const _apiKeyKey = 'byok_claude_api_key';

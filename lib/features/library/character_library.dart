@@ -6,6 +6,7 @@ import '../../core/network/mallangtalk_api.dart';
 import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../auth/auth_state.dart';
+import '../auth/state_sync.dart';
 
 /// 앱에 기본으로 들어 있는 캐릭터 시나리오 파일 목록 ('캐릭터 추가 > 받아오기'에 보임)
 const builtinScenarioAssets = [
@@ -227,6 +228,7 @@ final chatRoomsProvider =
 final librarySyncProvider = FutureProvider<void>((ref) async {
   final api = ref.watch(accountApiProvider);
   if (api == null) return;
+  await ref.watch(bootSyncProvider.future); // 기기 연동으로 캐릭터 목록을 먼저 받아 둠
   await ref.read(characterLibraryProvider.notifier).syncWithServer(api);
 });
 

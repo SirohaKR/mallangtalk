@@ -19,6 +19,8 @@ class _FakeServer {
   final saved = <String, ScenarioBundle>{};
   final deleted = <String>[];
   final published = <ServerCharacter>[];
+  /// 기기 연동 저장값 (로그인 표마다 = 계정마다)
+  final state = <String, Map<String, SyncedValue>>{};
 }
 
 class _FakeApi extends MallangtalkApi {
@@ -56,6 +58,18 @@ class _FakeApi extends MallangtalkApi {
 
   @override
   Future<void> deleteCharacter(String id) async => server.deleted.add(id);
+
+  @override
+  Future<Map<String, SyncedValue>> myState() async => {...?server.state[token]};
+
+  @override
+  Future<void> saveMyState(Map<String, SyncedValue> items) async {
+    final mine = server.state.putIfAbsent(token!, () => {});
+    for (final MapEntry(:key, :value) in items.entries) {
+      // 진짜 서버처럼 더 나중에 바뀐 값만 남김
+      if ((mine[key]?.updatedAt ?? -1) <= value.updatedAt) mine[key] = value;
+    }
+  }
 }
 
 void main() {
@@ -158,5 +172,51 @@ void main() {
 
     await library.remove('char_mine');
     expect(server.deleted, ['char_mine']);
+  });
+
+  testWidgets('같은 계정이면 PC와 폰이 내 프로필·즐겨찾기·앨범을 같이 씀, 다른 계정이면 안 섞임', (tester) async {
+    const login = {'auth_token': 'token-1', 'auth_user': '{"username":"jjaet","nickname":"쨋뀨"}'};
+    // PC: 연동 기능 전부터 쓰던 값이 있음 → 로그인하면 서버로 올라감
+    SharedPreferences.setMockInitialValues({
+      ...login,
+      'my_profile': '{"nickname":"쨋뀨","intro":"PC에서 정함"}',
+      'album_$dohaId': ['e1', 'e2'],
+      'byok_key_gemini': 'my-secret-key',
+    });
+    var container = await openApp(tester);
+    expect(server.state['token-1']?['my_profile']?.value, contains('PC에서 정함'));
+    expect(server.state['token-1']?['album_$dohaId']?.value, ['e1', 'e2']);
+    expect(server.state['token-1']?.keys, isNot(contains('byok_key_gemini'))); // AI 키는 안 올림
+
+    await container.read(favoritesProvider.notifier).toggle(dohaId);
+    await settle(tester);
+    expect(server.state['token-1']?['favorites_v1']?.value, [dohaId]);
+
+    // 폰: 처음 열면 서버 값을 받아서 같은 화면
+    SharedPreferences.setMockInitialValues(login);
+    container = await openApp(tester);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('my_profile'), contains('PC에서 정함'));
+    expect(prefs.getStringList('album_$dohaId'), ['e1', 'e2']);
+    expect(container.read(favoritesProvider), {dohaId});
+    expect(find.text('즐겨찾기 1'), findsOneWidget);
+
+    // 폰에서 앨범이 늘면 서버에도 (PC는 다음에 열 때 받음)
+    await container.read(localStoreProvider).saveAlbum(dohaId, ['e1', 'e2', 'e3']);
+    await settle(tester);
+    expect(server.state['token-1']?['album_$dohaId']?.value, ['e1', 'e2', 'e3']);
+
+    // 같은 폰에서 다른 계정으로 로그인하면 이전 계정 값은 지움
+    SharedPreferences.setMockInitialValues({
+      ...Map.fromEntries(prefs.getKeys().map((k) => MapEntry(k, prefs.get(k)!))),
+      'auth_token': 'token-2',
+      'auth_user': '{"username":"friend","nickname":"친구"}',
+    });
+    container = await openApp(tester);
+    final after = await SharedPreferences.getInstance();
+    expect(after.getString('my_profile'), isNull);
+    expect(after.getStringList('album_$dohaId'), isNull);
+    expect(container.read(favoritesProvider), isEmpty);
+    expect(server.state['token-1']?['album_$dohaId']?.value, ['e1', 'e2', 'e3']); // 원래 계정 값은 그대로
   });
 }

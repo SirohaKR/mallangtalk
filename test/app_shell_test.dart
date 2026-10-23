@@ -70,6 +70,13 @@ void main() {
     await tester.tap(find.byTooltip('프로필 보기'));
     await tester.pumpAndSettle();
     expect(find.text('캐릭터 파일'), findsOneWidget);
+    // 프로필 사진을 누르면 크게, 누르면 다시 닫힘
+    await tester.tap(find.byKey(const ValueKey('profile_photo')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo_viewer')), findsOneWidget);
+    await tester.tap(find.byTooltip('닫기'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo_viewer')), findsNothing);
     await tester.tap(find.text('1:1 채팅'));
     await tester.pumpAndSettle();
     expect(find.text('캐릭터 파일'), findsNothing);
