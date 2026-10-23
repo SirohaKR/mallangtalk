@@ -71,6 +71,7 @@ void main() {
       ...fastTempo,
       'byok_claude_api_key': 'sk-ant-test-key-1234',
       'byok_claude_model': 'claude-haiku-5-5',
+      'persona_$dohaId': '도하랑 같은 동네 사는 24살',
     });
     final fake = _FakeClaude();
     final container = await openChat(
@@ -90,6 +91,7 @@ void main() {
     expect(fake.lastUserName, '쨋뀨'); // 이 대화에서 정한 별명으로 불림
     expect(fake.lastSystemSheet, contains('비밀(유저는 아직 모름'));
     expect(fake.lastNewMessages, ['두부 잘 있어?', '보고 싶다']);
+    expect(fake.lastPersona, '도하랑 같은 동네 사는 24살'); // 이 대화의 내 설정을 AI가 앎
     expect(fake.lastHistory.any((m) => m.text == '보고 싶다'), isFalse);
     expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
     expect(container.read(chatRoomProvider(dohaId)).internalAffection, before + 2);
@@ -266,6 +268,7 @@ class _FakeClaude extends ClaudeChatClient {
   List<String> lastNewMessages = const [];
   List<ChatMessageLog> lastHistory = const [];
   final paces = <FreeTalkPace>[];
+  String lastPersona = '';
   /// 이만큼은 실패로 답함
   int failNext = 0;
   /// 주면 이게 끝날 때까지 답을 안 줌 (AI가 오래 걸리는 상황)
@@ -288,10 +291,12 @@ class _FakeClaude extends ClaudeChatClient {
     required List<String> newUserMessages,
     String userName = '너',
     String userIntro = '',
+    String userPersona = '',
     FreeTalkPace pace = FreeTalkPace.open,
     List<String> memories = const [],
   }) async {
     paces.add(pace);
+    lastPersona = userPersona;
     calls.add(newUserMessages);
     final waitFor = gate;
     gate = null;

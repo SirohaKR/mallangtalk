@@ -144,12 +144,14 @@ class _MyProfileEditorState extends ConsumerState<_MyProfileEditor> {
   late final _profile = ref.read(userProfileProvider);
   late final _nickname = TextEditingController(text: _profile.nickname);
   late final _intro = TextEditingController(text: _profile.intro);
+  late final _persona = TextEditingController(text: _profile.persona);
   late String _avatar = _profile.avatarUrl;
 
   @override
   void dispose() {
     _nickname.dispose();
     _intro.dispose();
+    _persona.dispose();
     super.dispose();
   }
 
@@ -195,12 +197,24 @@ class _MyProfileEditorState extends ConsumerState<_MyProfileEditor> {
               maxLength: 60,
               decoration: const InputDecoration(labelText: '한줄 소개', hintText: 'AI 자유대화에서 캐릭터가 참고해요'),
             ),
+            TextField(
+              controller: _persona,
+              minLines: 2,
+              maxLines: 5,
+              maxLength: 400,
+              decoration: const InputDecoration(
+                labelText: '기본 페르소나',
+                alignLabelWithHint: true,
+                hintText: '대화 속 나의 설정 (나이·성격·외모·상황). 캐릭터마다 대화 시작할 때 바꿀 수 있어요',
+                hintMaxLines: 2,
+              ),
+            ),
             const SizedBox(height: AppSpacing.sm),
             ElevatedButton(
               onPressed: () async {
                 await ref
                     .read(userProfileProvider.notifier)
-                    .save(nickname: _nickname.text, intro: _intro.text, avatarUrl: _avatar);
+                    .save(nickname: _nickname.text, intro: _intro.text, avatarUrl: _avatar, persona: _persona.text);
                 if (context.mounted) Navigator.of(context).pop();
               },
               child: const Text('저장'),

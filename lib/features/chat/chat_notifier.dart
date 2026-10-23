@@ -759,6 +759,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               stageLabel: _currentStageLabel(),
               userName: _nickname,
               userIntro: ref.read(userProfileProvider).intro,
+              userPersona: ref.read(chatPersonaProvider(arg)),
               currentEventTitle: state.currentEventId != null
                   ? _eventById(state.currentEventId!)?.title
                   : null,

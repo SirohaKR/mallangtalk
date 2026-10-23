@@ -243,7 +243,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'nickname',
-                child: Text('내 별명: ${ref.read(chatNicknameProvider(id))}'),
+                child: Text('내 별명·설정: ${ref.read(chatNicknameProvider(id))}'),
               ),
               const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
               const PopupMenuItem(value: 'restart', child: Text('처음부터 다시')),
