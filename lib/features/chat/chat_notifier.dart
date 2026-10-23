@@ -44,6 +44,8 @@ class ChatRoomState {
   final String userDraft;
   /// 자유대화가 끝날 때마다 캐릭터가 남긴 한 줄 기억 (다음 자유대화 때 AI가 참고)
   final List<String> memories;
+  /// 자유대화 AI 답장이 실패해서 '다시 보내기'를 띄울지
+  final bool canRetryFreeTalk;
 
   const ChatRoomState({
     required this.character,
@@ -62,6 +64,7 @@ class ChatRoomState {
     this.seenMessageCount = 0,
     this.userDraft = '',
     this.memories = const [],
+    this.canRetryFreeTalk = false,
   });
 
   /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
@@ -96,6 +99,7 @@ class ChatRoomState {
     int? seenMessageCount,
     String? userDraft,
     List<String>? memories,
+    bool? canRetryFreeTalk,
   }) {
     return ChatRoomState(
       character: character,
@@ -117,6 +121,7 @@ class ChatRoomState {
       seenMessageCount: seenMessageCount ?? this.seenMessageCount,
       userDraft: userDraft ?? this.userDraft,
       memories: memories ?? this.memories,
+      canRetryFreeTalk: canRetryFreeTalk ?? this.canRetryFreeTalk,
     );
   }
 }
@@ -137,6 +142,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   Timer? _userBurstReplyTimer;
   /// 내가 지금 입력창에 글자를 치고 있는지 여부
   bool _isUserCurrentlyTypingText = false;
+  /// AI 답장을 기다리는 중인지 (그동안 더 보내면 요청을 겹쳐 보내지 않고 답이 온 뒤 합쳐서 다시)
+  bool _awaitingAiReply = false;
   /// 내가 연속으로 보낸 메시지들을 모아두는 버퍼
   final List<String> _pendingUserBurstTexts = [];
   /// '다시 하기'를 누르면 숫자가 바뀌어서, 이전 회차에서 아직 돌던 연출을 멈추게 함
@@ -694,6 +701,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _userBurstReplyTimer?.cancel();
     _userBurstReplyTimer = Timer(const Duration(milliseconds: 2200), () {
       // 만약 유저가 아직 입력창에 다음 문장을 치고 있는 중이면 답장하지 않고 더 기다림!
+      // AI 답을 기다리는 중이면 그 답이 오면 새로 보낸 말까지 합쳐서 다시 물어봄 (요청이 겹치지 않게)
+      if (_awaitingAiReply) return;
       if (_isUserCurrentlyTypingText) {
         _scheduleBurstReply();
         return;
@@ -726,6 +735,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final historyBeforeBurst = state.messages.where((m) => !m.isUnread).toList();
 
     // 1. 내가 보낸 연속 톡들의 '1'이 한꺼번에 사라짐
+    final burstIds = {for (final m in state.messages) if (m.isUser && m.isUnread) m.id};
+    state = state.copyWith(canRetryFreeTalk: false);
     _markAllUserMessagesRead();
     await Future.delayed(const Duration(milliseconds: 350));
 
@@ -737,6 +748,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final byok = ref.read(byokSettingsProvider);
     if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
+      _awaitingAiReply = true;
       try {
         final reply = await ref.read(claudeChatClientProvider).reply(
               provider: byok.provider,
@@ -756,17 +768,33 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               pace: pace,
               memories: state.memories,
             );
+        _awaitingAiReply = false;
         if (!stillValid()) return;
+        if (_pendingUserBurstTexts.isNotEmpty) {
+          // 답을 기다리는 동안 더 보냈으면 이 답은 버리고, 이번 말까지 한꺼번에 다시 물어봄
+          _requeueBurst(combinedInput, burstIds);
+          _scheduleBurstReply();
+          return;
+        }
         replyPieces = [for (final text in reply.bubbles) ScriptBubblePiece(text: text)];
         affectionDelta = reply.affectionDelta;
         ends = limited && (reply.ends || pace.mustEnd);
         memory = reply.memory;
       } on ClaudeChatException catch (e) {
-        _freeTurns--;
+        _awaitingAiReply = false;
         if (!stillValid()) return;
-        state = state.copyWith(isCharacterTyping: false);
+        // 못 읽은 걸로 되돌려 두고('1' 다시 표시) '다시 보내기'를 누르거나 더 보내면 같이 다시 물어봄
+        final sentMore = _pendingUserBurstTexts.isNotEmpty;
+        _requeueBurst(combinedInput, burstIds);
+        if (sentMore) {
+          _scheduleBurstReply(); // 더 보낸 말과 같이 곧 다시 물어보니 오류는 안 띄움
+          return;
+        }
+        state = state.copyWith(canRetryFreeTalk: true);
         _addSystemNotice(e.message);
         return;
+      } finally {
+        _awaitingAiReply = false;
       }
     } else if (limited && _freeTurns >= cannedFreeTalkTurns) {
       replyPieces = const [
@@ -801,6 +829,25 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     } else {
       _saveRun();
     }
+  }
+
+  /// 답을 못 받은 내 톡들을 다시 '안 읽음'으로 돌리고, 다음에 물어볼 말 맨 앞에 되돌려 둠
+  void _requeueBurst(List<String> texts, Set<String> ids) {
+    _freeTurns--;
+    _pendingUserBurstTexts.insertAll(0, texts);
+    state = state.copyWith(
+      isCharacterTyping: false,
+      messages: [
+        for (final m in state.messages) ids.contains(m.id) ? m.copyWith(isUnread: true) : m,
+      ],
+    );
+  }
+
+  /// AI 답장이 실패했을 때 '다시 보내기'
+  void retryFreeTalk() {
+    if (!state.canRetryFreeTalk || !state.isByokAiModeEnabled) return;
+    _userBurstReplyTimer?.cancel();
+    _processCombinedUserBurstReply();
   }
 
   /// 이야기가 아직 진행 중(또는 조건이 안 맞아 멈춤)이라 자유대화를 끝내고 돌아가야 하는지
@@ -852,7 +899,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _pendingUserBurstTexts.clear();
     _isUserCurrentlyTypingText = false;
     final runId = ++_runId;
-    state = state.copyWith(isByokAiModeEnabled: false, isCharacterTyping: false);
+    state = state.copyWith(isByokAiModeEnabled: false, isCharacterTyping: false, canRetryFreeTalk: false);
     if (byCharacter) _addSystemNotice('자유대화가 끝났어요');
     _saveRun();
     if (state.progress == StoryProgress.stuck) {

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../shared/models/mallangtalk_models.dart';
 
 /// 서버가 돌려준 오류 (화면에 그대로 보여 줄 수 있는 문장)
@@ -49,8 +50,9 @@ class MallangtalkApi {
   MallangtalkApi({required this.baseUrl, this.token, Dio? dio})
       : _dio = dio ??
             Dio(BaseOptions(
-              connectTimeout: const Duration(seconds: 10),
-              receiveTimeout: const Duration(seconds: 60),
+              // 웹에서는 connectTimeout이 '응답이 올 때까지'라 큰 캐릭터·연동 값을 올리다 끊길 수 있어서 안 둠
+              connectTimeout: kIsWeb ? null : const Duration(seconds: 10),
+              receiveTimeout: const Duration(minutes: 2),
             ));
 
   final String baseUrl;
