@@ -46,6 +46,13 @@ class ChatRoomState {
   final List<String> memories;
   /// 자유대화 AI 답장이 실패해서 '다시 보내기'를 띄울지
   final bool canRetryFreeTalk;
+  /// 공략을 끝내고 스크립트(호감도·일상 대화·엔딩)를 다 봐서 자유대화가 열렸는지
+  final bool freeTalkUnlocked;
+  /// 방금 열려서 '스크립트를 전부 봤어요' 팝업을 띄울 차례인지
+  final bool freeTalkJustUnlocked;
+  /// 본 스크립트 수 / 전체 (잠겨 있을 때 안내용)
+  final int scriptsSeen;
+  final int scriptsTotal;
 
   const ChatRoomState({
     required this.character,
@@ -65,6 +72,10 @@ class ChatRoomState {
     this.userDraft = '',
     this.memories = const [],
     this.canRetryFreeTalk = false,
+    this.freeTalkUnlocked = false,
+    this.freeTalkJustUnlocked = false,
+    this.scriptsSeen = 0,
+    this.scriptsTotal = 0,
   });
 
   /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
@@ -100,6 +111,10 @@ class ChatRoomState {
     String? userDraft,
     List<String>? memories,
     bool? canRetryFreeTalk,
+    bool? freeTalkUnlocked,
+    bool? freeTalkJustUnlocked,
+    int? scriptsSeen,
+    int? scriptsTotal,
   }) {
     return ChatRoomState(
       character: character,
@@ -122,6 +137,10 @@ class ChatRoomState {
       userDraft: userDraft ?? this.userDraft,
       memories: memories ?? this.memories,
       canRetryFreeTalk: canRetryFreeTalk ?? this.canRetryFreeTalk,
+      freeTalkUnlocked: freeTalkUnlocked ?? this.freeTalkUnlocked,
+      freeTalkJustUnlocked: freeTalkJustUnlocked ?? this.freeTalkJustUnlocked,
+      scriptsSeen: scriptsSeen ?? this.scriptsSeen,
+      scriptsTotal: scriptsTotal ?? this.scriptsTotal,
     );
   }
 }
@@ -142,6 +161,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   Timer? _userBurstReplyTimer;
   /// 내가 지금 입력창에 글자를 치고 있는지 여부
   bool _isUserCurrentlyTypingText = false;
+  /// 지금까지 끝까지 본 스크립트(호감도 이벤트·일상 대화·엔딩) ID. 회차가 바뀌어도 남음
+  final Set<String> _seenScripts = {};
+
   /// AI 답장을 기다리는 중인지 (그동안 더 보내면 요청을 겹쳐 보내지 않고 답이 온 뒤 합쳐서 다시)
   bool _awaitingAiReply = false;
   /// 내가 연속으로 보낸 메시지들을 모아두는 버퍼
@@ -175,6 +197,16 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _store = ref.watch(localStoreProvider);
     final album = _store.loadAlbum(characterId);
     final saved = _store.loadRun(characterId);
+    _seenScripts
+      ..clear()
+      ..addAll(_store.loadSeenEvents(characterId))
+      // 이 기능 전에 진행한 기록도 인정
+      ..addAll(saved?.completedEventIds ?? const [])
+      ..addAll([
+        if (saved?.cleared ?? false)
+          for (final e in bundle.events)
+            if (e.isEnding) e.id,
+      ]);
 
     // 저장된 진행 기록이 있으면 마지막으로 끝낸 이벤트 다음부터 이어서 진행
     if (saved != null) {
@@ -189,7 +221,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       );
       final runId = _runId;
       final node = saved.nodeId != null ? _bundle.nodes[saved.nodeId] : null;
-      if (!saved.cleared && node != null && _eventById(node.eventId) != null) {
+      if (node != null && _eventById(node.eventId) != null) {
         // 이벤트 중간에 나갔으면 나가기 전 그 자리부터 (치던 말풍선 다음, 또는 선택지)
         Future.microtask(() => _playNode(node, runId, from: saved.nextBubble));
         return restored.copyWith(currentEventId: node.eventId, currentStepOrder: node.stepOrder);
@@ -197,8 +229,11 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       if (!saved.cleared) {
         Future.microtask(() => _advance(runId));
       } else {
-        // 공략을 끝낸 뒤에도 특별한 시간에 들어오면 그 시간 톡은 옴
-        Future.microtask(() => _playSpecialIfDue(runId));
+        // 공략을 끝낸 뒤에도 특별한 시간에 들어오면 그 시간 톡은 옴. 그다음 못 본 일상 대화
+        Future.microtask(() async {
+          await _playSpecialIfDue(runId);
+          if (runId == _runId && state.currentChoices.isEmpty) await _continueEpilogue(runId);
+        });
       }
       return restored;
     }
@@ -219,8 +254,45 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       messages: const [],
       currentChoices: const [],
       unlockedCutsceneEventIds: unlockedCutscenes,
+      freeTalkUnlocked: _store.freeTalkUnlocked(_bundle.character.id),
+      scriptsSeen: _scriptIds.where(_seenScripts.contains).length,
+      scriptsTotal: _scriptIds.length,
     );
   }
+
+  /// 자유대화를 열려면 다 봐야 하는 스크립트 (특별한 시간 톡은 시간이 맞아야 와서 빼요)
+  List<String> get _scriptIds => [
+        for (final e in _bundle.events)
+          if (e.isAffectionEvent || e.isDaily || e.isEnding) e.id,
+      ];
+
+  void _markSeen(ScenarioEventModel event) {
+    if (!(event.isAffectionEvent || event.isDaily || event.isEnding)) return;
+    if (!_seenScripts.add(event.id)) return;
+    _store.saveSeenEvents(_bundle.character.id, _seenScripts.toList());
+    state = state.copyWith(scriptsSeen: _scriptIds.where(_seenScripts.contains).length);
+  }
+
+  /// 공략을 끝낸 뒤: 아직 못 본 일상 대화를 이어서 보여 주고, 다 봤으면 자유대화를 엶
+  Future<void> _continueEpilogue(int runId) async {
+    if (state.progress != StoryProgress.cleared) return;
+    final ids = _scriptIds;
+    if (state.freeTalkUnlocked) return;
+    final next = _bundle.events.where((e) => e.isDaily && !_seenScripts.contains(e.id)).firstOrNull;
+    if (next != null) {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (runId != _runId) return;
+      await _playEvent(next, runId);
+      return;
+    }
+    if (!ids.every(_seenScripts.contains)) return; // (엔딩을 다시 하기로 지난 회차 등 — 여기선 거의 없음)
+    _store.saveFreeTalkUnlocked(_bundle.character.id);
+    state = state.copyWith(freeTalkUnlocked: true, freeTalkJustUnlocked: true);
+    _addSystemNotice('스크립트를 전부 봤어요. 이제 자유대화를 할 수 있어요');
+  }
+
+  /// '스크립트를 전부 봤어요' 팝업을 닫음
+  void ackFreeTalkUnlocked() => state = state.copyWith(freeTalkJustUnlocked: false);
 
   bool _started = false;
 
@@ -246,7 +318,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 진행 기록을 브라우저에 저장. 이벤트 경계마다, 그리고 이벤트 중간에는 말풍선마다
   /// [node]·[nextBubble]로 돌아올 자리를 함께 저장해서 나갔다 와도 그 자리부터 이어짐
-  void _saveRun({bool cleared = false, ScriptNodeModel? node, int nextBubble = 0}) {
+  void _saveRun({bool? cleared, ScriptNodeModel? node, int nextBubble = 0}) {
+    cleared ??= state.progress == StoryProgress.cleared;
     _store.saveRun(
       _bundle.character.id,
       SavedRun(
@@ -395,10 +468,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       await _advance(runId);
       return;
     }
+    _markSeen(event);
     if (event.isEnding) {
       _addSystemNotice('${state.character.name} 공략 완료');
       state = state.copyWith(progress: StoryProgress.cleared);
       _saveRun(cleared: true);
+      await _continueEpilogue(runId);
       return;
     }
 
@@ -406,6 +481,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       completedEventIds: {...state.completedEventIds, event.id}.toList(),
     );
     _saveRun();
+    if (state.progress == StoryProgress.cleared) {
+      await _continueEpilogue(runId); // 엔딩 뒤 남은 일상 대화
+      return;
+    }
     await Future.delayed(const Duration(milliseconds: 1200));
     if (runId != _runId) return;
     await _advance(runId);
@@ -464,6 +543,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     } else {
       _addSystemNotice('${state.character.name} 공략 완료');
       state = state.copyWith(progress: StoryProgress.cleared);
+      _saveRun(cleared: true);
+      await _continueEpilogue(runId);
     }
   }
 
@@ -961,6 +1042,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 자유대화 켜기·끄기. 이야기 도중에 켜면 하던 이벤트를 멈추고, 끄면 이야기로 돌아감
   void toggleDirectInputMode(bool enabled) {
     if (enabled == state.isByokAiModeEnabled) return;
+    if (enabled && !state.freeTalkUnlocked) return; // 공략을 끝내고 스크립트를 다 봐야 열림
     if (!enabled) {
       _endFreeTalk(byCharacter: false);
       return;

@@ -200,7 +200,7 @@ class LocalStore {
   // AI 키·로그인 표·만들던 초안은 이 기기에만 두고, 아래 값만 서버와 맞춰요.
 
   static const _syncedExact = {'my_profile', 'favorites_v1', 'chat_rooms_v1', 'library_v1'};
-  static const _syncedPrefixes = ['run_', 'album_', 'specials_', 'tempo_', 'nickname_', 'persona_'];
+  static const _syncedPrefixes = ['run_', 'album_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
   static const _syncTimesKey = 'sync_ts_v1';
 
   static bool isSyncedKey(String key) => _syncedExact.contains(key) || _syncedPrefixes.any(key.startsWith);
@@ -297,6 +297,17 @@ class LocalStore {
   Future<void> saveAlbum(String characterId, List<String> eventIds) =>
       _write(_albumKey(characterId), List<String>.of(eventIds));
 
+  /// 지금까지 끝까지 본 이벤트(호감도·일상·엔딩) ID. '다시 하기'를 해도 남음 (자유대화 잠금 해제 판정용)
+  List<String> loadSeenEvents(String characterId) => _getStringList('seen_$characterId') ?? const [];
+
+  Future<void> saveSeenEvents(String characterId, List<String> eventIds) =>
+      _write('seen_$characterId', List<String>.of(eventIds));
+
+  /// 스크립트를 다 봐서 자유대화가 열렸는지
+  bool freeTalkUnlocked(String characterId) => _getString('freetalk_$characterId') == '1';
+
+  Future<void> saveFreeTalkUnlocked(String characterId) => _write('freetalk_$characterId', '1');
+
   /// 이미 본 특별 이벤트 (실제 시간 1회성, '다시 하기'를 해도 다시 안 옴)
   List<String> loadSeenSpecials(String characterId) =>
       _getStringList('specials_$characterId') ?? const [];
@@ -366,6 +377,8 @@ class LocalStore {
     await _write('tempo_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
+    await _write('seen_$characterId', null);
+    await _write('freetalk_$characterId', null);
     await _write('specials_$characterId', null);
   }
 

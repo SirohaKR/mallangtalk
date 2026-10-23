@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -133,7 +136,8 @@ void main() {
   });
 
   testWidgets('자유대화에서 엔터로 보내도 입력창에 커서가 남아 연달아 칠 수 있음', (tester) async {
-    final container = await openChat(tester);
+    SharedPreferences.setMockInitialValues({...fastTempo, ...freeTalkOpen});
+    final container = await openDohaChat(tester);
     container.read(chatRoomProvider(dohaId).notifier).toggleDirectInputMode(true);
     await tester.pump();
 
@@ -223,5 +227,57 @@ void main() {
     await tester.tap(find.widgetWithText(ElevatedButton, '다음엔 직접 두부 보러 가겠다고 하기'));
     await settle(tester);
     expect(state().currentEventId, 'daily_lunch_menu');
+  });
+
+  testWidgets('자유대화는 처음엔 잠겨 있어서 켜려 해도 안 켜지고 안내만 나옴', (tester) async {
+    final container = await openChat(tester);
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    expect(container.read(chatRoomProvider(dohaId)).freeTalkUnlocked, isFalse);
+    notifier.toggleDirectInputMode(true);
+    expect(container.read(chatRoomProvider(dohaId)).isByokAiModeEnabled, isFalse);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pump();
+    expect(find.textContaining('스크립트를 전부 보면 자유대화가 열려요'), findsOneWidget);
+    expect(container.read(chatRoomProvider(dohaId)).isByokAiModeEnabled, isFalse);
+    await settle(tester);
+  });
+
+  testWidgets('공략 뒤 못 본 일상 대화가 이어서 나오고, 다 보면 팝업과 함께 자유대화가 열림', (tester) async {
+    final bundle = loadSampleBundle();
+    final all = [
+      for (final e in bundle.events)
+        if (e.isAffectionEvent || e.isDaily || e.isEnding) e.id,
+    ];
+    final run = SavedRun(
+      affection: 100,
+      flags: const [],
+      completedEventIds: [for (final id in all) if (id != 'daily_rain') id],
+      messages: const [],
+      cleared: true,
+    );
+    SharedPreferences.setMockInitialValues({...fastTempo, 'run_$dohaId': jsonEncode(run.toJson())});
+    final container = await openDohaChat(tester, bundle: bundle);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+
+    expect(state().progress, StoryProgress.cleared);
+    expect(state().freeTalkUnlocked, isFalse);
+    expect(state().currentEventId, 'daily_rain');
+    expect(await skipDailyTalks(tester), ['daily_rain']);
+
+    expect(find.text('스크립트를 전부 봤어요'), findsOneWidget);
+    await tester.tap(find.text('좋아요'));
+    await settle(tester);
+    expect(find.text('스크립트를 전부 봤어요'), findsNothing);
+    expect(state().freeTalkUnlocked, isTrue);
+
+    container.read(chatRoomProvider(dohaId).notifier).toggleDirectInputMode(true);
+    expect(state().isByokAiModeEnabled, isTrue);
+
+    // 새로 열어도 열린 채로, 팝업은 다시 안 뜸
+    await openDohaChat(tester, bundle: bundle);
+    expect(dohaState(tester).freeTalkUnlocked, isTrue);
+    expect(find.text('스크립트를 전부 봤어요'), findsNothing);
+    await settle(tester);
   });
 }
