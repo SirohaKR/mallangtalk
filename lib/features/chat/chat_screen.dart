@@ -351,6 +351,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                     ],
+                    if (chatState.isByokAiModeEnabled && chatState.canRetryFreeTalk)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: OutlinedButton.icon(
+                          onPressed: notifier.retryFreeTalk,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('다시 보내기'),
+                        ),
+                      ),
                     if (chatState.isByokAiModeEnabled && !hasApiKey)
                       GestureDetector(
                         onTap: () => context.go('/settings'),

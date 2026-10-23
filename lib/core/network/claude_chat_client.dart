@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import 'ai_provider.dart';
@@ -40,10 +41,7 @@ final claudeChatClientProvider = Provider<ClaudeChatClient>((ref) => ClaudeChatC
 class ClaudeChatClient {
   ClaudeChatClient({Dio? dio})
       : _dio = dio ??
-            Dio(BaseOptions(
-              connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(seconds: 90),
-            ));
+            Dio(aiDioOptions(total: const Duration(minutes: 2), web: kIsWeb));
 
   final Dio _dio;
 

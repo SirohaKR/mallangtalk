@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -200,6 +201,57 @@ void main() {
     expect(fake.paces.last.mustEnd, isTrue);
     expect(dohaState(tester).isByokAiModeEnabled, isFalse);
   });
+
+  testWidgets('AI 답장이 실패하면 내 톡은 안 읽음으로 남고, 다시 보내기를 누르면 같이 다시 물어봄', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    final fake = _FakeClaude()..failNext = 1;
+    final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    notifier.toggleDirectInputMode(true);
+    notifier.sendUserMessage(text: '황태자 전하도');
+    notifier.sendUserMessage(text: '좀 외로울거같아');
+    await settle(tester);
+
+    var state = dohaState(tester);
+    expect(find.text('AI 답이 너무 오래 걸려서 끊겼어요.'), findsOneWidget);
+    expect(state.canRetryFreeTalk, isTrue);
+    expect(state.messages.where((m) => m.isUser && m.isUnread).length, 2);
+    expect(find.text('다시 보내기'), findsOneWidget);
+
+    await tester.tap(find.text('다시 보내기'));
+    await settle(tester);
+    state = dohaState(tester);
+    expect(fake.lastNewMessages, ['황태자 전하도', '좀 외로울거같아']);
+    expect(fake.lastHistory.any((m) => m.text == '황태자 전하도'), isFalse); // 같은 말을 두 번 보내지 않음
+    expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
+    expect(state.canRetryFreeTalk, isFalse);
+    expect(find.text('다시 보내기'), findsNothing);
+  });
+
+  testWidgets('끊어서 보내다 잠깐 쉬고 또 보내면 요청을 겹쳐 보내지 않고 답이 온 뒤 전부 합쳐서 다시 물어봄', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    final slow = Completer<void>();
+    final fake = _FakeClaude()..gate = slow.future;
+    final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    notifier.toggleDirectInputMode(true);
+
+    notifier.sendUserMessage(text: '근데 황태자 전하도');
+    notifier.sendUserMessage(text: '너 잘난거 알면');
+    await tester.pump(const Duration(seconds: 3)); // 잠깐 쉼 → 첫 요청이 나감
+    expect(fake.calls.length, 1);
+    notifier.sendUserMessage(text: '같이 머리 맞댈 수도 있어서');
+    await tester.pump(const Duration(seconds: 3)); // 첫 답을 기다리는 중에는 새 요청을 안 보냄
+    expect(fake.calls.length, 1);
+
+    slow.complete(); // 늦게 온 첫 답은 버리고 세 마디를 한꺼번에 다시 물어봄
+    await settle(tester);
+    expect(fake.calls.length, 2);
+    expect(fake.calls.last, ['근데 황태자 전하도', '너 잘난거 알면', '같이 머리 맞댈 수도 있어서']);
+    expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
+    expect(dohaState(tester).messages.where((m) => m.isUser && m.isUnread), isEmpty);
+    expect(find.textContaining('끊겼어요'), findsNothing);
+  });
 }
 
 class _FakeClaude extends ClaudeChatClient {
@@ -214,6 +266,11 @@ class _FakeClaude extends ClaudeChatClient {
   List<String> lastNewMessages = const [];
   List<ChatMessageLog> lastHistory = const [];
   final paces = <FreeTalkPace>[];
+  /// 이만큼은 실패로 답함
+  int failNext = 0;
+  /// 주면 이게 끝날 때까지 답을 안 줌 (AI가 오래 걸리는 상황)
+  Future<void>? gate;
+  final calls = <List<String>>[];
   List<String> lastMemories = const [];
   /// 이 번째 답장에서 캐릭터가 마무리함 (null이면 AI가 스스로는 안 끝냄)
   int? endAtTurn;
@@ -235,6 +292,14 @@ class _FakeClaude extends ClaudeChatClient {
     List<String> memories = const [],
   }) async {
     paces.add(pace);
+    calls.add(newUserMessages);
+    final waitFor = gate;
+    gate = null;
+    if (waitFor != null) await waitFor;
+    if (failNext > 0) {
+      failNext--;
+      throw const ClaudeChatException('AI 답이 너무 오래 걸려서 끊겼어요.');
+    }
     lastMemories = memories;
     if (pace.turn == endAtTurn || pace.mustEnd) {
       return const FreeChatReply(

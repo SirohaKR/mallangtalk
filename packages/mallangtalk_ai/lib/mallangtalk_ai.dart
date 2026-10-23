@@ -158,8 +158,14 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
     if (relay != null && body is Map && body['error'] is String) {
       throw ClaudeChatException(body['error'] as String);
     }
+    if (_isTimeout(e)) {
+      throw const ClaudeChatException('AI 답이 너무 오래 걸려서 끊겼어요. 다시 보내 보거나, 설정에서 더 빠른 모델(Flash 등)로 바꿔 보세요.');
+    }
     if (relay != null && status == null) {
       throw const ClaudeChatException('말랑톡 서버에 연결하지 못했어요. 서버가 켜져 있는지 확인해 주세요.');
+    }
+    if (status == null) {
+      throw const ClaudeChatException('AI 회사 서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 보내 주세요.');
     }
     final error = body is Map ? body['error'] : null;
     final apiMessage = error is Map ? error['message'] as String? : null;
@@ -175,10 +181,23 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
         '오늘 쓸 수 있는 무료 한도를 다 썼어요. 내일 다시 하거나, 결제를 연결한 키·다른 모델로 바꿔 주세요.',
       429 => '요청이 너무 많거나 크레딧이 부족해요. 1~2분 뒤에 다시 시도해 주세요.',
       503 => 'AI 회사 서버가 지금 붐벼요. 잠시 후 다시 시도해 주세요.',
-      _ => 'AI 호출 실패${status != null ? ' ($status)' : ''}: ${apiMessage ?? e.message ?? '네트워크 오류'}',
+      _ => 'AI 호출 실패 ($status)${apiMessage != null ? ': $apiMessage' : '. 잠시 후 다시 시도해 주세요.'}',
     });
   }
 }
+
+bool _isTimeout(DioException e) =>
+    e.type == DioExceptionType.connectionTimeout ||
+    e.type == DioExceptionType.receiveTimeout ||
+    e.type == DioExceptionType.sendTimeout;
+
+/// [초보자 노트] AI를 부를 때 쓰는 기다림 시간. 웹(브라우저)에서는 dio의 connectTimeout이
+/// '응답 헤더가 올 때까지'라서 AI가 답을 다 만들 때까지 걸리는 시간과 같아요.
+/// 그래서 웹에서는 connectTimeout을 두지 않고 receiveTimeout 하나로 전체 시간을 재요.
+BaseOptions aiDioOptions({required Duration total, required bool web}) => BaseOptions(
+      connectTimeout: web ? null : const Duration(seconds: 15),
+      receiveTimeout: total,
+    );
 
 /// 안전 분류기가 거절하면 서버가 알맞은 다른 Claude 모델로 대신 답하게 함 (Haiku는 미지원)
 bool claudeSupportsFallback(String model) =>

@@ -75,6 +75,22 @@ void main() {
     return json;
   }
 
+  test('오래 걸려서 끊기면 영어 원문 대신 한국어 안내, 웹에서는 응답 전체 시간만 잼', () async {
+    final dio = Dio()..httpClientAdapter = _TimeoutAdapter();
+    await expectLater(
+      callJsonModel(dio,
+          provider: AiProvider.gemini, apiKey: 'k', model: 'm', system: 's', user: 'u',
+          schema: const {'type': 'object'}, maxTokens: 10),
+      throwsA(isA<ClaudeChatException>()
+          .having((e) => e.message, 'm', contains('너무 오래 걸려서'))
+          .having((e) => e.message, 'm', isNot(contains('connectTimeout')))),
+    );
+    final web = aiDioOptions(total: const Duration(minutes: 2), web: true);
+    expect(web.connectTimeout, isNull); // 웹에서는 AI가 답을 만드는 동안 끊지 않음
+    expect(web.receiveTimeout, const Duration(minutes: 2));
+    expect(aiDioOptions(total: const Duration(minutes: 2), web: false).connectTimeout, const Duration(seconds: 15));
+  });
+
   test('분당 한도(429)에 걸리면 Gemini가 알려 준 시간만큼 기다렸다가 다시 함', () async {
     final adapter = _SeqAdapter([(429, _geminiLimit()), (429, _geminiLimit()), (200, _geminiOk())]);
     expect(await call(adapter), {'ok': true});
@@ -106,4 +122,13 @@ void main() {
     expect(AiProvider.gemini.defaultModel, 'gemini-3.8-flash');
     expect(AiProvider.claude.defaultModel, 'claude-opus-5-5');
   });
+}
+
+class _TimeoutAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) =>
+      throw DioException.connectionTimeout(requestOptions: options, timeout: const Duration(seconds: 15));
+
+  @override
+  void close({bool force = false}) {}
 }

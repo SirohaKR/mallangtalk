@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import 'claude_chat_client.dart';
@@ -40,10 +41,7 @@ final claudeStudioClientProvider = Provider<ClaudeStudioClient>((ref) => ClaudeS
 class ClaudeStudioClient {
   ClaudeStudioClient({Dio? dio})
       : _dio = dio ??
-            Dio(BaseOptions(
-              connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(minutes: 6),
-            ));
+            Dio(aiDioOptions(total: const Duration(minutes: 6), web: kIsWeb));
 
   final Dio _dio;
 
