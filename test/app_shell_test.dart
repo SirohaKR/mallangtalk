@@ -182,7 +182,7 @@ void main() {
     await settle(tester);
     expect(find.text('서이준과 대화 시작'), findsOneWidget);
     expect(find.widgetWithText(TextField, '말랑'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), '후배님');
+    await tester.enterText(find.byType(TextField).first, '후배님');
     await tester.tap(find.text('대화 시작'));
     await settle(tester);
 
@@ -211,10 +211,16 @@ void main() {
     await tester.tap(find.text('1:1 채팅'));
     await settle(tester);
     expect(find.text('윤도하와 대화 시작'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), '말랑');
+    await tester.enterText(find.byType(TextField).first, '말랑');
+    // 별명과 함께 내 설정(페르소나)도 정하고, 다른 캐릭터에도 기본으로
+    await tester.enterText(find.byKey(const ValueKey('persona_field')), '24살 대학원생, 밤에 러닝함');
+    await tester.tap(find.text('다른 캐릭터에도 기본으로 쓰기'));
     await tester.tap(find.text('대화 시작'));
     await settle(tester);
     expect(find.byType(ChatScreen), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('persona_$dohaId'), '24살 대학원생, 밤에 러닝함');
+    expect(prefs.getString('my_profile'), contains('밤에 러닝함'));
 
     // 두 번째: 별명이 이미 있으면 바로 대화방
     appRouter.go('/friends');

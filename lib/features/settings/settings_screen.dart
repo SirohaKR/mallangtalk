@@ -49,6 +49,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   late final _nickname = TextEditingController(text: ref.read(userProfileProvider).nickname);
   late final _intro = TextEditingController(text: ref.read(userProfileProvider).intro);
+  late final _persona = TextEditingController(text: ref.read(userProfileProvider).persona);
 
   @override
   void dispose() {
@@ -57,6 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _accessCode.dispose();
     _nickname.dispose();
     _intro.dispose();
+    _persona.dispose();
     super.dispose();
   }
 
@@ -128,10 +130,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 maxLength: 60,
                 decoration: const InputDecoration(hintText: '예: 디자인과 3학년, 고양이 좋아함 (AI 자유대화에서 참고해요)'),
               ),
+              const Text('기본 페르소나', style: AppTextStyles.speakerName),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _persona,
+                minLines: 2,
+                maxLines: 5,
+                maxLength: 400,
+                decoration: const InputDecoration(
+                  hintText: '대화 속 나의 설정 (나이·성격·외모·상황). 캐릭터와 대화를 시작할 때 기본으로 들어가요',
+                  hintMaxLines: 2,
+                ),
+              ),
               OutlinedButton(
                 onPressed: () async {
                   await ref.read(userProfileProvider.notifier)
-                      .save(nickname: _nickname.text, intro: _intro.text);
+                      .save(nickname: _nickname.text, intro: _intro.text, persona: _persona.text);
                   _toast('내 프로필을 저장했어요');
                 },
                 child: const Text('프로필 저장'),

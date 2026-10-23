@@ -6,8 +6,10 @@ class UserProfile {
   final String nickname;
   final String intro; // 나에 대한 한줄 소개 (AI 자유대화에서 캐릭터가 참고)
   final String avatarUrl; // 친구창 맨 위 내 프로필 사진 (비우면 기본 아이콘)
+  /// 기본 페르소나: 대화 속 나의 설정 (나이·성격·외모·상황 등). 캐릭터와 대화를 시작할 때 기본으로 들어감
+  final String persona;
 
-  const UserProfile({this.nickname = '', this.intro = '', this.avatarUrl = ''});
+  const UserProfile({this.nickname = '', this.intro = '', this.avatarUrl = '', this.persona = ''});
 
   bool get hasNickname => nickname.trim().isNotEmpty;
 }
@@ -21,29 +23,41 @@ class UserProfileNotifier extends Notifier<UserProfile> {
       nickname: raw['nickname'] as String? ?? '',
       intro: raw['intro'] as String? ?? '',
       avatarUrl: raw['avatar_url'] as String? ?? '',
+      persona: raw['persona'] as String? ?? '',
     );
   }
 
-  /// [avatarUrl]을 안 주면 사진은 그대로
-  Future<void> save({required String nickname, required String intro, String? avatarUrl}) async {
-    state = UserProfile(nickname: nickname.trim(), intro: intro.trim(), avatarUrl: avatarUrl ?? state.avatarUrl);
+  /// [avatarUrl]·[persona]를 안 주면 그대로
+  Future<void> save({required String nickname, required String intro, String? avatarUrl, String? persona}) async {
+    state = UserProfile(
+      nickname: nickname.trim(),
+      intro: intro.trim(),
+      avatarUrl: avatarUrl ?? state.avatarUrl,
+      persona: (persona ?? state.persona).trim(),
+    );
     await ref.read(localStoreProvider).saveMyProfile({
       'nickname': state.nickname,
       'intro': state.intro,
       if (state.avatarUrl.isNotEmpty) 'avatar_url': state.avatarUrl,
+      if (state.persona.isNotEmpty) 'persona': state.persona,
     });
   }
+
+  /// 기본 페르소나만 바꾸기
+  Future<void> savePersona(String persona) =>
+      save(nickname: state.nickname, intro: state.intro, persona: persona);
 }
 
 final userProfileProvider =
     NotifierProvider<UserProfileNotifier, UserProfile>(UserProfileNotifier.new);
 
-/// 캐릭터별 대화 설정: 이 대화에서 쓰는 내 별명, 대화 속도
+/// 캐릭터별 대화 설정: 이 대화에서 쓰는 내 별명·페르소나, 대화 속도
 class ChatPrefs {
   final String? nickname; // null이면 아직 이 캐릭터와 대화를 시작하기 전
+  final String? persona; // null이면 기본 페르소나
   final double tempo;
 
-  const ChatPrefs({this.nickname, this.tempo = 1.0});
+  const ChatPrefs({this.nickname, this.persona, this.tempo = 1.0});
 }
 
 class ChatTempoOption {
@@ -67,17 +81,23 @@ class ChatPrefsNotifier extends FamilyNotifier<ChatPrefs, String> {
     final store = ref.watch(localStoreProvider);
     return ChatPrefs(
       nickname: store.chatNickname(characterId),
+      persona: store.chatPersona(characterId),
       tempo: store.chatTempo(characterId) ?? 1.0,
     );
   }
 
   Future<void> setNickname(String nickname) async {
-    state = ChatPrefs(nickname: nickname.trim(), tempo: state.tempo);
+    state = ChatPrefs(nickname: nickname.trim(), persona: state.persona, tempo: state.tempo);
     await ref.read(localStoreProvider).saveChatNickname(arg, nickname.trim());
   }
 
+  Future<void> setPersona(String persona) async {
+    state = ChatPrefs(nickname: state.nickname, persona: persona.trim(), tempo: state.tempo);
+    await ref.read(localStoreProvider).saveChatPersona(arg, persona.trim());
+  }
+
   Future<void> setTempo(double tempo) async {
-    state = ChatPrefs(nickname: state.nickname, tempo: tempo);
+    state = ChatPrefs(nickname: state.nickname, persona: state.persona, tempo: tempo);
     await ref.read(localStoreProvider).saveChatTempo(arg, tempo);
   }
 }
@@ -91,4 +111,9 @@ final chatNicknameProvider = Provider.family<String, String>((ref, characterId) 
   if (own != null && own.isNotEmpty) return own;
   final base = ref.watch(userProfileProvider).nickname;
   return base.isNotEmpty ? base : '너';
+});
+
+/// 이 캐릭터와의 대화에서 쓰는 내 페르소나 (대화별 → 기본 페르소나, 없으면 빈 글자)
+final chatPersonaProvider = Provider.family<String, String>((ref, characterId) {
+  return ref.watch(chatPrefsProvider(characterId)).persona ?? ref.watch(userProfileProvider).persona;
 });
