@@ -42,6 +42,8 @@ class ChatRoomState {
   final int seenMessageCount;
   /// 선택지를 고르면 입력창에 내 대사가 한 글자씩 쳐지는 중인 글 (보내면 비워짐)
   final String userDraft;
+  /// 자유대화가 끝날 때마다 캐릭터가 남긴 한 줄 기억 (다음 자유대화 때 AI가 참고)
+  final List<String> memories;
 
   const ChatRoomState({
     required this.character,
@@ -59,6 +61,7 @@ class ChatRoomState {
     this.progress = StoryProgress.playing,
     this.seenMessageCount = 0,
     this.userDraft = '',
+    this.memories = const [],
   });
 
   /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
@@ -78,6 +81,7 @@ class ChatRoomState {
   ChatRoomState copyWith({
     int? internalAffection,
     String? currentEventId,
+    bool clearEvent = false,
     int? currentStepOrder,
     List<ChatMessageLog>? messages,
     List<ChoiceOption>? currentChoices,
@@ -91,11 +95,12 @@ class ChatRoomState {
     StoryProgress? progress,
     int? seenMessageCount,
     String? userDraft,
+    List<String>? memories,
   }) {
     return ChatRoomState(
       character: character,
       internalAffection: internalAffection ?? this.internalAffection,
-      currentEventId: currentEventId ?? this.currentEventId,
+      currentEventId: clearEvent ? null : (currentEventId ?? this.currentEventId),
       currentStepOrder: currentStepOrder ?? this.currentStepOrder,
       messages: messages ?? this.messages,
       currentChoices: currentChoices ?? this.currentChoices,
@@ -111,6 +116,7 @@ class ChatRoomState {
       progress: progress ?? this.progress,
       seenMessageCount: seenMessageCount ?? this.seenMessageCount,
       userDraft: userDraft ?? this.userDraft,
+      memories: memories ?? this.memories,
     );
   }
 }
@@ -135,6 +141,16 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   final List<String> _pendingUserBurstTexts = [];
   /// '다시 하기'를 누르면 숫자가 바뀌어서, 이전 회차에서 아직 돌던 연출을 멈추게 함
   int _runId = 0;
+
+  /// 이번 자유대화에서 캐릭터가 답한 횟수 (이야기 진행 중이면 [freeTalkWrapUpTurn]부터 마무리, [freeTalkMaxTurns]에서 끝)
+  int _freeTurns = 0;
+  static const freeTalkWrapUpTurn = 6;
+  static const freeTalkMaxTurns = 12;
+  /// AI 키 없이 준비된 문구로 답할 때는 이만큼 주고받으면 끝
+  static const cannedFreeTalkTurns = 3;
+
+  /// 지금 이벤트를 시작할 때의 호감도·플래그 (자유대화로 미룬 이벤트를 다음에 처음부터 다시 하려고)
+  ({int affection, List<String> flags})? _eventStart;
 
   @override
   ChatRoomState build(String characterId) {
@@ -162,6 +178,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         messages: saved.messages,
         progress: saved.cleared ? StoryProgress.cleared : null,
         seenMessageCount: saved.messages.length,
+        memories: saved.memories,
       );
       final runId = _runId;
       final node = saved.nodeId != null ? _bundle.nodes[saved.nodeId] : null;
@@ -212,8 +229,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _runId++;
     _userBurstReplyTimer?.cancel();
     _pendingUserBurstTexts.clear();
+    _freeTurns = 0;
     state = _freshRunState(unlockedCutscenes: state.unlockedCutsceneEventIds)
-        .copyWith(isByokAiModeEnabled: state.isByokAiModeEnabled);
+        .copyWith(memories: state.memories);
     _store.clearRun(_bundle.character.id);
     _started = true;
     _advance(_runId);
@@ -233,6 +251,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         eventId: node?.eventId,
         nodeId: node?.id,
         nextBubble: nextBubble,
+        memories: state.memories,
       ),
     );
   }
@@ -300,6 +319,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   Future<void> _playEvent(ScenarioEventModel event, int runId) async {
+    _eventStart = (affection: state.internalAffection, flags: state.acquiredFlags);
     state = state.copyWith(currentEventId: event.id);
     if (event.timeNotice != null) {
       _addSystemNotice(event.timeNotice!);
@@ -388,6 +408,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 순서: 호감도 이벤트가 끝나면 지금 단계의 일상 대화 하나 → 다음 호감도 이벤트.
   /// 다음 이벤트 조건이 안 맞으면 남은 일상 대화로 호감도를 더 쌓을 기회를 줍니다.
   Future<void> _advance(int runId) async {
+    if (state.isByokAiModeEnabled) return; // 자유대화 중에는 이야기를 멈춤 (끝나면 이어짐)
     // 실제 시간에 맞춰 오는 특별한 톡이 있으면 먼저
     final special = _dueSpecialEvent();
     if (special != null) {
@@ -687,6 +708,19 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
     final combinedInput = List<String>.from(_pendingUserBurstTexts);
     _pendingUserBurstTexts.clear();
+    final runId = _runId;
+    bool stillValid() => runId == _runId && state.isByokAiModeEnabled;
+
+    // 이야기 진행 중이면 정해진 만큼 주고받은 뒤 캐릭터가 마무리 (공략 뒤에는 끝없이)
+    final limited = _storyWaiting;
+    _freeTurns++;
+    final pace = limited
+        ? FreeTalkPace(
+            turn: _freeTurns,
+            wrapUp: _freeTurns >= freeTalkWrapUpTurn,
+            mustEnd: _freeTurns >= freeTalkMaxTurns,
+          )
+        : FreeTalkPace.open;
 
     // AI에게 보낼 '지금까지 대화'는 방금 보낸 톡('1'이 남은 것)을 뺀 기록
     final historyBeforeBurst = state.messages.where((m) => !m.isUnread).toList();
@@ -698,6 +732,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     // 2. 내 AI 키가 있으면 Claude가 캐릭터 답장과 호감도 변화를 정하고, 없으면 준비된 문구로 답장
     final List<ScriptBubblePiece> replyPieces;
     var affectionDelta = 0;
+    var ends = false;
+    var memory = '';
     final byok = ref.read(byokSettingsProvider);
     if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
@@ -716,14 +752,27 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
                   : null,
               history: historyBeforeBurst,
               newUserMessages: combinedInput,
+              pace: pace,
+              memories: state.memories,
             );
+        if (!stillValid()) return;
         replyPieces = [for (final text in reply.bubbles) ScriptBubblePiece(text: text)];
         affectionDelta = reply.affectionDelta;
+        ends = limited && (reply.ends || pace.mustEnd);
+        memory = reply.memory;
       } on ClaudeChatException catch (e) {
+        _freeTurns--;
+        if (!stillValid()) return;
         state = state.copyWith(isCharacterTyping: false);
         _addSystemNotice(e.message);
         return;
       }
+    } else if (limited && _freeTurns >= cannedFreeTalkTurns) {
+      replyPieces = const [
+        ScriptBubblePiece(text: '앗 잠깐만 나 씻고 올게', speedFactor: 0.7),
+        ScriptBubblePiece(text: '이따 또 얘기하자!', speedFactor: 0.6),
+      ];
+      ends = true;
     } else {
       replyPieces = _buildNaturalSplitReplies(combinedInput);
     }
@@ -731,7 +780,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     state = state.copyWith(isCharacterTyping: false);
     for (final piece in replyPieces) {
       // 만약 캐릭터가 답장하는 도중에 내가 또 새로운 톡을 쳤다면 즉시 중단하고 내 말을 먼저 받음!
-      final sent = await _typeOut(piece, () => _pendingUserBurstTexts.isEmpty);
+      // (마무리 인사는 끝까지 보냄)
+      final sent = await _typeOut(piece, () => stillValid() && (ends || _pendingUserBurstTexts.isEmpty));
       if (!sent) return;
     }
 
@@ -741,6 +791,78 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         internalAffection: (state.internalAffection + affectionDelta).clamp(0, 100),
       );
     }
+    if (memory.isNotEmpty) {
+      final all = [...state.memories, memory];
+      state = state.copyWith(memories: all.skip(max(0, all.length - 5)).toList());
+    }
+    if (ends) {
+      await _endFreeTalk(byCharacter: true);
+    } else {
+      _saveRun();
+    }
+  }
+
+  /// 이야기가 아직 진행 중(또는 조건이 안 맞아 멈춤)이라 자유대화를 끝내고 돌아가야 하는지
+  bool get _storyWaiting =>
+      state.progress == StoryProgress.playing || state.progress == StoryProgress.stuck;
+
+  /// 지금 하던 도중인 이벤트 (끝났거나 없으면 null)
+  ScenarioEventModel? get _eventInProgress {
+    final id = state.currentEventId;
+    final event = id == null ? null : _eventById(id);
+    if (event == null || !_storyWaiting) return null;
+    if (event.isSpecial) return _store.loadSeenSpecials(_bundle.character.id).contains(event.id) ? null : event;
+    return state.completedEventIds.contains(event.id) ? null : event;
+  }
+
+  /// 자유대화를 켜면 하던 이벤트를 멈춤: 선택지는 사라지고,
+  /// 호감도 이벤트(엔딩 포함)는 미뤘다가 끝난 뒤 처음부터, 일상·특별 톡은 지나간 걸로
+  void _suspendStory() {
+    final event = _eventInProgress;
+    _runId++;
+    var next = state.copyWith(
+      currentChoices: const [],
+      isCharacterTyping: false,
+      userDraft: '',
+      clearEvent: true,
+    );
+    if (event != null) {
+      if (event.isDaily) {
+        next = next.copyWith(completedEventIds: {...next.completedEventIds, event.id}.toList());
+      } else if (event.isSpecial) {
+        final id = _bundle.character.id;
+        _store.saveSeenSpecials(id, {..._store.loadSeenSpecials(id), event.id}.toList());
+      } else if (_eventStart case final start?) {
+        // 미룬 이벤트에서 이미 고른 선택지 점수는 되돌림 (다시 할 때 또 오르지 않게)
+        next = next.copyWith(internalAffection: start.affection, acquiredFlags: start.flags);
+      }
+    }
+    state = next;
+    if (event != null && !event.isDaily && !event.isSpecial) {
+      _addSystemNotice('하던 이야기는 자유대화가 끝나면 이어져요');
+    }
+    _saveRun();
+  }
+
+  /// 자유대화를 끝내고 멈췄던 이야기로 돌아감 ([byCharacter]: 캐릭터가 마무리 인사를 하고 끝냄)
+  Future<void> _endFreeTalk({required bool byCharacter}) async {
+    _freeTurns = 0;
+    _userBurstReplyTimer?.cancel();
+    _pendingUserBurstTexts.clear();
+    _isUserCurrentlyTypingText = false;
+    final runId = ++_runId;
+    state = state.copyWith(isByokAiModeEnabled: false, isCharacterTyping: false);
+    if (byCharacter) _addSystemNotice('자유대화가 끝났어요');
+    _saveRun();
+    if (state.progress == StoryProgress.stuck) {
+      // 자유대화로 호감도가 올라 다음 이야기가 열렸으면 다시 진행
+      if (_nextPlayableEvent() == null && _nextDailyTalk() == null) return;
+      state = state.copyWith(progress: StoryProgress.playing);
+    }
+    if (state.progress != StoryProgress.playing) return;
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (runId != _runId) return;
+    await _advance(runId);
   }
 
   String _currentStageLabel() {
@@ -788,8 +910,16 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     ];
   }
 
+  /// 자유대화 켜기·끄기. 이야기 도중에 켜면 하던 이벤트를 멈추고, 끄면 이야기로 돌아감
   void toggleDirectInputMode(bool enabled) {
-    state = state.copyWith(isByokAiModeEnabled: enabled);
+    if (enabled == state.isByokAiModeEnabled) return;
+    if (!enabled) {
+      _endFreeTalk(byCharacter: false);
+      return;
+    }
+    _freeTurns = 0;
+    if (_storyWaiting) _suspendStory();
+    state = state.copyWith(isByokAiModeEnabled: true);
   }
 
   void openPhotoPreview(String photoLabel) {

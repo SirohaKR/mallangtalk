@@ -91,6 +91,9 @@ class SavedRun {
   final String? nodeId;
   final int nextBubble;
 
+  /// 자유대화가 끝날 때마다 남긴 한 줄 기억 (최근 것 몇 개만)
+  final List<String> memories;
+
   const SavedRun({
     required this.affection,
     required this.flags,
@@ -100,6 +103,7 @@ class SavedRun {
     this.eventId,
     this.nodeId,
     this.nextBubble = 0,
+    this.memories = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -108,6 +112,7 @@ class SavedRun {
         'completed_event_ids': completedEventIds,
         'messages': [for (final m in messages) m.toJson()],
         'cleared': cleared,
+        if (memories.isNotEmpty) 'memories': memories,
         if (nodeId != null) ...{'event_id': eventId, 'node_id': nodeId, 'next_bubble': nextBubble},
       };
 
@@ -126,6 +131,7 @@ class SavedRun {
       eventId: json['event_id'] as String?,
       nodeId: json['node_id'] as String?,
       nextBubble: json['next_bubble'] as int? ?? 0,
+      memories: [for (final m in json['memories'] as List? ?? const []) '$m'],
     );
   }
 }

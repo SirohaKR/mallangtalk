@@ -249,7 +249,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               const PopupMenuItem(value: 'restart', child: Text('처음부터 다시')),
             ],
           ),
-          // [AI 자유대화 ON/OFF] 토글: 켜면 선택지 아래에 직접 입력창이 열림
+          // [AI 자유대화 ON/OFF] 토글: 켜면 하던 이야기는 멈추고(선택지 사라짐) 직접 입력. 캐릭터가 마무리하면 이야기로 돌아감
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Row(
