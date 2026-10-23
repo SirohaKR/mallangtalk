@@ -280,4 +280,44 @@ void main() {
     expect(find.text('스크립트를 전부 봤어요'), findsNothing);
     await settle(tester);
   });
+
+  testWidgets('대화가 끝나면 바로 다음 장면으로 안 넘어가고, 쉬었다가 시간 표시 → 또 잠깐 뒤 첫 톡', (tester) async {
+    // 보통 대화 속도(1배)
+    SharedPreferences.setMockInitialValues({...fastTempo, 'tempo_$dohaId': '1.0'});
+    final container = await openDohaChat(tester);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    const tempo = 1.0;
+
+    var elapsed = Duration.zero;
+    Duration? ended, noticed, firstTalk;
+    final doneBefore = state().completedEventIds.length;
+    var messagesAtNotice = 0;
+    container.listen<ChatRoomState>(chatRoomProvider(dohaId), (_, next) {
+      if (ended == null && next.completedEventIds.length > doneBefore) ended = elapsed;
+      if (ended != null && noticed == null && next.messages.lastOrNull?.isSystem == true) {
+        noticed = elapsed;
+        messagesAtNotice = next.messages.length;
+      }
+      if (noticed != null && firstTalk == null && next.messages.length > messagesAtNotice) firstTalk = elapsed;
+    });
+
+    for (var i = 0; i < 6 && ended == null; i++) {
+      final choices = state().currentChoices;
+      if (choices.isNotEmpty) notifier.selectChoice(choices.first);
+      for (var j = 0; j < 2000 && state().currentChoices.isEmpty && ended == null; j++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        elapsed += const Duration(milliseconds: 50);
+      }
+    }
+    for (var j = 0; j < 2000 && firstTalk == null; j++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      elapsed += const Duration(milliseconds: 50);
+    }
+    expect(ended, isNotNull);
+    expect(noticed, isNotNull);
+    expect(noticed! - ended!, greaterThanOrEqualTo(ChatRoomNotifier.sceneGapBefore * tempo));
+    expect(firstTalk! - noticed!, greaterThanOrEqualTo(ChatRoomNotifier.sceneGapAfter * tempo));
+    await settle(tester);
+  });
 }
