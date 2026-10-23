@@ -11,12 +11,17 @@ const maxCharacterBytes = 24 * 1024 * 1024;
 /// 사진 한 장 최대 크기
 const _maxImageBytes = 4 * 1024 * 1024;
 
+/// 기기 연동 저장값: 한 번에 보내는 최대 크기와 이름 규칙
+const maxStateBytes = 32 * 1024 * 1024;
+final _stateKey = RegExp(r'^[A-Za-z0-9_.:-]{1,120}$');
+
 final _username = RegExp(r'^[A-Za-z0-9_]{3,20}$');
 
 /// [초보자 노트] 계정과 캐릭터 API. 해당하는 주소가 아니면 null을 돌려줘요.
 /// - POST /api/auth/signup, /api/auth/login, /api/auth/logout, GET /api/me
 /// - GET /api/characters (받아오기 목록), GET /api/characters/:id, GET /api/my/characters
 /// - PUT·DELETE /api/characters/:id (내 캐릭터 저장·지우기), GET /api/images/:id (사진)
+/// - GET·PUT /api/my/state (내 프로필·진행도·앨범 같은 앱 저장값. PC와 폰 연동)
 Future<Response?> accountsApi(Request request, Store store) async {
   final segments = request.url.pathSegments; // ['api', ...]
   final method = request.method;
@@ -68,6 +73,37 @@ Future<Response?> accountsApi(Request request, Store store) async {
       return _json(200, {
         'characters': [for (final c in store.charactersOf(me.id)) _characterJson(c, me)],
       });
+
+    case ['my', 'state'] when method == 'GET':
+      final me = _user(request, store);
+      if (me == null) return _needLogin();
+      return _json(200, {
+        'items': {
+          for (final MapEntry(:key, :value) in store.stateOf(me.id).entries)
+            key: {'value': value.value == null ? null : jsonDecode(value.value!), 'updated_at': value.updatedAt},
+        },
+      });
+
+    case ['my', 'state'] when method == 'PUT':
+      final me = _user(request, store);
+      if (me == null) return _needLogin();
+      final body = await _readJson(request, maxStateBytes);
+      final raw = body?['items'];
+      if (raw is! List) return _json(400, {'error': '저장값이 너무 크거나 모양이 이상해요.'});
+      final items = <({String key, String? value, int updatedAt})>[];
+      for (final item in raw) {
+        if (item is! Map || item['key'] is! String || item['updated_at'] is! int || !_stateKey.hasMatch(item['key'] as String)) {
+          return _json(400, {'error': '저장값 모양이 이상해요.'});
+        }
+        final value = item['value'];
+        items.add((
+          key: item['key'] as String,
+          value: value == null ? null : jsonEncode(value),
+          updatedAt: item['updated_at'] as int,
+        ));
+      }
+      store.saveState(me.id, items);
+      return _json(200, {'ok': true});
 
     case ['characters', final id] when method == 'GET':
       final c = store.character(id);

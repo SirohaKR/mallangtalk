@@ -106,3 +106,63 @@ class CharacterAvatar extends StatelessWidget {
     );
   }
 }
+
+/// 프로필 사진 크게 보기. 두 손가락으로 확대, 배경이나 X를 누르면 닫혀요
+Future<void> showCharacterPhoto(BuildContext context, CharacterModel character) {
+  return showDialog(
+    context: context,
+    barrierColor: Colors.black87,
+    builder: (dialogContext) => GestureDetector(
+      key: const ValueKey('photo_viewer'),
+      onTap: () => Navigator.of(dialogContext).pop(),
+      child: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              maxScale: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: _PhotoOrCard(character: character),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                tooltip: '닫기',
+                color: Colors.white,
+                icon: const Icon(Icons.close_rounded, size: 28),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// 사진이 있으면 잘리지 않게 원래 비율로, 없으면 이름 카드
+class _PhotoOrCard extends StatelessWidget {
+  const _PhotoOrCard({required this.character});
+
+  final CharacterModel character;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: AspectRatio(
+        aspectRatio: 3 / 4,
+        child: CharacterImage(character: character, borderRadius: 12, fontSize: 96),
+      ),
+    );
+    final provider = CharacterImage.providerFor(character.avatarUrl);
+    if (provider == null) return card;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image(image: provider, fit: BoxFit.contain, errorBuilder: (_, __, ___) => card),
+    );
+  }
+}

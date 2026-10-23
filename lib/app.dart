@@ -10,6 +10,7 @@ import 'core/theme/app_text_styles.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_state.dart';
 import 'features/auth/login_screen.dart';
+import 'features/auth/state_sync.dart';
 import 'features/library/character_library.dart';
 
 class MallangTalkApp extends StatelessWidget {
@@ -71,7 +72,14 @@ class _BootGate extends ConsumerWidget {
           onDidRemovePage: (_) {},
         );
       }
-      ref.watch(librarySyncProvider); // 로그인하면 내 캐릭터를 서버와 맞춤
+      // 로그인하면 내 프로필·진행도·앨범을 서버와 맞춘 뒤에 화면을 띄움 (PC·폰 연동)
+      if (ref.watch(bootSyncProvider).isLoading) {
+        return const Scaffold(
+          backgroundColor: AppColors.chatRoomBackground,
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
+      ref.watch(librarySyncProvider); // 내 캐릭터를 서버와 맞춤
     }
     return child;
   }

@@ -32,6 +32,7 @@ class CharacterRecord {
 /// - sessions: 로그인 표 (토큰). 90일 지나면 다시 로그인
 /// - characters: 유저가 만든 캐릭터 파일. published면 '받아오기'에 보임
 /// - images: 캐릭터에 올린 사진 (프로필·사진 말풍선·컷씬). 캐릭터 파일에는 사진 주소만 남김
+/// - user_state: 유저의 앱 저장값 (내 프로필·친구 목록·진행도·앨범…). PC와 폰이 같은 값을 보게
 class Store {
   Store._(this._db);
 
@@ -74,6 +75,13 @@ class Store {
         mime TEXT NOT NULL,
         data BLOB NOT NULL,
         created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS user_state (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, key)
       );
     ''');
     return Store._(db);
@@ -205,6 +213,34 @@ class Store {
     final rows = _db.select('SELECT mime, data FROM images WHERE id = ?', [id]);
     if (rows.isEmpty) return null;
     return (mime: rows.first['mime'] as String, bytes: rows.first['data'] as Uint8List);
+  }
+
+  // ───────────── 앱 저장값 (기기 연동) ─────────────
+
+  /// 이 유저의 저장값 전부. value는 JSON 글자 (지운 값은 null)
+  Map<String, ({String? value, int updatedAt})> stateOf(int userId) => {
+        for (final row in _db.select('SELECT key, value, updated_at FROM user_state WHERE user_id = ?', [userId]))
+          row['key'] as String: (value: row['value'] as String?, updatedAt: row['updated_at'] as int),
+      };
+
+  /// 저장값 여러 개를 한 번에. 서버에 더 나중에 바뀐 값이 있으면 그건 건드리지 않음
+  void saveState(int userId, List<({String key, String? value, int updatedAt})> items) {
+    final statement = _db.prepare('''
+      INSERT INTO user_state (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      WHERE excluded.updated_at >= user_state.updated_at''');
+    _db.execute('BEGIN');
+    try {
+      for (final item in items) {
+        statement.execute([userId, item.key, item.value, item.updatedAt]);
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    } finally {
+      statement.dispose();
+    }
   }
 
   // ───────────── 도우미 ─────────────

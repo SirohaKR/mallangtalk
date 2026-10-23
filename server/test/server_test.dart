@@ -220,5 +220,37 @@ USE_SERVER_AI_KEYS=true
       expect((await call('DELETE', '/api/characters/char_1', token: a)).$1, 200);
       expect(((await call('GET', '/api/my/characters', token: a)).$2['characters'] as List), isEmpty);
     });
+
+    test('앱 저장값 연동: 나중에 바뀐 값이 이기고, 유저끼리는 안 섞임', () async {
+      final a = (await call('POST', '/api/auth/signup', body: {'username': 'pcuser', 'password': 'mallang123'})).$2['token'] as String;
+      final b = (await call('POST', '/api/auth/signup', body: {'username': 'other', 'password': 'mallang123'})).$2['token'] as String;
+      expect((await call('GET', '/api/my/state')).$1, 401);
+      expect(((await call('GET', '/api/my/state', token: a)).$2['items'] as Map), isEmpty);
+
+      var (status, _) = await call('PUT', '/api/my/state', token: a, body: {
+        'items': [
+          {'key': 'run_doha', 'value': '{"affection":3}', 'updated_at': 200},
+          {'key': 'album_doha', 'value': ['e1', 'e2'], 'updated_at': 200},
+        ],
+      });
+      expect(status, 200);
+      // 예전 값(시간이 더 이른 값)은 덮어쓰지 않음, 지운 값(null)은 그대로 기록
+      await call('PUT', '/api/my/state', token: a, body: {
+        'items': [
+          {'key': 'run_doha', 'value': '{"affection":0}', 'updated_at': 100},
+          {'key': 'album_doha', 'value': null, 'updated_at': 300},
+        ],
+      });
+      final items = (await call('GET', '/api/my/state', token: a)).$2['items'] as Map;
+      expect(items['run_doha'], {'value': '{"affection":3}', 'updated_at': 200});
+      expect(items['album_doha'], {'value': null, 'updated_at': 300});
+      expect(((await call('GET', '/api/my/state', token: b)).$2['items'] as Map), isEmpty);
+
+      expect((await call('PUT', '/api/my/state', token: a, body: {
+        'items': [
+          {'key': '../etc', 'value': 'x', 'updated_at': 1},
+        ],
+      })).$1, 400);
+    });
   });
 }

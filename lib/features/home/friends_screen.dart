@@ -302,7 +302,15 @@ class _CharacterProfileSheet extends ConsumerWidget {
             Row(
               children: [
                 const SizedBox(width: 48),
-                Expanded(child: Center(child: CharacterAvatar(character: c, radius: 40))),
+                Expanded(
+                  child: Center(
+                    child: GestureDetector(
+                      key: const ValueKey('profile_photo'),
+                      onTap: () => showCharacterPhoto(context, c),
+                      child: CharacterAvatar(character: c, radius: 40),
+                    ),
+                  ),
+                ),
                 IconButton(
                   tooltip: ref.watch(favoritesProvider).contains(c.id) ? '즐겨찾기 빼기' : '즐겨찾기',
                   onPressed: () => ref.read(favoritesProvider.notifier).toggle(c.id),
