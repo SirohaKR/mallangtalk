@@ -9,8 +9,26 @@ export 'ai_provider.dart';
 class FreeChatReply {
   final List<String> bubbles;
   final int affectionDelta;
+  /// 캐릭터가 이 답장으로 대화를 마무리했는지
+  final bool ends;
+  /// 마무리할 때 남기는 이 대화의 한 줄 기억 (다음 자유대화에서 씀)
+  final String memory;
 
-  const FreeChatReply({required this.bubbles, required this.affectionDelta});
+  const FreeChatReply({required this.bubbles, required this.affectionDelta, this.ends = false, this.memory = ''});
+}
+
+/// 자유대화 한 번이 얼마나 이어졌는지 (마무리할 때를 AI에게 알려 주려고)
+class FreeTalkPace {
+  /// 이번이 몇 번째 답장인지 (1부터)
+  final int turn;
+  /// 이 답장부터는 자연스럽게 마무리해도 됨
+  final bool wrapUp;
+  /// 이번 답장으로 꼭 끝내야 함
+  final bool mustEnd;
+  const FreeTalkPace({this.turn = 1, this.wrapUp = false, this.mustEnd = false});
+
+  /// 공략을 끝낸 뒤처럼 끝없이 이어도 되는 대화
+  static const open = FreeTalkPace();
 }
 
 final claudeChatClientProvider = Provider<ClaudeChatClient>((ref) => ClaudeChatClient());
@@ -42,8 +60,16 @@ class ClaudeChatClient {
         'type': 'integer',
         'description': '유저의 말이 캐릭터 호감도에 준 변화. -3(크게 실망) ~ +3(크게 설렘)',
       },
+      'end_conversation': {
+        'type': 'boolean',
+        'description': '이 답장으로 캐릭터가 대화를 마무리하면 true',
+      },
+      'memory': {
+        'type': 'string',
+        'description': 'end_conversation이 true일 때만: 이번 대화를 캐릭터 입장에서 한 줄로 요약. 아니면 빈 글자',
+      },
     },
-    'required': ['replies', 'affection_delta'],
+    'required': ['replies', 'affection_delta', 'end_conversation', 'memory'],
     'additionalProperties': false,
   };
 
@@ -59,6 +85,8 @@ class ClaudeChatClient {
     required List<String> newUserMessages,
     String userName = '너',
     String userIntro = '',
+    FreeTalkPace pace = FreeTalkPace.open,
+    List<String> memories = const [],
   }) async {
     final transcript = history
         .where((m) => !m.isSystem)
@@ -85,10 +113,11 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 [현재 관계]
 ${character.name}에게 유저는 지금 "$stageLabel" 단계다.${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
 
-[답장 규칙]
+${memories.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억]\n${memories.map((m) => '- $m').join('\n')}\n\n'}[답장 규칙]
 - 실제 카톡처럼 짧게 1~4개 말풍선으로 끊어서 보낸다. 괄호 지문, 행동 묘사, 이모지 남발은 쓰지 않는다.
 - 캐릭터의 말투와 습관을 유지하고, 관계 단계보다 앞서 나가는 고백이나 스킨십 얘기는 하지 않는다.
-- affection_delta는 유저 말에 대한 캐릭터의 속마음 반응이다. 평범한 대화는 0~1, 설레거나 감동하면 2~3, 무례하거나 서운하면 음수.''';
+- affection_delta는 유저 말에 대한 캐릭터의 속마음 반응이다. 평범한 대화는 0~1, 설레거나 감동하면 2~3, 무례하거나 서운하면 음수.
+- 작별 인사가 오가거나 화제가 자연스럽게 끝나면 캐릭터답게 마무리하고 end_conversation을 true로, memory에 이번 대화를 한 줄로 남긴다.${_paceRule(pace)}''';
 
     final user = '''
 [지금까지 대화]
@@ -113,6 +142,16 @@ ${newUserMessages.join('\n')}''';
     return _parse(json);
   }
 
+  static String _paceRule(FreeTalkPace pace) {
+    if (pace.mustEnd) {
+      return '\n- 이번 답장으로 반드시 대화를 마무리한다. 씻으러 간다, 잠이 온다, 일이 생겼다처럼 캐릭터다운 핑계를 대고 end_conversation은 true.';
+    }
+    if (pace.wrapUp) {
+      return '\n- 대화가 꽤 길어졌다(${pace.turn}번째 답장). 흐름을 봐서 자연스럽게 마무리를 향해 간다. 억지로 끊지는 않는다.';
+    }
+    return '';
+  }
+
   FreeChatReply _parse(Map<String, dynamic> json) {
     final bubbles = [
       for (final r in json['replies'] as List? ?? const [])
@@ -120,6 +159,8 @@ ${newUserMessages.join('\n')}''';
     ].take(4).toList();
     if (bubbles.isEmpty) throw const ClaudeChatException('AI 답장을 읽지 못했어요. 다시 보내 주세요.');
     final delta = (json['affection_delta'] as num? ?? 0).toInt().clamp(-3, 3);
-    return FreeChatReply(bubbles: bubbles, affectionDelta: delta);
+    final ends = json['end_conversation'] == true;
+    final memory = ends ? (json['memory'] as String? ?? '').trim() : '';
+    return FreeChatReply(bubbles: bubbles, affectionDelta: delta, ends: ends, memory: memory);
   }
 }

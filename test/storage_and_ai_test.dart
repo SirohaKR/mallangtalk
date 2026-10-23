@@ -145,6 +145,61 @@ void main() {
     expect(fake.lastRelay?.accessCode, 'mallang');
     expect(find.text('두부 지금 내 배 위에서 자'), findsOneWidget);
   });
+
+  testWidgets('이야기 도중 자유대화를 켜면 선택지가 사라지고, 캐릭터가 마무리하면 미룬 이벤트가 처음부터 이어짐', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    final fake = _FakeClaude()..endAtTurn = 2;
+    final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    await choose(tester, '지금 바로 같이 찾으러 가겠다고 하기');
+    final beforeAffection = dohaState(tester).internalAffection;
+    expect(beforeAffection, greaterThan(0));
+
+    notifier.toggleDirectInputMode(true);
+    await tester.pump();
+    var state = dohaState(tester);
+    expect(state.currentChoices, isEmpty);
+    expect(state.internalAffection, 0); // 미룬 이벤트에서 고른 점수는 되돌림
+    expect(find.text('하던 이야기는 자유대화가 끝나면 이어져요'), findsOneWidget);
+
+    notifier.sendUserMessage(text: '뭐해');
+    await settle(tester);
+    expect(dohaState(tester).isByokAiModeEnabled, isTrue);
+    notifier.sendUserMessage(text: '나 이제 자야겠다');
+    await settle(tester);
+
+    state = dohaState(tester);
+    expect(find.text('내일 또 톡해'), findsOneWidget);
+    expect(find.text('자유대화가 끝났어요'), findsOneWidget);
+    expect(state.isByokAiModeEnabled, isFalse);
+    expect(state.memories, ['두부 얘기로 한참 웃었다']);
+    expect(state.internalAffection, 3); // 자유대화에서 오른 만큼만 (2 + 1)
+    expect(state.completedEventIds, isEmpty);
+    // 미뤘던 첫 이벤트가 처음부터 다시
+    expect(find.widgetWithText(ElevatedButton, '지금 바로 같이 찾으러 가겠다고 하기'), findsOneWidget);
+
+    // 다음 자유대화 때 기억을 AI에게 넘김
+    notifier.toggleDirectInputMode(true);
+    notifier.sendUserMessage(text: '안녕');
+    await settle(tester);
+    expect(fake.lastMemories, ['두부 얘기로 한참 웃었다']);
+  });
+
+  testWidgets('AI가 안 끝내도 6번째부터 마무리하라고 하고 12번째에는 꼭 끝냄', (tester) async {
+    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    final fake = _FakeClaude();
+    final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    notifier.toggleDirectInputMode(true);
+    for (var i = 0; i < ChatRoomNotifier.freeTalkMaxTurns; i++) {
+      expect(dohaState(tester).isByokAiModeEnabled, isTrue);
+      notifier.sendUserMessage(text: '얘기 $i');
+      await settle(tester);
+    }
+    expect([for (final p in fake.paces) p.wrapUp], [for (var t = 1; t <= 12; t++) t >= 6]);
+    expect(fake.paces.last.mustEnd, isTrue);
+    expect(dohaState(tester).isByokAiModeEnabled, isFalse);
+  });
 }
 
 class _FakeClaude extends ClaudeChatClient {
@@ -158,6 +213,10 @@ class _FakeClaude extends ClaudeChatClient {
   String? lastSystemSheet;
   List<String> lastNewMessages = const [];
   List<ChatMessageLog> lastHistory = const [];
+  final paces = <FreeTalkPace>[];
+  List<String> lastMemories = const [];
+  /// 이 번째 답장에서 캐릭터가 마무리함 (null이면 AI가 스스로는 안 끝냄)
+  int? endAtTurn;
 
   @override
   Future<FreeChatReply> reply({
@@ -172,7 +231,19 @@ class _FakeClaude extends ClaudeChatClient {
     required List<String> newUserMessages,
     String userName = '너',
     String userIntro = '',
+    FreeTalkPace pace = FreeTalkPace.open,
+    List<String> memories = const [],
   }) async {
+    paces.add(pace);
+    lastMemories = memories;
+    if (pace.turn == endAtTurn || pace.mustEnd) {
+      return const FreeChatReply(
+        bubbles: ['아 나 이제 씻으러 가야겠다', '내일 또 톡해'],
+        affectionDelta: 1,
+        ends: true,
+        memory: '두부 얘기로 한참 웃었다',
+      );
+    }
     lastProvider = provider;
     lastApiKey = apiKey;
     lastRelay = relay;
