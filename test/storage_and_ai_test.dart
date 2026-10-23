@@ -69,6 +69,7 @@ void main() {
   testWidgets('키가 있으면 자유대화에 AI 답장과 호감도 변화가 반영됨', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
+      ...freeTalkOpen,
       'byok_claude_api_key': 'sk-ant-test-key-1234',
       'byok_claude_model': 'claude-haiku-5-5',
       'persona_$dohaId': '도하랑 같은 동네 사는 24살',
@@ -100,6 +101,7 @@ void main() {
   testWidgets('설정에서 고른 AI 회사의 키와 모델로 자유대화를 부름', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
+      ...freeTalkOpen,
       'byok_claude_api_key': 'sk-ant-test-key-1234',
       'byok_provider': 'gemini',
       'byok_key_gemini': 'AIza-test-key-5678',
@@ -122,6 +124,7 @@ void main() {
   testWidgets('말랑톡 서버에서 열면 내 키 없이 서버 키로 자유대화를 부름', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
+      ...freeTalkOpen,
       'byok_provider': 'gemini',
       'server_access_code': 'mallang',
     });
@@ -150,7 +153,7 @@ void main() {
   });
 
   testWidgets('이야기 도중 자유대화를 켜면 선택지가 사라지고, 캐릭터가 마무리하면 미룬 이벤트가 처음부터 이어짐', (tester) async {
-    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    SharedPreferences.setMockInitialValues({...fastTempo, ...freeTalkOpen, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
     final fake = _FakeClaude()..endAtTurn = 2;
     final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
     final notifier = container.read(chatRoomProvider(dohaId).notifier);
@@ -189,7 +192,7 @@ void main() {
   });
 
   testWidgets('AI가 안 끝내도 6번째부터 마무리하라고 하고 12번째에는 꼭 끝냄', (tester) async {
-    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    SharedPreferences.setMockInitialValues({...fastTempo, ...freeTalkOpen, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
     final fake = _FakeClaude();
     final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
     final notifier = container.read(chatRoomProvider(dohaId).notifier);
@@ -205,7 +208,7 @@ void main() {
   });
 
   testWidgets('AI 답장이 실패하면 내 톡은 안 읽음으로 남고, 다시 보내기를 누르면 같이 다시 물어봄', (tester) async {
-    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    SharedPreferences.setMockInitialValues({...fastTempo, ...freeTalkOpen, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
     final fake = _FakeClaude()..failNext = 1;
     final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);
     final notifier = container.read(chatRoomProvider(dohaId).notifier);
@@ -231,7 +234,7 @@ void main() {
   });
 
   testWidgets('끊어서 보내다 잠깐 쉬고 또 보내면 요청을 겹쳐 보내지 않고 답이 온 뒤 전부 합쳐서 다시 물어봄', (tester) async {
-    SharedPreferences.setMockInitialValues({...fastTempo, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
+    SharedPreferences.setMockInitialValues({...fastTempo, ...freeTalkOpen, 'byok_claude_api_key': 'sk-ant-test-key-1234'});
     final slow = Completer<void>();
     final fake = _FakeClaude()..gate = slow.future;
     final container = await openChat(tester, extra: [claudeChatClientProvider.overrideWithValue(fake)]);

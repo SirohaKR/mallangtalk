@@ -177,6 +177,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (mounted) notifier.markSeen();
         });
       }
+      if (next.freeTalkJustUnlocked && !(prev?.freeTalkJustUnlocked ?? false)) {
+        notifier.ackFreeTalkUnlocked();
+        showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('스크립트를 전부 봤어요'),
+            content: Text('${next.character.name}의 이야기를 끝까지 다 봤어요. 이제 오른쪽 위에서 자유대화를 켜고 마음껏 얘기할 수 있어요.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('좋아요')),
+            ],
+          ),
+        );
+      }
     });
 
     return Scaffold(
@@ -255,6 +268,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (!chatState.freeTalkUnlocked)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 2),
+                    child: Icon(Icons.lock_rounded, size: 13, color: AppColors.textSecondary),
+                  ),
                 Text(
                   '자유대화',
                   style: TextStyle(
@@ -268,7 +286,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 Switch(
                   value: chatState.isByokAiModeEnabled,
                   activeTrackColor: AppColors.aiActivePurple,
-                  onChanged: notifier.toggleDirectInputMode,
+                  onChanged: chatState.freeTalkUnlocked
+                      ? notifier.toggleDirectInputMode
+                      : (_) => ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(SnackBar(
+                          content: Text(
+                            '공략을 끝내고 스크립트를 전부 보면 자유대화가 열려요 '
+                            '(본 스크립트 ${chatState.scriptsSeen}/${chatState.scriptsTotal})',
+                          ),
+                        )),
                 ),
               ],
             ),

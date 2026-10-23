@@ -16,6 +16,8 @@ const dohaId = 'char_yoon_doha';
 
 /// 테스트에서는 '입력 중' 연출을 빠르게 (대화방의 캐릭터별 대화 속도) + 별명을 정해 둔 상태
 const fastTempo = {'tempo_$dohaId': '0.2', 'nickname_$dohaId': '쨋뀨'};
+/// 공략·스크립트를 다 본 것처럼 자유대화를 열어 둠
+const freeTalkOpen = {'freetalk_$dohaId': '1'};
 
 ScenarioBundle loadSampleBundle() => ScenarioBundle.fromJson(
       jsonDecode(File('assets/scenarios/sample_character.json').readAsStringSync())
