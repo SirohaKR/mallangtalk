@@ -188,14 +188,12 @@ Future<Response> _relay(Request request, ServerConfig config, Dio dio) async {
   }
 }
 
-/// index.html과 시작 스크립트는 새로 빌드하면 바로 바뀌도록 캐시하지 않게 함
+/// 앱 화면 파일은 새로 빌드하면 바로 바뀌도록 매번 서버에 확인하게 함 (안 바뀌었으면 304라 가벼움)
+/// main.dart.js처럼 이름이 그대로인 파일을 브라우저가 몇 시간씩 옛것으로 쓰던 문제 방지
 Middleware _noCacheForAppShell() => (inner) => (request) async {
       final response = await inner(request);
-      final path = request.url.path;
-      if (path.isEmpty || path == 'index.html' || path == 'flutter_bootstrap.js' || path == 'version.json') {
-        return response.change(headers: {'cache-control': 'no-cache'});
-      }
-      return response;
+      if (request.url.path.startsWith('api/')) return response;
+      return response.change(headers: {'cache-control': 'no-cache'});
     };
 
 Response _json(int status, Map<String, dynamic> body) => Response(
