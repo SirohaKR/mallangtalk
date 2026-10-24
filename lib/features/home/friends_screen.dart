@@ -33,7 +33,7 @@ class FriendsScreen extends ConsumerWidget {
         );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('친구')),
+      appBar: AppBar(title: const Text('말랑')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),

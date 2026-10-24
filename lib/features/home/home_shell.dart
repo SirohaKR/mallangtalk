@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/widgets/mallang_mark.dart';
 import '../chat/chat_notifier.dart';
 import '../library/character_library.dart';
 
-/// [초보자 노트] 앱 하단 탭 4개: 내 캐릭터 / 채팅 / 캐릭터 추가 / 설정
+/// [초보자 노트] 앱 하단 탭 4개: 말랑(내 캐릭터) / 채팅 / 캐릭터 추가 / 설정
 /// 탭을 옮겨도 각 탭 화면 상태(스크롤, 입력 중인 내용)가 그대로 남도록 StatefulShellRoute를 씁니다.
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key, required this.shell});
@@ -34,9 +35,9 @@ class HomeShell extends ConsumerWidget {
             shell.goBranch(index, initialLocation: index == shell.currentIndex),
         destinations: [
           const NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: '친구',
+            icon: MallangMark(),
+            selectedIcon: MallangMark(color: AppColors.primaryPink),
+            label: '말랑',
           ),
           NavigationDestination(
             icon: Badge(
