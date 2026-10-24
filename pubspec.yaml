@@ -20,6 +20,8 @@ dependencies:
   # 웹에서 사진을 JPEG로 줄일 때 브라우저 canvas 사용
   web: ^1.1.1
   url_launcher: ^6.3.3
+  # 사진 넣을 때 자르기·확대·이동 편집 화면 (웹 지원)
+  crop_your_image: ^2.0.1
 
 dev_dependencies:
   flutter_test:
