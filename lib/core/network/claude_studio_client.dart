@@ -99,6 +99,7 @@ class ClaudeStudioClient {
 
     final nodes = <String, ScriptNodeModel>{};
     final finalEvents = <ScenarioEventModel>[];
+    final writtenLines = <String>[];
     var done = 1;
     // 너무 많이 동시에 부르면 요청 한도에 걸리니 3개씩.
     // Gemini 무료 등급은 분당 요청·토큰 한도가 작아서 하나씩 차례로 부름
@@ -107,11 +108,19 @@ class ClaudeStudioClient {
       final batch = events.sublist(start, (start + parallel).clamp(0, events.length));
       final results = await Future.wait([
         for (final event in batch)
-          writeScript(provider: provider, apiKey: apiKey, relay: relay, model: model, character: character, event: event, outline: events),
+          writeScript(
+            provider: provider, apiKey: apiKey, relay: relay, model: model,
+            character: character, event: event, outline: events, previousLines: writtenLines,
+          ),
       ]);
       for (var j = 0; j < batch.length; j++) {
         final (eventNodes, cutsceneStep) = results[j];
         nodes.addAll({for (final n in eventNodes) n.id: n});
+        writtenLines.addAll([
+          for (final n in eventNodes)
+            for (final b in n.characterBubbles)
+              if (b.text.isNotEmpty) b.text,
+        ]);
         final e = batch[j];
         finalEvents.add(e.withCutsceneStep(e.cutscenePhotoTitle != null ? cutsceneStep : null));
         done++;
@@ -137,7 +146,12 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
 - 대사는 실제 카톡처럼 짧게 끊어 친다. 괄호 지문, 행동 묘사, 나레이션은 쓰지 않는다. 이모지는 거의 안 쓴다.
 - 캐릭터의 말투·습관·취미가 대사마다 살아 있어야 한다. 단계보다 앞서 나가는 고백이나 스킨십은 쓰지 않는다.
 - 유저는 평소 "너"라고 부르고, 이름을 부를 때만 {{user}} 라고 쓴다(앱이 플레이어 별명으로 바꿔 넣는다). 유저 성별은 정하지 않는다.
-- 플레이어가 언제 접속할지 모르므로 대사에 "지금 밤 11시" 같은 정확한 시각을 쓰지 않는다.''';
+- 플레이어가 언제 접속할지 모르므로 대사에 "지금 밤 11시" 같은 정확한 시각을 쓰지 않는다.
+- 이 게임은 톡이다. 모든 대화는 캐릭터와 유저가 떨어져서 메신저로 주고받는 톡이다. 만나자고 약속을 잡거나, 만나고 헤어진 뒤 그 일을 톡으로 돌아보는 건 되지만, 같은 자리에서 얼굴을 보며 하는 대화("왔네", "가만있어 봐", "나 쳐다보지 마")는 쓰지 않는다.
+- 마음을 정식으로 고백하는 건 엔딩에서만 한다. 그 전에는 돌려 말하거나 예고하는 데서 멈춘다.
+- 유저 말투(반말·존댓말)는 처음 정한 대로 끝까지 지킨다. 바뀐다면 바뀌는 계기가 되는 대화가 있어야 하고, 그 뒤로는 바뀐 말투를 지킨다.
+- 세계관에 없는 물건·단어는 쓰지 않는다. 예를 들어 판타지 세계면 폰·카톡 대신 그 세계의 연락 수단을 쓴다.
+- 사진(앨범 장면·사진 말풍선)은 캐릭터가 톡에 올리는 사진이다: 셀카, 누가 찍어 준 캐릭터 사진, 물건·음식·풍경 사진. 캐릭터 혼자, 캐릭터와 주변 인물(설정에 있는 인물)이 함께, 또는 사람 없이 나온다. 주변 인물이 나오면 그 인물의 외모(머리색·눈색·옷차림 등)를 묘사에 꼭 적는다. 손만 나오는 사진과 유저가 나오는 사진은 쓰지 않는다.''';
 
   /// 목차 + 비어 있는 캐릭터 정보(한줄 소개·태그·세계관·캐릭터 정보 항목·대표 대사·성격 막대·대사 예시)를 한 번에 만듦
   Future<(List<Map<String, dynamic>>, CharacterModel)> _outline({
@@ -202,8 +216,11 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
                 'type': 'string',
                 'description': '대화 시작 전 가운데 뜨는 장면 전환 문구. 앞 대화 기준 상대적인 말만: 다음 날, 그날 밤, 며칠 뒤 저녁, 주말 오후. 요일·시각 숫자 금지',
               },
-              'synopsis': {'type': 'string', 'description': '이 대화에서 일어나는 일 2~3문장'},
-              'cutscene': {'type': 'string', 'description': 'event만: 앨범에 모이는 장면(CG) 한 줄 묘사. 없으면 빈 문자열'},
+              'synopsis': {'type': 'string', 'description': '이 대화(톡)에서 일어나는 일 2~3문장. 만남은 약속 잡기나 만나고 와서 돌아보는 톡으로'},
+              'cutscene': {
+                'type': 'string',
+                'description': 'event만: 앨범에 모이는 사진 한 줄 묘사. 캐릭터가 톡에 올리는 셀카·누가 찍어 준 캐릭터 사진·물건이나 풍경 사진. 캐릭터 혼자, 주변 인물과 함께(그 인물의 외모도 적기), 또는 사람 없이. 손만·유저는 X. 없으면 빈 문자열',
+              },
               'from_hour': {'type': 'integer', 'description': 'special만: 열리는 실제 시각 시작(0~23). 나머지는 0'},
               'to_hour': {'type': 'integer', 'description': 'special만: 끝 시각(0~24, 자정을 넘기면 시작보다 작게). 나머지는 0'},
             },
@@ -227,8 +244,10 @@ ${_characterSheet(base)}
   이벤트는 관계가 한 발짝 나아가는 사건, 일상 대화는 취미·하루 얘기처럼 가벼운 잡담이다.
 - 특별 이벤트(kind=special) ${brief.specials}개: 플레이어가 실제로 그 시각에 대화방에 있을 때만 한 번 오는 톡이다.
   늦은 밤 안부, 새벽 감성 톡처럼 시간대가 중요한 내용으로 쓰고 from_hour~to_hour에 그 시간대를 적는다. 목차의 아무 곳에나 둬도 된다.
-- 이벤트 중 절반 정도에는 cutscene(앨범 장면)을 넣는다. 일상 대화·특별 이벤트의 cutscene은 빈 문자열.
-- 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 장면이다.
+- 이벤트 중 절반 정도에는 cutscene(앨범 사진)을 넣는다. 셀카, 누가 찍어 준 캐릭터 사진, 주변 인물과 함께 찍은 사진(그 인물의 외모도 적기), 물건·풍경 사진 중에서 고르고 손만·유저가 나오는 사진은 쓰지 않는다. 일상 대화·특별 이벤트의 cutscene은 빈 문자열.
+- 모든 대화는 톡이다. 만나는 일은 대화와 대화 사이에 일어나고, 줄거리는 만날 약속을 잡는 톡이나 만나고 와서 돌아보는 톡으로 쓴다.
+- 고백은 엔딩에서만 한다. 엔딩 전 대화에서는 고백을 예고하거나 암시하는 데서 멈추고, 같은 사건(고백·약속·발표)을 두 번 일어나게 쓰지 않는다.
+- 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 톡이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
 
     // 목차 한 줄(제목·줄거리·컷씬)에 한글 토큰이 꽤 들고, Claude는 보이지 않는 생각도 같은 한도에서 써서 대화 수에 맞춰 늘림
@@ -301,6 +320,7 @@ ${_characterSheet(base)}
     required CharacterModel character,
     required ScenarioEventModel event,
     required List<ScenarioEventModel> outline,
+    List<String> previousLines = const [],
   }) async {
     final schema = {
       'type': 'object',
@@ -324,7 +344,10 @@ ${_characterSheet(base)}
                   'properties': {
                     'text': {'type': 'string'},
                     'speed': {'type': 'number', 'description': '0.5 툭 빠르게 ~ 1.5 망설이며 느리게'},
-                    'photo': {'type': 'string', 'description': '사진을 보내는 말풍선이면 사진 묘사, 아니면 빈 문자열'},
+                    'photo': {
+                      'type': 'string',
+                      'description': '사진을 보내는 말풍선이면 사진 묘사(셀카·누가 찍어 준 캐릭터 사진·주변 인물과 함께 찍은 사진(그 인물 외모도)·물건이나 풍경, 캐릭터가 실제로 찍어 보낼 수 있는 것), 아니면 빈 문자열',
+                    },
                     'late': {'type': 'boolean', 'description': '바빠서·망설여서 답장이 늦게 오는 말풍선이면 true (보통 false)'},
                   },
                   'required': ['text', 'speed', 'photo', 'late'],
@@ -337,7 +360,11 @@ ${_characterSheet(base)}
                   'type': 'object',
                   'properties': {
                     'label': {'type': 'string', 'description': '선택지 버튼 요약. 예: 같이 가자고 하기'},
-                    'user_messages': {'type': 'array', 'items': {'type': 'string'}},
+                    'user_messages': {
+                      'type': 'array',
+                      'items': {'type': 'string'},
+                      'description': '유저가 실제로 보내는 톡. "이어서", "...", "다음" 같은 자리채움 말은 쓰지 않는다',
+                    },
                     'affection': {'type': 'integer'},
                     'next_scene': {'type': 'string', 'description': '이어질 장면 이름. 이 선택으로 대화가 끝나면 빈 문자열'},
                   },
@@ -371,9 +398,12 @@ ${_characterSheet(base)}
         : null;
     // 대화마다 연출을 조금씩 다르게 (늘 캐릭터가 먼저 말하고 선택지로 끝나면 단조로워서)
     final style = _scriptStyle(event);
+    // 앞 대화의 줄거리까지 알려 줘야 이미 일어난 일(고백·약속 등)을 되풀이하지 않음
     final storySoFar = outline
-        .map((o) => '- [${o.stageLabel ?? ''}] ${o.title}${o.id == event.id ? '  ← 지금 쓸 대화' : ''}')
+        .map((o) => '- [${o.stageLabel ?? ''}] ${o.title}${o.id == event.id ? '  ← 지금 쓸 대화' : ': ${o.synopsis}'}')
         .join('\n');
+    // 같은 말버릇·핑계·오타가 대화마다 반복되지 않게 앞에서 쓴 말풍선 일부를 보여 줌
+    final recent = previousLines.length > 60 ? previousLines.sublist(previousLines.length - 60) : previousLines;
 
     final user = '''
 ${_characterSheet(character)}
@@ -381,7 +411,7 @@ ${_characterSheet(character)}
 [전체 목차]
 $storySoFar
 
-[지금 쓸 대화]
+${recent.isEmpty ? '' : '[앞 대화에서 캐릭터가 이미 한 말 (같은 말버릇·핑계·농담·오타를 그대로 되풀이하지 말 것)]\n${recent.join('\n')}\n\n'}[지금 쓸 대화]
 종류: $kindText
 호감도 단계: ${event.stageLabel}
 제목: ${event.title}
@@ -394,7 +424,9 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
 규칙:
 - ${style.$1 == _ScriptStyle.userFirst ? '첫 장면의 user_first에 유저가 먼저 보내는 톡 1~3개를 쓰고, 캐릭터는 그 톡에 답하며 시작한다. 나머지 장면의 user_first는 빈 배열' : '캐릭터가 먼저 톡을 보내며 시작한다. 모든 장면의 user_first는 빈 배열'}. 장면마다 캐릭터 말풍선 3~5개.
 - ${style.$1 == _ScriptStyle.late ? '대화 중 한 번은 캐릭터가 답장을 늦게 한다: 유저의 선택 바로 다음 장면 첫 말풍선의 late를 true로 하고, 늦은 이유가 말에 묻어나게 쓴다 (예: 아 미안 씻고 왔어). 나머지 late는 false' : '모든 late는 false'}.
-- 당황하거나 급하거나 들뜰 때는 일부러 오타를 내기도 한다 (예: 잠깐만 잠깐ㄴ만, 헐 대박ㅂ). 오타 뒤에 *고친말 로 바로잡는 말풍선을 붙이기도 한다. 대화당 0~2번, 캐릭터 말투에 맞을 때만.
+- 당황하거나 급하거나 들뜰 때는 일부러 오타를 내기도 한다 (예: 헐 대박ㅂ). 오타 뒤에 *고친말 로 바로잡는 말풍선을 붙이기도 한다. 대화당 0~1번, 캐릭터 말투에 맞을 때만. 앞 대화에서 쓴 오타를 똑같이 다시 쓰지 않는다.
+- 이 대화는 톡이다. 캐릭터와 유저는 같은 자리에 있지 않다. 만났던 일은 지나간 일로 돌아보고, 만날 일은 약속으로만 쓴다.
+- 사진 말풍선은 캐릭터가 직접 찍었거나 누가 찍어 준 사진만 보낸다. 주변 인물과 함께 찍은 사진이면 그 인물의 외모를 묘사에 적는다. 손만·유저가 나오는 사진은 보내지 않는다.
 - 분량: 좋은 선택을 따라 끝까지 읽었을 때 캐릭터 말풍선이 모두 합쳐 $bubbleRange개가 되게 쓴다. 짧게 끊어 치는 카톡처럼, 한 말풍선은 한두 문장.
 - 선택지는 2~3개. user_messages는 유저가 보내는 짧은 톡 1~3개.
 - affection: 캐릭터 마음에 쏙 드는 답 +2~+4, 무난한 답 +1, 서운한 답 0. 음수는 쓰지 않는다.${affectionBudget != null ? '\n- 좋은 답만 골랐을 때 이 대화에서 오르는 호감도 합이 약 $affectionBudget점이 되게 맞춘다.' : ''}
