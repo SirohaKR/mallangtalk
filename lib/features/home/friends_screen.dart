@@ -247,7 +247,7 @@ class _EmptyFriends extends StatelessWidget {
             style: AppTextStyles.systemNotice,
           ),
           const SizedBox(height: AppSpacing.lg),
-          ElevatedButton(onPressed: onAdd, child: const Text('캐릭터 추가하러 가기')),
+          ElevatedButton(onPressed: onAdd, child: const Text('말랑이 찾으러 가기')),
         ],
       ),
     );

@@ -18,7 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers.dart';
 
-/// 하단 탭(내 캐릭터 / 채팅 / 캐릭터 추가 / 설정)이 있는 실제 앱 화면 흐름 테스트입니다.
+/// 하단 탭(말랑 / 채팅 / 말랑이 찾기 / 설정)이 있는 실제 앱 화면 흐름 테스트입니다.
 void main() {
   ScenarioBundle loadIjun() => ScenarioBundle.fromJson(
         jsonDecode(File('assets/scenarios/example_seo_ijun.json').readAsStringSync())
@@ -128,7 +128,7 @@ void main() {
     await settle(tester);
     expect(find.byType(ChatScreen), findsNothing);
 
-    await tester.tap(find.text('캐릭터 추가'));
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('말랑이 찾기')));
     await settle(tester);
     expect(find.text('받아오기'), findsOneWidget);
     expect(find.text('친구'), findsWidgets); // 이미 친구인 윤도하 카드에 배지
@@ -152,7 +152,7 @@ void main() {
     await settle(tester);
     expect(find.text('친구 1'), findsOneWidget);
 
-    await tester.tap(find.text('캐릭터 추가'));
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('말랑이 찾기')));
     await settle(tester);
     expect(find.text('말수 적은 사진 동아리 선배가 자꾸 출사에 부른다'), findsOneWidget);
     await tester.tap(find.text('서이준'));
