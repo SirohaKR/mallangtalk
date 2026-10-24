@@ -620,7 +620,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                         icon: const Icon(Icons.photo_camera_outlined, size: 18),
                         label: Text(d.avatarUrl.isEmpty ? '프로필 사진 고르기' : '사진 바꾸기'),
                         onPressed: () async {
-                          final image = await pickProfileImage();
+                          final image = await pickProfileImage(context);
                           if (image != null) setState(() => d.avatarUrl = image);
                         },
                       ),
@@ -1486,7 +1486,7 @@ class PhotoPickRow extends StatelessWidget {
           icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
           label: Text(provider == null ? pickLabel : '사진 바꾸기'),
           onPressed: () async {
-            final picked = await pickPhoto();
+            final picked = await pickPhoto(context);
             if (picked != null) onChanged(picked);
           },
         ),

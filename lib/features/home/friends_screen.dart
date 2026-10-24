@@ -167,7 +167,7 @@ class _MyProfileEditorState extends ConsumerState<_MyProfileEditor> {
             Center(
               child: GestureDetector(
                 onTap: () async {
-                  final image = await pickProfileImage();
+                  final image = await pickProfileImage(context);
                   if (image != null) setState(() => _avatar = image);
                 },
                 child: Stack(
