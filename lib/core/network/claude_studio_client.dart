@@ -231,7 +231,12 @@ ${_characterSheet(base)}
 - 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 장면이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
 
-    final json = await _call(provider: provider, apiKey: apiKey, relay: relay, model: model, user: user, schema: schema, maxTokens: 9000);
+    // 목차 한 줄(제목·줄거리·컷씬)에 한글 토큰이 꽤 들고, Claude는 보이지 않는 생각도 같은 한도에서 써서 대화 수에 맞춰 늘림
+    final talkCount = brief.stages.length * (brief.eventsPerStage + brief.dailiesPerStage) + brief.specials + 1;
+    final json = await _call(
+      provider: provider, apiKey: apiKey, relay: relay, model: model, user: user, schema: schema,
+      maxTokens: (8000 + talkCount * 500).clamp(9000, 64000),
+    );
     final talks = [for (final t in json['talks'] as List? ?? const []) t as Map<String, dynamic>];
     if (talks.where((t) => t['kind'] == 'event').isEmpty) {
       throw const ClaudeChatException('AI가 이벤트 목차를 만들지 못했어요. 다시 시도해 주세요.');
