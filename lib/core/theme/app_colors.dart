@@ -20,6 +20,7 @@ class AppColors {
   static const Color primaryPink = Color(0xFFE86A92);
   static const Color primaryNavy = Color(0xFF2B3A55);
   static const Color aiActivePurple = Color(0xFF7C5CBF);
+  static const Color navIcon = Color(0xFF514346); // 하단 탭 아이콘 기본색 (선택하면 primaryPink)
 
   // 온더훅 스타일 단계별 아이콘 색상 (어색함 -> 친구 -> 썸/연인)
   static const Color affectionCold = Color(0xFF7CA1C4); // 0~29: 파란빛

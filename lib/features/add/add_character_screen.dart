@@ -11,7 +11,7 @@ import '../library/character_library.dart';
 import '../studio/studio_screen.dart';
 import '../../shared/utils/korean.dart';
 
-/// [초보자 노트] '캐릭터 추가' 탭: 받아오기(갤러리) / 내가 만든(내 작품 모아 보기) / 만들기(직접·AI 생성)
+/// [초보자 노트] '말랑이 찾기'(캐릭터 추가) 탭: 받아오기(갤러리) / 내가 만든(내 작품 모아 보기) / 만들기(직접·AI 생성)
 class AddCharacterScreen extends StatelessWidget {
   const AddCharacterScreen({super.key});
 
@@ -21,7 +21,7 @@ class AddCharacterScreen extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('캐릭터 추가'),
+          title: const Text('말랑이 찾기'),
           bottom: TabBar(
             labelStyle: AppTextStyles.choiceButton,
             unselectedLabelStyle: AppTextStyles.choiceButton
