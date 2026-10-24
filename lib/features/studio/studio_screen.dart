@@ -11,6 +11,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
+import '../../shared/widgets/mallang_loading.dart';
 import '../add/add_character_screen.dart';
 import '../chat/chat_notifier.dart';
 import '../library/character_library.dart';
@@ -61,7 +62,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
 
   bool _generating = false;
   String _progressText = '';
-  double _progress = 0;
+  /// 0~1. 단계를 셀 수 없는 일(이벤트 하나 쓰기)은 null이라 퍼센트를 숨김
+  double? _progress;
   int _eventsPerStage = 2;
   int _dailiesPerStage = 3;
   int _specials = 1;
@@ -324,7 +326,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     final byok = ref.read(byokSettingsProvider);
     setState(() {
       _generating = true;
-      _progress = 0.3;
+      _progress = null;
       _progressText = '"${event.title}" 대사를 쓰는 중';
     });
     try {
@@ -442,18 +444,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 ),
               ],
             ),
-            if (_generating)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    LinearProgressIndicator(value: _progress, color: AppColors.aiActivePurple),
-                    const SizedBox(height: 4),
-                    Text(_progressText, style: AppTextStyles.messageTime),
-                  ],
-                ),
-              ),
             Expanded(
               child: TabBarView(
                 controller: _tabs,
@@ -495,10 +485,18 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         ),
       ),
     );
-    if (!_editing) return body;
+    // AI가 만드는 동안 화면을 회색으로 덮고 말랑이가 통통 튀며 진행 상황을 알려 줌
+    final screen = Stack(
+      children: [
+        body,
+        if (_generating)
+          Positioned.fill(child: MallangLoadingOverlay(message: _progressText, progress: _progress)),
+      ],
+    );
+    if (!_editing) return screen;
     return Scaffold(
       appBar: AppBar(title: Text('${widget.initial!.character.name} 고치기')),
-      body: body,
+      body: screen,
     );
   }
 
