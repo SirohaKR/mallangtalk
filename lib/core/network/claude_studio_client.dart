@@ -88,7 +88,10 @@ class ClaudeStudioClient {
             ? null
             : (o['time_notice'] as String?)?.trim(),
         stageLabel: stage.stageLabel,
-        synopsis: (o['synopsis'] as String? ?? '').trim(),
+        synopsis: [
+          (o['synopsis'] as String? ?? '').trim(),
+          if ((o['speech'] as String? ?? '').trim().isNotEmpty) '말투: ${(o['speech'] as String).trim()}',
+        ].where((t) => t.isNotEmpty).join('\n'),
         realTime: type == ScenarioEventType.special
             ? RealTimeWindow(fromHour: from, toHour: from == to ? (from + 3) % 24 : to)
             : null,
@@ -217,6 +220,10 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
                 'description': '대화 시작 전 가운데 뜨는 장면 전환 문구. 앞 대화 기준 상대적인 말만: 다음 날, 그날 밤, 며칠 뒤 저녁, 주말 오후. 요일·시각 숫자 금지',
               },
               'synopsis': {'type': 'string', 'description': '이 대화(톡)에서 일어나는 일 2~3문장. 만남은 약속 잡기나 만나고 와서 돌아보는 톡으로'},
+              'speech': {
+                'type': 'string',
+                'description': '이 대화에서 유저와 캐릭터가 서로 쓰는 말투. 예: 둘 다 반말 / 유저는 존댓말, 캐릭터는 반말. 이 대화에서 바뀌면 바뀌는 계기와 함께: 유저 존댓말→반말 (캐릭터가 말 놓자고 해서)',
+              },
               'cutscene': {
                 'type': 'string',
                 'description': 'event만: 앨범에 모이는 사진 한 줄 묘사. 캐릭터가 톡에 올리는 셀카·누가 찍어 준 캐릭터 사진·물건이나 풍경 사진. 캐릭터 혼자, 주변 인물과 함께(그 인물의 외모도 적기), 또는 사람 없이. 손만·유저는 X. 없으면 빈 문자열',
@@ -224,7 +231,7 @@ ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}�
               'from_hour': {'type': 'integer', 'description': 'special만: 열리는 실제 시각 시작(0~23). 나머지는 0'},
               'to_hour': {'type': 'integer', 'description': 'special만: 끝 시각(0~24, 자정을 넘기면 시작보다 작게). 나머지는 0'},
             },
-            'required': ['kind', 'stage', 'title', 'time_notice', 'synopsis', 'cutscene', 'from_hour', 'to_hour'],
+            'required': ['kind', 'stage', 'title', 'time_notice', 'synopsis', 'speech', 'cutscene', 'from_hour', 'to_hour'],
             'additionalProperties': false,
           },
         },
@@ -246,6 +253,7 @@ ${_characterSheet(base)}
   늦은 밤 안부, 새벽 감성 톡처럼 시간대가 중요한 내용으로 쓰고 from_hour~to_hour에 그 시간대를 적는다. 목차의 아무 곳에나 둬도 된다.
 - 이벤트 중 절반 정도에는 cutscene(앨범 사진)을 넣는다. 셀카, 누가 찍어 준 캐릭터 사진, 주변 인물과 함께 찍은 사진(그 인물의 외모도 적기), 물건·풍경 사진 중에서 고르고 손만·유저가 나오는 사진은 쓰지 않는다. 일상 대화·특별 이벤트의 cutscene은 빈 문자열.
 - 모든 대화는 톡이다. 만나는 일은 대화와 대화 사이에 일어나고, 줄거리는 만날 약속을 잡는 톡이나 만나고 와서 돌아보는 톡으로 쓴다.
+- 말투(speech): 첫 대화의 말투는 유저 설정·관계에 맞게 정하고 다음 대화들도 같은 말투를 이어 간다. 존댓말에서 반말로(또는 반대로) 바뀌는 건 관계가 가까워지는 자연스러운 계기가 있는 대화 한 곳에서만 하고, 그 대화의 speech와 synopsis에 계기를 적는다. 그 뒤 대화는 바뀐 말투를 쓴다.
 - 고백은 엔딩에서만 한다. 엔딩 전 대화에서는 고백을 예고하거나 암시하는 데서 멈추고, 같은 사건(고백·약속·발표)을 두 번 일어나게 쓰지 않는다.
 - 맨 마지막에 마지막 단계의 엔딩(kind=ending) 1개. 엔딩은 관계가 결실을 맺는 톡이다.
 - 같은 단계 안에서는 이벤트와 일상 대화를 번갈아 배치한다.''';
@@ -425,6 +433,7 @@ ${event.cutscenePhotoTitle != null ? '앨범 장면(CG): ${event.cutscenePhotoTi
 - ${style.$1 == _ScriptStyle.userFirst ? '첫 장면의 user_first에 유저가 먼저 보내는 톡 1~3개를 쓰고, 캐릭터는 그 톡에 답하며 시작한다. 나머지 장면의 user_first는 빈 배열' : '캐릭터가 먼저 톡을 보내며 시작한다. 모든 장면의 user_first는 빈 배열'}. 장면마다 캐릭터 말풍선 3~5개.
 - ${style.$1 == _ScriptStyle.late ? '대화 중 한 번은 캐릭터가 답장을 늦게 한다: 유저의 선택 바로 다음 장면 첫 말풍선의 late를 true로 하고, 늦은 이유가 말에 묻어나게 쓴다 (예: 아 미안 씻고 왔어). 나머지 late는 false' : '모든 late는 false'}.
 - 당황하거나 급하거나 들뜰 때는 일부러 오타를 내기도 한다 (예: 헐 대박ㅂ). 오타 뒤에 *고친말 로 바로잡는 말풍선을 붙이기도 한다. 대화당 0~1번, 캐릭터 말투에 맞을 때만. 앞 대화에서 쓴 오타를 똑같이 다시 쓰지 않는다.
+- 말투: 내용에 적힌 '말투'를 유저 선택지(user_messages·user_first)와 캐릭터 대사 모두에서 지킨다. 적혀 있지 않으면 전체 목차와 앞 대화에서 이어지는 말투를 쓴다. 말투가 바뀌는 대화면 계기가 되는 말이 오간 뒤부터 바뀐 말투를 쓴다. 캐릭터 설정에 있는 일시적인 말투 변화(예: 화나면 존댓말)는 그대로 살린다.
 - 이 대화는 톡이다. 캐릭터와 유저는 같은 자리에 있지 않다. 만났던 일은 지나간 일로 돌아보고, 만날 일은 약속으로만 쓴다.
 - 사진 말풍선은 캐릭터가 직접 찍었거나 누가 찍어 준 사진만 보낸다. 주변 인물과 함께 찍은 사진이면 그 인물의 외모를 묘사에 적는다. 손만·유저가 나오는 사진은 보내지 않는다.
 - 분량: 좋은 선택을 따라 끝까지 읽었을 때 캐릭터 말풍선이 모두 합쳐 $bubbleRange개가 되게 쓴다. 짧게 끊어 치는 카톡처럼, 한 말풍선은 한두 문장.
