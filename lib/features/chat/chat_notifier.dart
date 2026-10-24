@@ -398,12 +398,25 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     return _eventById(lastId)?.isAffectionEvent ?? false;
   }
 
+  /// 시간이 지나는 장면 사이의 텀: 앞 대화가 끝난 뒤 시간 표시까지, 시간 표시 뒤 첫 톡까지
+  static const sceneGapBefore = Duration(seconds: 4);
+  static const sceneGapAfter = Duration(milliseconds: 2500);
+  DateTime? _lastEventEndedAt;
+
   Future<void> _playEvent(ScenarioEventModel event, int runId) async {
     _eventStart = (affection: state.internalAffection, flags: state.acquiredFlags);
     state = state.copyWith(currentEventId: event.id);
     if (event.timeNotice != null) {
+      // '다음 날'처럼 시간이 지나는 장면: 앞 대화가 끝나고 조금 쉬었다가 시간 표시, 또 잠깐 뒤에 첫 톡
+      // (대화 속도 설정을 따르고, 대화방에 막 들어왔을 때는 바로 시간 표시)
+      final tempo = ref.read(chatPrefsProvider(arg)).tempo;
+      if (_lastEventEndedAt case final ended?) {
+        final wait = sceneGapBefore * tempo - DateTime.now().difference(ended);
+        if (wait > Duration.zero) await Future.delayed(wait);
+        if (runId != _runId) return;
+      }
       _addSystemNotice(event.timeNotice!);
-      await Future.delayed(const Duration(milliseconds: 900));
+      await Future.delayed(Duration(milliseconds: (sceneGapAfter.inMilliseconds * tempo).round()));
       if (runId != _runId) return;
     }
     final firstNode = _bundle.firstNodeOf(event.id);
@@ -459,6 +472,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 이벤트 하나를 끝내고 다음 이벤트로 넘어가거나, 공략 완료/막힘을 판정합니다.
   Future<void> _finishEvent(ScenarioEventModel event, int runId) async {
+    _lastEventEndedAt = DateTime.now();
     if (event.isSpecial) {
       final id = _bundle.character.id;
       _store.saveSeenSpecials(id, {..._store.loadSeenSpecials(id), event.id}.toList());
