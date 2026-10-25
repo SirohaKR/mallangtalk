@@ -484,6 +484,8 @@ class ScenarioEventModel {
   final String? cutscenePhotoTitle;
   final String? cutsceneImageUrl; // 실제 CG 이미지 경로 (없으면 제목만 있는 자리표시 카드로 보여줌)
   final int? cutsceneTriggerStep; // 이 단계(stepOrder)의 대사가 끝나면 컷씬(CG)이 전체 화면으로 뜸
+  /// 이 이벤트에 올려 둔 사진들 ('img:번호'). 컷씬과 사진 말풍선이 이 중에서 골라 씀
+  final List<String> photoRefs;
   final List<String> participantCharacterIds;
   /// 이 대화가 속한 호감도 단계 이름 (캐릭터의 affectionStages 중 하나)
   /// 이벤트는 그 단계에 도달하면 열리고, 일상 대화는 그 단계에 머무는 동안에만 나옵니다.
@@ -503,6 +505,7 @@ class ScenarioEventModel {
     this.cutscenePhotoTitle,
     this.cutsceneImageUrl,
     this.cutsceneTriggerStep,
+    this.photoRefs = const [],
     this.participantCharacterIds = const [],
     this.stageLabel,
     this.maxAffection,
@@ -525,6 +528,7 @@ class ScenarioEventModel {
         cutscenePhotoTitle: cutscenePhotoTitle,
         cutsceneImageUrl: cutsceneImageUrl,
         cutsceneTriggerStep: step,
+        photoRefs: photoRefs,
         participantCharacterIds: participantCharacterIds,
         stageLabel: stageLabel,
         maxAffection: maxAffection,
@@ -557,6 +561,9 @@ class ScenarioEventModel {
       cutscenePhotoTitle: json['cutscene_title'] as String?,
       cutsceneImageUrl: json['cutscene_image_url'] as String?,
       cutsceneTriggerStep: json['cutscene_trigger_step'] as int?,
+      photoRefs: [
+        for (final ref in json['photos'] as List? ?? const []) ref as String,
+      ],
       participantCharacterIds: [
         for (final id in json['participants'] as List? ?? const []) id as String,
       ],
@@ -585,6 +592,7 @@ class ScenarioEventModel {
         if (cutscenePhotoTitle != null) 'cutscene_title': cutscenePhotoTitle,
         if (cutsceneImageUrl != null) 'cutscene_image_url': cutsceneImageUrl,
         if (cutsceneTriggerStep != null) 'cutscene_trigger_step': cutsceneTriggerStep,
+        if (photoRefs.isNotEmpty) 'photos': photoRefs,
         if (participantCharacterIds.isNotEmpty) 'participants': participantCharacterIds,
         if (synopsis.isNotEmpty) 'synopsis': synopsis,
         if (realTime != null) 'real_time': realTime!.toJson(),

@@ -82,8 +82,10 @@ class EventDraft {
   String synopsis;
   /// 컷씬(앨범 장면) 설명. 설명과 사진이 둘 다 비면 컷씬 없음
   String cutscene;
-  /// 컷씬으로 보여 줄 진짜 사진 (data: 주소). 비우면 설명 카드
+  /// 컷씬으로 보여 줄 진짜 사진 (data: 주소, photos 중 하나). 비우면 설명 카드
   String cutsceneImage;
+  /// 이 이벤트에 올려 둔 사진들 (data: 주소). 컷씬과 사진 말풍선이 여기서 골라 씀
+  final List<String> photos;
   int fromHour;
   int toHour;
   String date;
@@ -108,7 +110,25 @@ class EventDraft {
     this.keptMin = 0,
     this.keptStage = '',
     List<SceneDraft>? scenes,
-  }) : scenes = scenes ?? [SceneDraft()];
+    List<String>? photos,
+  })  : scenes = scenes ?? [SceneDraft()],
+        photos = photos ?? [];
+
+  /// 사진을 사진함에 넣음 (이미 있으면 그대로)
+  void addPhoto(String image) {
+    if (image.isNotEmpty && !photos.contains(image)) photos.add(image);
+  }
+
+  /// 사진함에서 빼고, 그 사진을 쓰던 컷씬·말풍선도 비움
+  void removePhoto(String image) {
+    photos.remove(image);
+    if (cutsceneImage == image) cutsceneImage = '';
+    for (final s in scenes) {
+      for (final l in s.lines) {
+        if (l.photoImage == image) l.photoImage = '';
+      }
+    }
+  }
 
   /// 설명이나 사진이 있으면 컷씬 (일상 대화는 컷씬 없음)
   bool get hasCutscene =>
@@ -206,7 +226,7 @@ class ScenarioDraft {
                 text: b.text,
                 speed: b.speedFactor,
                 photo: b.photoLabel ?? '',
-                photoImage: bundle.resolveImage(b.photoImage) ?? '',
+                photoImage: bundle.photoFor(b.photoImage, b.photoLabel) ?? '',
                 delay: b.delaySeconds,
               ),
           ],
@@ -233,6 +253,21 @@ class ScenarioDraft {
     final stage = e.stageLabel ??
         bundle.character.stageFor(e.requiredAffection)?.stageLabel ??
         '';
+    final cutsceneImage = bundle.cutsceneImageFor(e) ?? '';
+    // 사진함: 이벤트에 올려 둔 사진 + 컷씬·말풍선이 쓰던 사진 (예전 파일은 사진함이 없음)
+    final photos = <String>[
+      for (final ref in e.photoRefs)
+        if (bundle.resolveImage(ref) case final image?) image,
+    ];
+    void keep(String image) {
+      if (image.isNotEmpty && !photos.contains(image)) photos.add(image);
+    }
+    keep(cutsceneImage);
+    for (final scene in scenes.values) {
+      for (final l in scene.lines) {
+        keep(l.photoImage);
+      }
+    }
     return EventDraft(
       id: e.id,
       kind: e.isEnding
@@ -247,7 +282,8 @@ class ScenarioDraft {
       stage: stage,
       synopsis: e.synopsis,
       cutscene: e.cutscenePhotoTitle ?? '',
-      cutsceneImage: bundle.resolveImage(e.cutsceneImageUrl) ?? '',
+      cutsceneImage: cutsceneImage,
+      photos: photos,
       fromHour: e.realTime?.fromHour ?? 22,
       toHour: e.realTime?.toHour ?? 2,
       date: e.realTime?.date ?? '',
@@ -331,6 +367,10 @@ class ScenarioDraft {
       cutsceneImageUrl: hasCutscene ? imageRef(e.cutsceneImage) : null,
       // 컷씬 장면을 안 골랐으면 첫 장면에서
       cutsceneTriggerStep: hasCutscene ? (cutsceneIndex < 0 ? 0 : cutsceneIndex) + 1 : null,
+      photoRefs: [
+        for (final p in e.photos)
+          if (imageRef(p) case final ref?) ref,
+      ],
       realTime: e.kind == DraftKind.special
           ? RealTimeWindow(fromHour: e.fromHour, toHour: e.toHour, date: e.date.trim().isEmpty ? null : e.date.trim())
           : null,
@@ -422,6 +462,8 @@ class ScenarioDraft {
   Map<String, String> collectImages() => {
         for (final e in events) ...{
           if (e.hasCutscene && e.cutsceneImage.startsWith('data:')) imageId(e.cutsceneImage): e.cutsceneImage,
+          for (final p in e.photos)
+            if (p.startsWith('data:')) imageId(p): p,
           for (final scene in e.scenes)
             for (final l in scene.lines)
               if (l.photoImage.startsWith('data:')) imageId(l.photoImage): l.photoImage,
