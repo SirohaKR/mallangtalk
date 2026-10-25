@@ -1056,16 +1056,31 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 hint: '앨범에 모이는 장면 설명. 비우면 컷씬 없음. 몇 번째 장면에서 모일지는 대사 탭에서 골라요',
                 onChanged: (v) => setState(() => e.cutscene = v),
               ),
-            if (e.kind != DraftKind.daily)
+            const Text('이벤트 사진', style: AppTextStyles.speakerName),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: EventPhotoBox(
+                photos: e.photos,
+                note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요',
+                onAdd: (v) => setState(() => e.addPhoto(v)),
+                onRemove: (v) => setState(() => e.removePhoto(v)),
+              ),
+            ),
+            if (e.kind != DraftKind.daily) ...[
+              const Text('컷씬 사진', style: AppTextStyles.speakerName),
+              const SizedBox(height: 4),
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: PhotoPickRow(
-                  image: e.cutsceneImage,
-                  pickLabel: '컷씬 사진 올리기',
-                  note: '사진이 없으면 설명 카드로 보여요',
-                  onChanged: (v) => setState(() => e.cutsceneImage = v),
+                child: EventPhotoPicker(
+                  photos: e.photos,
+                  selected: e.cutsceneImage,
+                  note: '고르지 않으면 설명 카드로 보여요',
+                  onAdd: (v) => setState(() => e.addPhoto(v)),
+                  onSelect: (v) => setState(() => e.cutsceneImage = v),
                 ),
               ),
+            ],
             Wrap(
               spacing: 4,
               runSpacing: 4,
@@ -1263,7 +1278,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           ),
           const Text('캐릭터 말풍선', style: AppTextStyles.speakerName),
           const SizedBox(height: 4),
-          for (final line in scene.lines) _lineRow(scene, line),
+          for (final line in scene.lines) _lineRow(event, scene, line),
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
@@ -1304,7 +1319,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     );
   }
 
-  Widget _lineRow(SceneDraft scene, LineDraft line) {
+  Widget _lineRow(EventDraft event, SceneDraft scene, LineDraft line) {
     final speeds = <double, String>{0.6: '툭 빠르게', 1.0: '보통', 1.5: '망설이며'};
     final speedKey = speeds.keys.reduce((a, b) => (a - line.speed).abs() <= (b - line.speed).abs() ? a : b);
     return Padding(
@@ -1367,11 +1382,14 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             ),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: PhotoPickRow(
-                image: line.photoImage,
-                pickLabel: '사진 올리기',
-                note: '사진이 없으면 설명 카드로 보여요',
-                onChanged: (v) => setState(() => line.photoImage = v),
+              child: EventPhotoPicker(
+                photos: event.photos,
+                selected: line.photoImage,
+                note: line.photoImage.isEmpty && event.hasCutscene && line.photo.trim() == event.cutscene.trim()
+                    ? '고르지 않으면 설명이 같은 컷씬 사진이 나와요'
+                    : '고르지 않으면 설명 카드로 보여요',
+                onAdd: (v) => setState(() => event.addPhoto(v)),
+                onSelect: (v) => setState(() => line.photoImage = v),
               ),
             ),
           ],
@@ -1453,48 +1471,124 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   }
 }
 
-/// 사진 고르기 줄: 올린 사진 미리보기 + 올리기/바꾸기 + 빼기
-class PhotoPickRow extends StatelessWidget {
-  const PhotoPickRow({
+/// 이벤트 사진함: 올린 사진들 + 올리기, 사진마다 빼기
+class EventPhotoBox extends StatelessWidget {
+  const EventPhotoBox({
     super.key,
-    required this.image,
-    required this.pickLabel,
+    required this.photos,
     required this.note,
-    required this.onChanged,
+    required this.onAdd,
+    required this.onRemove,
   });
 
-  final String image;
-  final String pickLabel;
+  final List<String> photos;
   final String note;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onAdd;
+  final ValueChanged<String> onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final provider = CharacterImage.providerFor(image);
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (provider != null) ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image(image: provider, width: 56, height: 56, fit: BoxFit.cover),
-          ),
-          const SizedBox(width: 8),
-        ],
+        for (final p in photos)
+          if (CharacterImage.providerFor(p) case final provider?)
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image(image: provider, width: 56, height: 56, fit: BoxFit.cover),
+                ),
+                Positioned(
+                  top: -6,
+                  right: -6,
+                  child: InkWell(
+                    onTap: () => onRemove(p),
+                    child: const CircleAvatar(
+                      radius: 10,
+                      backgroundColor: Colors.black54,
+                      child: Icon(Icons.close_rounded, size: 14, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
         OutlinedButton.icon(
           icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-          label: Text(provider == null ? pickLabel : '사진 바꾸기'),
+          label: const Text('사진 올리기'),
           onPressed: () async {
             final picked = await pickPhoto(context);
-            if (picked != null) onChanged(picked);
+            if (picked != null) onAdd(picked);
           },
         ),
-        if (provider != null)
-          TextButton(onPressed: () => onChanged(''), child: const Text('사진 빼기'))
-        else ...[
-          const SizedBox(width: 8),
-          Expanded(child: Text(note, style: AppTextStyles.messageTime)),
-        ],
+        if (photos.isEmpty) Text(note, style: AppTextStyles.messageTime),
       ],
     );
   }
 }
+
+/// 이벤트 사진함에서 하나 고르기 (누르면 고르고, 고른 걸 다시 누르면 빼기). 새로 올리면 사진함에도 들어가고 바로 골라짐
+class EventPhotoPicker extends StatelessWidget {
+  const EventPhotoPicker({
+    super.key,
+    required this.photos,
+    required this.selected,
+    required this.note,
+    required this.onAdd,
+    required this.onSelect,
+  });
+
+  final List<String> photos;
+  final String selected;
+  final String note;
+  final ValueChanged<String> onAdd;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final p in photos)
+          if (CharacterImage.providerFor(p) case final provider?)
+            GestureDetector(
+              onTap: () => onSelect(p == selected ? '' : p),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                    color: p == selected ? AppColors.primaryPink : Colors.transparent,
+                    width: 2.5,
+                  ),
+                ),
+                child: Opacity(
+                  opacity: selected.isEmpty || p == selected ? 1 : 0.45,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image(image: provider, width: 48, height: 48, fit: BoxFit.cover),
+                  ),
+                ),
+              ),
+            ),
+        TextButton.icon(
+          icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+          label: const Text('새로 올리기'),
+          onPressed: () async {
+            final picked = await pickPhoto(context);
+            if (picked == null) return;
+            onAdd(picked);
+            onSelect(picked);
+          },
+        ),
+        if (selected.isEmpty) Text(note, style: AppTextStyles.messageTime),
+      ],
+    );
+  }
+}
+

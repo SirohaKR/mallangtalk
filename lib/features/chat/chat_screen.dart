@@ -324,7 +324,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     if (msg.isSystem) {
                       return _SystemNoticeRow(text: msg.text);
                     }
-                    final image = bundle?.resolveImage(msg.photoImage);
+                    final image = bundle?.photoFor(msg.photoImage, msg.photoLabel);
                     return _MessageBubbleRow(
                       message: msg,
                       photoUrl: image,
