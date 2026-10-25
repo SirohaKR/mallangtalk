@@ -54,7 +54,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                   for (final event in cutsceneEvents)
                     _AlbumTile(
                       event: event,
-                      imageUrl: bundle.resolveImage(event.cutsceneImageUrl),
+                      imageUrl: bundle.cutsceneImageFor(event),
                       isUnlocked: unlocked.contains(event.id),
                       onTap: () => setState(() => _viewing = event),
                     ),
@@ -65,7 +65,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
           if (_viewing != null)
             CutsceneView(
               event: _viewing!,
-              imageUrl: bundle.resolveImage(_viewing!.cutsceneImageUrl),
+              imageUrl: bundle.cutsceneImageFor(_viewing!),
               footer: '화면을 탭하면 닫혀요',
               onClose: () => setState(() => _viewing = null),
             ),

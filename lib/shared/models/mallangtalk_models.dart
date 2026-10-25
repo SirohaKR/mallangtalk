@@ -753,6 +753,33 @@ class ScenarioBundle {
     return ref;
   }
 
+  /// 같은 설명을 단 컷씬과 사진 말풍선은 한쪽에만 사진을 올려도 같이 씀 (설명 → 사진 번호)
+  static final _sharedPhotos = Expando<Map<String, String>>();
+  Map<String, String> get _photosByLabel => _sharedPhotos[this] ??= () {
+        final map = <String, String>{};
+        void add(String? label, String? ref) {
+          final key = label?.trim() ?? '';
+          if (key.isNotEmpty && ref != null && ref.isNotEmpty) map.putIfAbsent(key, () => ref);
+        }
+        for (final e in events) {
+          add(e.cutscenePhotoTitle, e.cutsceneImageUrl);
+        }
+        for (final n in nodes.values) {
+          for (final b in [...n.characterBubbles, ...n.userFirst, for (final c in n.choices) ...c.userBubbles]) {
+            add(b.photoLabel, b.photoImage);
+          }
+        }
+        return map;
+      }();
+
+  /// 사진 말풍선의 사진. 자기 사진이 없으면 설명이 같은 컷씬·사진 말풍선의 사진
+  String? photoFor(String? ref, String? label) =>
+      resolveImage(ref) ?? resolveImage(_photosByLabel[label?.trim() ?? '']);
+
+  /// 컷씬 사진. 컷씬에 사진이 없으면 설명이 같은 사진 말풍선의 사진
+  String? cutsceneImageFor(ScenarioEventModel event) =>
+      photoFor(event.cutsceneImageUrl, event.cutscenePhotoTitle);
+
   factory ScenarioBundle.fromJson(Map<String, dynamic> json) {
     final events = [
       for (final event in json['events'] as List)

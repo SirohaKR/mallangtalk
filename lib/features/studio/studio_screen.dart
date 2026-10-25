@@ -1062,7 +1062,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 child: PhotoPickRow(
                   image: e.cutsceneImage,
                   pickLabel: '컷씬 사진 올리기',
-                  note: '사진이 없으면 설명 카드로 보여요',
+                  note: '설명이 같은 사진 말풍선에도 이 사진이 같이 나와요',
                   onChanged: (v) => setState(() => e.cutsceneImage = v),
                 ),
               ),
@@ -1263,7 +1263,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           ),
           const Text('캐릭터 말풍선', style: AppTextStyles.speakerName),
           const SizedBox(height: 4),
-          for (final line in scene.lines) _lineRow(scene, line),
+          for (final line in scene.lines) _lineRow(event, scene, line),
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
@@ -1304,7 +1304,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     );
   }
 
-  Widget _lineRow(SceneDraft scene, LineDraft line) {
+  Widget _lineRow(EventDraft event, SceneDraft scene, LineDraft line) {
     final speeds = <double, String>{0.6: '툭 빠르게', 1.0: '보통', 1.5: '망설이며'};
     final speedKey = speeds.keys.reduce((a, b) => (a - line.speed).abs() <= (b - line.speed).abs() ? a : b);
     return Padding(
@@ -1370,7 +1370,11 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               child: PhotoPickRow(
                 image: line.photoImage,
                 pickLabel: '사진 올리기',
-                note: '사진이 없으면 설명 카드로 보여요',
+                note: event.hasCutscene && line.photo.trim() == event.cutscene.trim()
+                    ? (event.cutsceneImage.isEmpty
+                        ? '컷씬과 설명이 같아서, 컷씬 사진을 올리면 여기도 같이 나와요'
+                        : '컷씬과 설명이 같아서 컷씬 사진이 같이 나와요')
+                    : '사진이 없으면 설명 카드로 보여요. 컷씬과 설명이 같으면 컷씬 사진이 나와요',
                 onChanged: (v) => setState(() => line.photoImage = v),
               ),
             ),
