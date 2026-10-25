@@ -12,6 +12,7 @@ import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
+import 'package:mallangtalk/features/studio/scenario_draft.dart';
 import 'package:mallangtalk/features/studio/template_scenario.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -416,5 +417,60 @@ void main() {
     expect(made.bundle.character.worldviewPrompt, endsWith('커피는 늘 블랙.'));
     // 저장하면 새 캐릭터를 만들 수 있게 빈 칸으로 돌아감
     expect(find.widgetWithText(TextFormField, '서이준'), findsNothing);
+  });
+
+  testWidgets('만들기: 사진을 안 고른 사진 말풍선이 있으면 저장 전에 알려 주고, 수정하러 가기로 그 자리로 감', (tester) async {
+    // 1x1 PNG
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    final draft = ScenarioDraft.fromBundle(templateScenario());
+    final event = draft.events.first..photos.add(png);
+    // 사진함엔 사진 1장, 빈 자리 2곳(설명이 서로 다름) → 자동으로 못 붙임
+    event.scenes.last.lines.addAll([LineDraft(photo: '필름 카메라 셀카'), LineDraft(photo: '노을 진 옥상')]);
+    event.cutscene = '';
+    SharedPreferences.setMockInitialValues({'studio_draft_v1': jsonEncode(draft.toBundle().toJson())});
+    appRouter.go('/add');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    await tester.tap(find.text('만들기'));
+    await tester.pumpAndSettle();
+
+    // 이벤트 카드에 사진 꼬리표
+    await tester.tap(find.text('이벤트'));
+    await tester.pumpAndSettle();
+    expect(find.text('사진함 1장'), findsOneWidget);
+    expect(find.text('사진 말풍선 0/2'), findsOneWidget);
+
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+    expect(find.text('사진을 안 고른 곳이 있어요'), findsOneWidget);
+    expect(find.textContaining('"필름 카메라 셀카"'), findsOneWidget);
+    expect(find.text('수정하러 가기'), findsNWidgets(2));
+
+    await tester.tap(find.text('수정하러 가기').last);
+    await tester.pumpAndSettle();
+    expect(find.text('사진을 안 고른 곳이 있어요'), findsNothing);
+    // 대사 탭에서 그 대화가 열리고, 고를 말풍선이 화면에 보임
+    expect(find.text('이 대화의 사진'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '노을 진 옥상'), findsOneWidget);
+    expect(find.text('사진 말풍선 · 사진함에 사진이 있는데 아직 안 골랐어요'), findsNWidgets(2));
+    final target = tester.getRect(find.widgetWithText(TextFormField, '노을 진 옥상'));
+    expect(target.top, greaterThanOrEqualTo(0));
+    expect(target.bottom, lessThanOrEqualTo(900));
+
+    // 그냥 저장도 됨
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('그냥 저장'));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(tester.element(find.byType(Scaffold).first));
+    expect(container.read(characterLibraryProvider), hasLength(2));
   });
 }

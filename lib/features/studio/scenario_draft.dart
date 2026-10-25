@@ -48,6 +48,9 @@ class LineDraft {
   /// 답장이 늦게 오는 연출: 이 말풍선 전에 기다리는 초 (0이면 보통)
   int delay;
   LineDraft({this.text = '', this.speed = 1.0, this.photo = '', this.photoImage = '', this.delay = 0});
+
+  /// 사진 말풍선인지 (설명이나 사진이 있음)
+  bool get isPhoto => photo.isNotEmpty || photoImage.isNotEmpty;
 }
 
 class ChoiceDraft {
@@ -133,6 +136,42 @@ class EventDraft {
   /// 설명이나 사진이 있으면 컷씬 (일상 대화는 컷씬 없음)
   bool get hasCutscene =>
       kind != DraftKind.daily && (cutscene.trim().isNotEmpty || cutsceneImage.isNotEmpty);
+
+  /// 저장할 때 컷씬 설명 (비우면 제목)
+  String get cutsceneLabel => cutscene.trim().isEmpty ? title.trim() : cutscene.trim();
+
+  /// 사진이 들어갈 자리: 컷씬 + 사진 말풍선들 (장면 순서대로)
+  List<PhotoSlot> get photoSlots => [
+        if (hasCutscene) PhotoSlot(this),
+        for (var i = 0; i < scenes.length; i++)
+          for (final l in scenes[i].lines)
+            if (l.isPhoto) PhotoSlot(this, line: l, sceneIndex: i),
+      ];
+
+  /// 사진함에 있지만 컷씬·말풍선 어디에도 안 쓴 사진
+  List<String> get unusedPhotos {
+    final used = {for (final s in photoSlots) s.image};
+    return [for (final p in photos) if (!used.contains(p)) p];
+  }
+}
+
+/// 사진이 들어갈 자리 하나: 컷씬(line이 null)이거나 사진 말풍선
+class PhotoSlot {
+  PhotoSlot(this.event, {this.line, this.sceneIndex});
+  final EventDraft event;
+  final LineDraft? line;
+  final int? sceneIndex;
+
+  bool get isCutscene => line == null;
+  /// 저장할 때 붙는 설명 (같은 설명끼리 사진을 같이 씀)
+  String get label => line == null ? event.cutsceneLabel : (line!.photo.trim().isEmpty ? '사진' : line!.photo.trim());
+  String get image => line?.photoImage ?? event.cutsceneImage;
+  set image(String v) => line == null ? event.cutsceneImage = v : line!.photoImage = v;
+  bool get filled => image.isNotEmpty;
+  /// 다른 사진과 이어 붙여도 되는 설명인지 ('사진'처럼 기본 설명은 아무 사진이나 붙어서 뺌)
+  bool get hasOwnLabel => label.isNotEmpty && label != '사진';
+  String get where =>
+      isCutscene ? '컷씬' : '장면 ${sceneIndex! + 1} 사진 말풍선 "${label.length > 18 ? '${label.substring(0, 18)}…' : label}"';
 }
 
 class ScenarioDraft {
@@ -523,6 +562,59 @@ class ScenarioDraft {
       }
     }
     return out;
+  }
+
+  /// 설명 → 사진. 플레이할 때도 설명이 같은 컷씬·사진 말풍선은 사진을 같이 씀 (ScenarioBundle.photoFor)
+  Map<String, String> _photosByLabel() {
+    final map = <String, String>{};
+    for (final e in events) {
+      for (final s in e.photoSlots) {
+        if (s.filled && s.hasOwnLabel) map.putIfAbsent(s.label, () => s.image);
+      }
+    }
+    return map;
+  }
+
+  /// 사진을 안 골랐어도 설명이 같은 다른 자리의 사진이 나오면 그 사진
+  String? sharedPhotoFor(PhotoSlot slot) => slot.hasOwnLabel ? _photosByLabel()[slot.label] : null;
+
+  /// 저장하기 전에 빈 사진 자리를 채워 줌. 채운 자리 수를 돌려줌
+  /// 1) 설명이 같은 컷씬·사진 말풍선의 사진
+  /// 2) 이벤트 사진함에 안 쓴 사진이 1장 남고 빈 자리(같은 설명끼리는 한 자리)도 1곳이면 그 사진
+  int autoLinkPhotos() {
+    var linked = 0;
+    final byLabel = _photosByLabel();
+    for (final e in events) {
+      for (final s in e.photoSlots) {
+        if (s.filled || !s.hasOwnLabel) continue;
+        final shared = byLabel[s.label];
+        if (shared == null) continue;
+        s.image = shared;
+        e.addPhoto(shared);
+        linked++;
+      }
+      final empty = [for (final s in e.photoSlots) if (!s.filled) s];
+      final unused = e.unusedPhotos;
+      if (empty.isEmpty || unused.length != 1) continue;
+      final groups = {for (final s in empty) s.hasOwnLabel ? s.label : identityHashCode(s)};
+      if (groups.length != 1) continue;
+      for (final s in empty) {
+        s.image = unused.single;
+        linked++;
+      }
+    }
+    return linked;
+  }
+
+  /// 이벤트 사진함에 사진을 올려 놓고 아직 사진을 안 고른 컷씬·사진 말풍선 (플레이 때 설명 카드로 나옴)
+  List<PhotoSlot> missingPhotos() {
+    final byLabel = _photosByLabel();
+    return [
+      for (final e in events)
+        if (e.photos.isNotEmpty)
+          for (final s in e.photoSlots)
+            if (!s.filled && !(s.hasOwnLabel && byLabel.containsKey(s.label))) s,
+    ];
   }
 
   /// 고치면 좋은 것 (저장은 됨)

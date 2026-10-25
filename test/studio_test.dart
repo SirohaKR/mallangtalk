@@ -121,6 +121,44 @@ void main() {
       expect(back.events.single.scenes.first.lines[1].photoImage, photo);
     });
 
+    test('저장할 때 사진 자리 맞추기: 같은 설명·남은 사진 1장은 자동 연결, 못 맞춘 곳은 알려 줌', () {
+      const p1 = 'data:image/png;base64,AAAA';
+      const p2 = 'data:image/png;base64,BBBB';
+      const p3 = 'data:image/png;base64,CCCC';
+      final d = ScenarioDraft.blank()..name = '한결';
+      final first = d.events.single
+        ..title = '첫 라떼'
+        ..cutscene = '창가 자리의 라떼'
+        ..cutsceneImage = p1
+        ..photos.addAll([p1, p2]);
+      final sameAsCut = LineDraft(photo: '창가 자리의 라떼');
+      final selfie = LineDraft(photo: '두부 셀카');
+      first.scenes.first.lines.addAll([sameAsCut, selfie]);
+      // 사진함에 사진 2장, 빈 자리 2곳이라 어느 게 맞는지 몰라서 못 붙임
+      final second = EventDraft(id: d.newEventId(), title: '야경', photos: [p2, p3], scenes: [
+        SceneDraft(lines: [LineDraft(photo: '한강 야경'), LineDraft(photo: '편의점 앞')]),
+      ]);
+      // 사진함에 사진은 없으면 설명 카드로 두는 거라 안 알려 줌
+      final third = EventDraft(id: d.newEventId(), title: '설명만', scenes: [
+        SceneDraft(lines: [LineDraft(photo: '그냥 카드')]),
+      ]);
+      d.events.addAll([second, third]);
+
+      expect(d.sharedPhotoFor(first.photoSlots[1]), p1); // 같은 설명이라 플레이 땐 컷씬 사진이 나옴
+      expect(d.autoLinkPhotos(), 2);
+      expect(sameAsCut.photoImage, p1);
+      expect(selfie.photoImage, p2); // 남은 사진 1장, 빈 자리 1곳
+      final missing = d.missingPhotos();
+      expect(missing.map((s) => s.label), ['한강 야경', '편의점 앞']);
+      expect(missing.first.event, second);
+      expect(missing.first.sceneIndex, 0);
+      expect(missing.first.where, contains('장면 1'));
+      expect(first.unusedPhotos, isEmpty);
+
+      // 한 번 더 해도 그대로
+      expect(d.autoLinkPhotos(), 0);
+    });
+
     test('저장 전에 고칠 곳을 알려 줌', () {
       final d = ScenarioDraft.blank();
       d.stages.first.start = 5;

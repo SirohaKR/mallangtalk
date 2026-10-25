@@ -124,6 +124,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         _version++;
         _scriptEvent = null;
         _charPage = 0;
+        _jumpKeys.clear();
       });
 
   String _k(Object owner, String field) => '$_version-${identityHashCode(owner)}-$field';
@@ -365,6 +366,114 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     }
   }
 
+  // ───────────────────────── 사진 자리 ─────────────────────────
+
+  /// 수정하러 가기에서 스크롤해 갈 곳 (사진 말풍선, 이벤트 컷씬)
+  final _jumpKeys = <Object, GlobalKey>{};
+  GlobalKey _jumpKey(Object owner) => _jumpKeys.putIfAbsent(owner, GlobalKey.new);
+
+  PhotoState _photoState(PhotoSlot slot) {
+    if (slot.filled) return PhotoState.filled;
+    if (_draft.sharedPhotoFor(slot) != null) return PhotoState.shared;
+    return slot.event.photos.isEmpty ? PhotoState.card : PhotoState.missing;
+  }
+
+  static String _photoStateText(PhotoState state) => switch (state) {
+        PhotoState.filled => '사진 골랐어요',
+        PhotoState.shared => '설명이 같은 사진이 나와요',
+        PhotoState.missing => '사진함에 사진이 있는데 아직 안 골랐어요',
+        PhotoState.card => '사진이 없어서 설명 카드로 보여요',
+      };
+
+  /// 이벤트에 사진이 어디 있는지 보여 주는 꼬리표 (이벤트 카드·대사 탭)
+  List<Widget> _photoTags(EventDraft e) {
+    final slots = e.photoSlots;
+    final cut = slots.where((s) => s.isCutscene).firstOrNull;
+    final lines = [for (final s in slots) if (!s.isCutscene) _photoState(s)];
+    final ready = lines.where((s) => s == PhotoState.filled || s == PhotoState.shared).length;
+    final unused = slots.isEmpty ? 0 : e.unusedPhotos.length;
+    return [
+      if (e.photos.isNotEmpty)
+        PhotoTag(label: '사진함 ${e.photos.length}장', state: PhotoState.filled, icon: Icons.photo_library_outlined),
+      if (cut != null)
+        switch (_photoState(cut)) {
+          PhotoState.filled => const PhotoTag(label: '컷씬 사진 있음', state: PhotoState.filled),
+          PhotoState.shared => const PhotoTag(label: '컷씬 사진 (같은 설명)', state: PhotoState.shared),
+          PhotoState.missing => const PhotoTag(label: '컷씬 사진 안 고름', state: PhotoState.missing),
+          PhotoState.card => const PhotoTag(label: '컷씬 설명 카드', state: PhotoState.card),
+        },
+      if (lines.isNotEmpty)
+        PhotoTag(
+          label: '사진 말풍선 $ready/${lines.length}',
+          state: ready == lines.length
+              ? PhotoState.filled
+              : lines.contains(PhotoState.missing)
+                  ? PhotoState.missing
+                  : PhotoState.card,
+        ),
+      if (unused > 0) PhotoTag(label: '안 쓴 사진 $unused장', state: PhotoState.card, icon: Icons.photo_outlined),
+    ];
+  }
+
+  /// 대사 탭에서 그 이벤트를 열고 사진 자리까지 스크롤
+  void _jumpTo(PhotoSlot slot) {
+    setState(() => _scriptEvent = slot.event);
+    _tabs.animateTo(3);
+    Future.delayed(const Duration(milliseconds: 450), () {
+      final target = _jumpKey(slot.line ?? slot.event).currentContext;
+      if (target != null && target.mounted) {
+        Scrollable.ensureVisible(target, alignment: 0.15, duration: const Duration(milliseconds: 300));
+      }
+    });
+  }
+
+  /// 사진을 안 고른 자리 목록. 고른 자리(수정하러 가기), true(그냥 저장), null(닫기)
+  Future<Object?> _askMissingPhotos(List<PhotoSlot> missing, int linked) {
+    final byEvent = <EventDraft, List<PhotoSlot>>{};
+    for (final s in missing) {
+      byEvent.putIfAbsent(s.event, () => []).add(s);
+    }
+    return showDialog<Object?>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('사진을 안 고른 곳이 있어요'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${linked > 0 ? '설명이 같은 사진 등 $linked곳은 자동으로 연결했어요. ' : ''}'
+                '아래는 이벤트 사진함에 사진이 있는데 사진을 안 골라서, 그대로 저장하면 설명 카드로 보여요.',
+                style: AppTextStyles.systemNotice,
+              ),
+              for (final entry in byEvent.entries) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  '${_draft.events.indexOf(entry.key) + 1}. ${entry.key.title.trim().isEmpty ? '(제목 없음)' : entry.key.title}',
+                  style: AppTextStyles.speakerName,
+                ),
+                for (final slot in entry.value)
+                  Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.affectionWarm),
+                      const SizedBox(width: 4),
+                      Expanded(child: Text(slot.where, style: AppTextStyles.messageTime)),
+                      TextButton(onPressed: () => Navigator.pop(c, slot), child: const Text('수정하러 가기')),
+                    ],
+                  ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('닫기')),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('그냥 저장')),
+        ],
+      ),
+    );
+  }
+
   // ───────────────────────── 저장 ─────────────────────────
 
   Future<void> _save() async {
@@ -379,6 +488,21 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         ),
       );
       return;
+    }
+    // 이벤트에 올린 사진을 컷씬·사진 말풍선에 붙일 수 있는 건 붙이고, 못 붙인 곳은 저장 전에 알려 줌
+    final linked = _draft.autoLinkPhotos();
+    if (linked > 0) setState(() {});
+    final missing = _draft.missingPhotos();
+    if (missing.isNotEmpty) {
+      final answer = await _askMissingPhotos(missing, linked);
+      if (!mounted) return;
+      if (answer is PhotoSlot) {
+        _jumpTo(answer);
+        return;
+      }
+      if (answer != true) return;
+    } else if (linked > 0) {
+      _toast('사진을 안 고른 $linked곳에 이벤트 사진을 자동으로 연결했어요');
     }
     var bundle = _draft.toBundle();
     if (!bestPathClears(bundle)) {
@@ -968,16 +1092,25 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             '${index + 1}. ${e.title.trim().isEmpty ? '(제목 없음)' : e.title}',
             style: AppTextStyles.chatBubbleBody.copyWith(fontWeight: FontWeight.w700),
           ),
-          subtitle: Text(
-            [
-              e.kind.label,
-              if (e.kind != DraftKind.ending && e.stage.isNotEmpty) e.stage,
-              if (e.kind == DraftKind.special) _windowLabel(e),
-              if (e.kind != DraftKind.special && e.notice.isNotEmpty) e.notice,
-              if (e.hasCutscene) '컷씬',
-              '말풍선 $lines개',
-            ].join(' · '),
-            style: AppTextStyles.messageTime,
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                [
+                  e.kind.label,
+                  if (e.kind != DraftKind.ending && e.stage.isNotEmpty) e.stage,
+                  if (e.kind == DraftKind.special) _windowLabel(e),
+                  if (e.kind != DraftKind.special && e.notice.isNotEmpty) e.notice,
+                  '말풍선 $lines개',
+                ].join(' · '),
+                style: AppTextStyles.messageTime,
+              ),
+              if (_photoTags(e) case final tags when tags.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(spacing: 4, runSpacing: 4, children: tags),
+                ),
+            ],
           ),
           children: [
             const SizedBox(height: 6),
@@ -1192,52 +1325,112 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     }
     final event = d.events.contains(_scriptEvent) ? _scriptEvent! : d.events.first;
     final hasCutscene = event.hasCutscene;
-    return ListView(
+    // 수정하러 가기로 아래쪽 말풍선까지 스크롤하려면 전부 그려 둬야 해서 ListView 대신 Column
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      children: [
-        DropdownButtonFormField<EventDraft>(
-          key: ValueKey(_k(event, 'picker-${d.events.length}')),
-          initialValue: event,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '편집할 대화', isDense: true),
-          items: [
-            for (var i = 0; i < d.events.length; i++)
-              DropdownMenuItem(
-                value: d.events[i],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DropdownButtonFormField<EventDraft>(
+            key: ValueKey(_k(event, 'picker-${d.events.length}')),
+            initialValue: event,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: '편집할 대화', isDense: true),
+            items: [
+              for (var i = 0; i < d.events.length; i++)
+                DropdownMenuItem(
+                  value: d.events[i],
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${i + 1}. ${d.events[i].title.trim().isEmpty ? '(제목 없음)' : d.events[i].title} · ${d.events[i].kind.label}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (d.events[i].photoSlots.isNotEmpty || d.events[i].photos.isNotEmpty)
+                        Icon(
+                          d.events[i].photoSlots.any((s) => _photoState(s) == PhotoState.missing)
+                              ? Icons.warning_amber_rounded
+                              : Icons.image_rounded,
+                          size: 16,
+                          color: d.events[i].photoSlots.any((s) => _photoState(s) == PhotoState.missing)
+                              ? AppColors.affectionWarm
+                              : AppColors.primaryPink,
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+            onChanged: (e) => setState(() => _scriptEvent = e),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Expanded(
                 child: Text(
-                  '${i + 1}. ${d.events[i].title.trim().isEmpty ? '(제목 없음)' : d.events[i].title} · ${d.events[i].kind.label}',
-                  overflow: TextOverflow.ellipsis,
+                  '장면마다 캐릭터 말풍선을 쓰고, 끝에 내가 고를 선택지를 달아요. 선택지가 없는 장면에서 대화가 끝나요. '
+                  '{{user}}는 플레이어 별명, {{char}}는 캐릭터 이름으로 바뀌어요. 뒤에 붙는 조사도 맞춰 줘요.',
+                  style: AppTextStyles.messageTime,
                 ),
               ),
-          ],
-          onChanged: (e) => setState(() => _scriptEvent = e),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                '장면마다 캐릭터 말풍선을 쓰고, 끝에 내가 고를 선택지를 달아요. 선택지가 없는 장면에서 대화가 끝나요. '
-                '{{user}}는 플레이어 별명, {{char}}는 캐릭터 이름으로 바뀌어요. 뒤에 붙는 조사도 맞춰 줘요.',
-                style: AppTextStyles.messageTime,
+              TextButton.icon(
+                icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                label: const Text('AI로 쓰기'),
+                onPressed: _generating ? null : () => _generateOne(event),
               ),
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-              label: const Text('AI로 쓰기'),
-              onPressed: _generating ? null : () => _generateOne(event),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _photoSummary(event),
+          for (var i = 0; i < event.scenes.length; i++) _sceneCard(event, i, hasCutscene),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('장면 추가'),
+            onPressed: () => setState(() => event.scenes.add(SceneDraft())),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+        ],
+      ),
+    );
+  }
+
+  /// 대사 탭 맨 위: 이 대화의 사진함, 컷씬 사진, 사진 말풍선이 채워졌는지
+  Widget _photoSummary(EventDraft event) {
+    final cut = event.photoSlots.where((s) => s.isCutscene).firstOrNull;
+    return StudioCard(
+      key: _jumpKey(event),
+      highlight: cut != null && _photoState(cut) == PhotoState.missing,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: Text('이 대화의 사진', style: AppTextStyles.speakerName)),
+              Flexible(child: Wrap(spacing: 4, runSpacing: 4, alignment: WrapAlignment.end, children: _photoTags(event))),
+            ],
+          ),
+          const SizedBox(height: 6),
+          EventPhotoBox(
+            photos: event.photos,
+            note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요',
+            onAdd: (v) => setState(() => event.addPhoto(v)),
+            onRemove: (v) => setState(() => event.removePhoto(v)),
+          ),
+          if (cut != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text('컷씬 사진 · ${cut.label}', style: AppTextStyles.speakerName, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            EventPhotoPicker(
+              photos: event.photos,
+              selected: event.cutsceneImage,
+              note: _photoStateText(_photoState(cut)),
+              onAdd: (v) => setState(() => event.addPhoto(v)),
+              onSelect: (v) => setState(() => event.cutsceneImage = v),
             ),
           ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        for (var i = 0; i < event.scenes.length; i++) _sceneCard(event, i, hasCutscene),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('장면 추가'),
-          onPressed: () => setState(() => event.scenes.add(SceneDraft())),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1251,6 +1444,17 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           Row(
             children: [
               Expanded(child: Text('장면 ${index + 1}', style: AppTextStyles.appBarTitle.copyWith(fontSize: 15))),
+              if (scene.lines.where((l) => l.isPhoto).length case final n when n > 0)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: PhotoTag(
+                    label: '사진 $n',
+                    state: event.photoSlots
+                            .any((s) => s.sceneIndex == index && _photoState(s) == PhotoState.missing)
+                        ? PhotoState.missing
+                        : PhotoState.filled,
+                  ),
+                ),
               if (index == 0) const Text('대화 시작', style: AppTextStyles.messageTime),
               IconButton(
                 tooltip: '장면 삭제',
@@ -1322,8 +1526,22 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   Widget _lineRow(EventDraft event, SceneDraft scene, LineDraft line) {
     final speeds = <double, String>{0.6: '툭 빠르게', 1.0: '보통', 1.5: '망설이며'};
     final speedKey = speeds.keys.reduce((a, b) => (a - line.speed).abs() <= (b - line.speed).abs() ? a : b);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+    final slot = line.isPhoto ? event.photoSlots.firstWhere((s) => s.line == line) : null;
+    final state = slot == null ? null : _photoState(slot);
+    final stateColor = state == null ? null : PhotoTag.colorOf(state);
+    // 사진 말풍선은 색 테두리로 감싸서 눈에 띄게 (안 고른 곳은 주황)
+    return Container(
+      key: _jumpKey(line),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: slot == null ? EdgeInsets.zero : const EdgeInsets.fromLTRB(6, 4, 0, 6),
+      decoration: slot == null
+          ? null
+          : BoxDecoration(
+              color: stateColor!.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: stateColor.withValues(alpha: state == PhotoState.missing ? 0.9 : 0.4),
+                  width: state == PhotoState.missing ? 1.5 : 1),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1357,15 +1575,15 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 ),
               ),
               IconButton(
-                tooltip: line.photo.isEmpty && line.photoImage.isEmpty ? '사진 말풍선으로' : '사진 빼기',
+                tooltip: line.isPhoto ? '사진 빼기' : '사진 말풍선으로',
                 onPressed: () => setState(() {
-                  final on = line.photo.isEmpty && line.photoImage.isEmpty;
+                  final on = !line.isPhoto;
                   line.photo = on ? '사진' : '';
                   if (!on) line.photoImage = '';
                   _version++;
                 }),
-                icon: Icon(Icons.image_outlined, size: 20,
-                    color: line.photo.isEmpty && line.photoImage.isEmpty ? AppColors.textMuted : AppColors.primaryPink),
+                icon: Icon(line.isPhoto ? Icons.image_rounded : Icons.image_outlined, size: 20,
+                    color: stateColor ?? AppColors.textMuted),
               ),
               IconButton(
                 tooltip: '말풍선 빼기',
@@ -1374,7 +1592,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               ),
             ],
           ),
-          if (line.photo.isNotEmpty || line.photoImage.isNotEmpty) ...[
+          if (slot != null) ...[
             Padding(
               padding: const EdgeInsets.only(top: 4, right: 96),
               child: EditField(fieldKey: _k(line, 'photo'), value: line.photo, hint: '보내는 사진 설명', dense: true,
@@ -1382,12 +1600,17 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             ),
             Padding(
               padding: const EdgeInsets.only(top: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: PhotoTag(label: '사진 말풍선 · ${_photoStateText(state!)}', state: state),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: EventPhotoPicker(
                 photos: event.photos,
                 selected: line.photoImage,
-                note: line.photoImage.isEmpty && event.hasCutscene && line.photo.trim() == event.cutscene.trim()
-                    ? '고르지 않으면 설명이 같은 컷씬 사진이 나와요'
-                    : '고르지 않으면 설명 카드로 보여요',
+                note: state == PhotoState.shared ? '고르지 않으면 설명이 같은 사진이 나와요' : '고르지 않으면 설명 카드로 보여요',
                 onAdd: (v) => setState(() => event.addPhoto(v)),
                 onSelect: (v) => setState(() => line.photoImage = v),
               ),

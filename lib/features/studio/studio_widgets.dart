@@ -271,3 +271,56 @@ class _BigTextFieldState extends State<BigTextField> {
     );
   }
 }
+
+/// 사진 자리 상태: 사진 고름 / 같은 설명 사진이 나옴 / 사진함에 사진은 있는데 안 고름 / 설명 카드
+enum PhotoState { filled, shared, missing, card }
+
+/// 사진이 있는지 한눈에 보이는 작은 꼬리표 (이벤트 카드·대사 탭)
+class PhotoTag extends StatelessWidget {
+  const PhotoTag({super.key, required this.label, required this.state, this.icon});
+
+  final String label;
+  final PhotoState state;
+  final IconData? icon;
+
+  static Color colorOf(PhotoState state) => switch (state) {
+        PhotoState.filled => AppColors.primaryPink,
+        PhotoState.shared => AppColors.aiActivePurple,
+        PhotoState.missing => AppColors.affectionWarm,
+        PhotoState.card => AppColors.textMuted,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final color = colorOf(state);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon ??
+                switch (state) {
+                  PhotoState.filled || PhotoState.shared => Icons.image_rounded,
+                  PhotoState.missing => Icons.warning_amber_rounded,
+                  PhotoState.card => Icons.image_not_supported_outlined,
+                },
+            size: 13,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(label,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.messageTime.copyWith(color: color, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+}
