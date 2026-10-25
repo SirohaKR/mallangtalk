@@ -449,8 +449,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     state = state.copyWith(currentStepOrder: node.stepOrder);
 
     // 제작자가 지정한 단계의 대사까지 보면 그 장면(CG)이 앨범에 모임 (대화는 멈추지 않음)
+    // 선택지 갈래 때문에 그 단계를 건너뛰어도, 뒤 단계에 오거나 이벤트가 끝나면 모음 (안 그러면 엔딩이 막힘)
     final event = _eventById(node.eventId);
-    if (event != null && event.cutsceneTriggerStep == node.stepOrder) {
+    final trigger = event?.cutsceneTriggerStep;
+    if (event != null && trigger != null && (node.stepOrder >= trigger || node.choices.isEmpty)) {
       _collectCutscene(event);
     }
 
