@@ -1499,6 +1499,22 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     ];
   }
 
+  /// 사진함 사진 하나의 '자유대화에서 보낼 때' (감정·상황·키워드)
+  Future<void> _editPhotoTrigger(EventDraft e, String image) async {
+    final result = await showDialog<PhotoTrigger>(
+      context: context,
+      builder: (_) => _PhotoTriggerDialog(image: image, initial: e.photoTriggers[image] ?? const PhotoTrigger()),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      if (result.isSet || result.caption.trim().isNotEmpty) {
+        e.photoTriggers[image] = result;
+      } else {
+        e.photoTriggers.remove(image);
+      }
+    });
+  }
+
   Widget _eventCard(EventDraft e, int index) {
     final d = _draft;
     final lines = e.scenes.fold(0, (sum, s) => sum + s.lines.where((l) => l.text.trim().isNotEmpty).length);
@@ -1659,7 +1675,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: EventPhotoBox(
                 photos: e.photos,
-                note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요',
+                note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요. 사진을 누르면 자유대화에서 보낼 때를 정해요',
+                triggers: e.photoTriggers,
+                onTap: (v) => _editPhotoTrigger(e, v),
                 onAdd: (v) => setState(() => e.addPhoto(v)),
                 onRemove: (v) => setState(() => e.removePhoto(v)),
               ),
@@ -1883,7 +1901,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           const SizedBox(height: 6),
           EventPhotoBox(
             photos: event.photos,
-            note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요',
+            note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요. 사진을 누르면 자유대화에서 보낼 때를 정해요',
+            triggers: event.photoTriggers,
+            onTap: (v) => _editPhotoTrigger(event, v),
             onAdd: (v) => setState(() => event.addPhoto(v)),
             onRemove: (v) => setState(() => event.removePhoto(v)),
           ),
@@ -2172,12 +2192,18 @@ class EventPhotoBox extends StatelessWidget {
     required this.note,
     required this.onAdd,
     required this.onRemove,
+    this.triggers = const {},
+    this.onTap,
   });
 
   final List<String> photos;
   final String note;
   final ValueChanged<String> onAdd;
   final ValueChanged<String> onRemove;
+
+  /// 자유대화에서 보낼 때를 정해 둔 사진 (번개 표시)
+  final Map<String, PhotoTrigger> triggers;
+  final ValueChanged<String>? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2191,10 +2217,23 @@ class EventPhotoBox extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image(image: provider, width: 56, height: 56, fit: BoxFit.cover),
+                GestureDetector(
+                  onTap: onTap == null ? null : () => onTap!(p),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image(image: provider, width: 56, height: 56, fit: BoxFit.cover),
+                  ),
                 ),
+                if (triggers[p]?.isSet ?? false)
+                  const Positioned(
+                    left: 3,
+                    bottom: 3,
+                    child: CircleAvatar(
+                      radius: 9,
+                      backgroundColor: Color(0xFFF2B13C),
+                      child: Icon(Icons.bolt_rounded, size: 13, color: Colors.white),
+                    ),
+                  ),
                 Positioned(
                   top: -6,
                   right: -6,
@@ -2217,7 +2256,109 @@ class EventPhotoBox extends StatelessWidget {
             if (picked != null) onAdd(picked);
           },
         ),
-        if (photos.isEmpty) Text(note, style: AppTextStyles.messageTime),
+        if (photos.isEmpty || onTap != null) Text(note, style: AppTextStyles.messageTime),
+      ],
+    );
+  }
+}
+
+/// 사진 하나를 자유대화에서 언제 보낼지 정하는 창
+class _PhotoTriggerDialog extends StatefulWidget {
+  const _PhotoTriggerDialog({required this.image, required this.initial});
+
+  final String image;
+  final PhotoTrigger initial;
+
+  @override
+  State<_PhotoTriggerDialog> createState() => _PhotoTriggerDialogState();
+}
+
+class _PhotoTriggerDialogState extends State<_PhotoTriggerDialog> {
+  late final _caption = TextEditingController(text: widget.initial.caption);
+  late final _mood = TextEditingController(text: widget.initial.mood);
+  late final _situation = TextEditingController(text: widget.initial.situation);
+  late final _keywords = TextEditingController(text: widget.initial.keywords.join(', '));
+
+  static const _moods = ['기쁨', '설렘', '장난', '뿌듯함', '서운함', '걱정', '피곤함', '심심함'];
+
+  @override
+  void dispose() {
+    _caption.dispose();
+    _mood.dispose();
+    _situation.dispose();
+    _keywords.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = CharacterImage.providerFor(widget.image);
+    return AlertDialog(
+      title: const Text('자유대화에서 보낼 때'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (provider != null)
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image(image: provider, height: 120, fit: BoxFit.cover),
+                ),
+              ),
+            const SizedBox(height: 8),
+            const Text('자유대화 방에서 AI가 대화 흐름이 이 조건에 맞을 때만 이 사진을 보내요. 받은 사진은 앨범에 들어가요.',
+                style: AppTextStyles.messageTime),
+            TextField(
+              key: const ValueKey('trigger_caption'),
+              controller: _caption,
+              decoration: const InputDecoration(labelText: '사진 설명', hintText: '비우면 이 사진을 쓰는 말풍선·컷씬 설명'),
+            ),
+            TextField(
+              key: const ValueKey('trigger_mood'),
+              controller: _mood,
+              decoration: const InputDecoration(labelText: '감정', hintText: '예: 설렘'),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final m in _moods)
+                  StudioPill(label: m, selected: _mood.text == m, onTap: () => setState(() => _mood.text = m)),
+              ],
+            ),
+            TextField(
+              key: const ValueKey('trigger_situation'),
+              controller: _situation,
+              decoration: const InputDecoration(labelText: '상황', hintText: '예: 유저가 보고 싶다고 할 때'),
+            ),
+            TextField(
+              key: const ValueKey('trigger_keywords'),
+              controller: _keywords,
+              decoration: const InputDecoration(labelText: '키워드 (쉼표로 나눠요)', hintText: '예: 고양이, 두부, 귀여워'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(
+          onPressed: () => Navigator.pop(
+            context,
+            PhotoTrigger(
+              caption: _caption.text.trim(),
+              mood: _mood.text.trim(),
+              situation: _situation.text.trim(),
+              keywords: [
+                for (final k in _keywords.text.split(RegExp(r'[,，\n]')))
+                  if (k.trim().isNotEmpty) k.trim(),
+              ],
+            ),
+          ),
+          child: const Text('저장'),
+        ),
       ],
     );
   }

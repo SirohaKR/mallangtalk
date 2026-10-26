@@ -98,6 +98,50 @@ void main() {
     expect(container.read(chatRoomProvider(dohaId)).internalAffection, before + 2);
   });
 
+  testWidgets('자유대화 방: 단계 없이 부르고, 보낼 때를 정해 둔 사진만 AI에게 보여 주고, 고른 사진은 앨범으로', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'byok_claude_api_key': 'sk-ant-test-key-1234',
+    });
+    final base = loadSampleBundle();
+    const trigger = PhotoTrigger(caption: '두부를 배 위에 올린 셀카', mood: '뿌듯함', keywords: ['두부', '고양이']);
+    final bundle = ScenarioBundle(
+      character: base.character,
+      events: [
+        for (final e in base.events)
+          if (e.id == 'evt_dubu_missing')
+            ScenarioEventModel.fromJson({
+              ...e.toJson(),
+              'photos': ['dubu_photo', 'other_photo'],
+              'photo_triggers': {'dubu_photo': trigger.toJson()},
+            })
+          else
+            e,
+      ],
+      nodes: base.nodes,
+    );
+    expect(bundle.albumPhotos.map((p) => p.label), contains('두부를 배 위에 올린 셀카'));
+
+    final fake = _FakeClaude()..sendPhoto = 'p1';
+    final room = freeRoomId(dohaId);
+    final container = await openDohaChat(
+      tester,
+      roomId: room,
+      bundle: bundle,
+      extra: [claudeChatClientProvider.overrideWithValue(fake)],
+    );
+    container.read(chatRoomProvider(room).notifier).sendUserMessage(text: '두부 잘 있어?');
+    await settle(tester);
+
+    expect(fake.lastStageLabel, isNull);
+    expect(fake.lastPhotos.map((p) => p.ref), ['dubu_photo']);
+    final photoMsg = container.read(chatRoomProvider(room)).messages.lastWhere((m) => m.hasPhoto);
+    expect(photoMsg.photoLabel, '두부를 배 위에 올린 셀카');
+    expect(photoMsg.isUser, isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('photos_$dohaId'), contains('두부를 배 위에 올린 셀카'));
+  });
+
   testWidgets('설정에서 고른 AI 회사의 키와 모델로 자유대화를 부름', (tester) async {
     SharedPreferences.setMockInitialValues({
       ...fastTempo,
@@ -280,6 +324,10 @@ class _FakeClaude extends ClaudeChatClient {
   List<String> lastMemories = const [];
   /// 이 번째 답장에서 캐릭터가 마무리함 (null이면 AI가 스스로는 안 끝냄)
   int? endAtTurn;
+  List<FreeTalkPhoto> lastPhotos = const [];
+  String? lastStageLabel = '';
+  /// 답장에 같이 보낼 사진 ID
+  String sendPhoto = '';
 
   @override
   Future<FreeChatReply> reply({
@@ -297,8 +345,11 @@ class _FakeClaude extends ClaudeChatClient {
     String userPersona = '',
     FreeTalkPace pace = FreeTalkPace.open,
     List<String> memories = const [],
+    List<FreeTalkPhoto> photos = const [],
   }) async {
     paces.add(pace);
+    lastPhotos = photos;
+    lastStageLabel = stageLabel;
     lastPersona = userPersona;
     calls.add(newUserMessages);
     final waitFor = gate;
@@ -325,9 +376,10 @@ class _FakeClaude extends ClaudeChatClient {
     lastSystemSheet = character.aiCharacterSheet;
     lastNewMessages = newUserMessages;
     lastHistory = history;
-    return const FreeChatReply(
-      bubbles: ['ㅇㅇ 잘 있음', '두부 지금 내 배 위에서 자'],
+    return FreeChatReply(
+      bubbles: const ['ㅇㅇ 잘 있음', '두부 지금 내 배 위에서 자'],
       affectionDelta: 2,
+      photoId: sendPhoto,
     );
   }
 }

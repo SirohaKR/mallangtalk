@@ -501,6 +501,44 @@ class RealTimeWindow {
       };
 }
 
+/// 사진함 사진 하나에 붙이는 '보낼 때' (자유대화에서 AI가 이 조건이 맞을 때만 이 사진을 보냄)
+class PhotoTrigger {
+  /// 사진 설명 (앨범·AI가 보는 이름. 비우면 같은 사진을 쓰는 말풍선·컷씬 설명)
+  final String caption;
+  /// 감정 (예: 기쁨, 설렘, 장난, 서운함)
+  final String mood;
+  /// 상황 (예: 유저가 보고 싶다고 할 때, 밤늦게 잠 안 올 때)
+  final String situation;
+  /// 대화에 나오면 보낼 만한 낱말들
+  final List<String> keywords;
+
+  const PhotoTrigger({this.caption = '', this.mood = '', this.situation = '', this.keywords = const []});
+
+  /// 감정·상황·키워드 중 하나라도 있으면 자유대화에서 보낼 수 있음
+  bool get isSet => mood.trim().isNotEmpty || situation.trim().isNotEmpty || keywords.isNotEmpty;
+
+  /// AI에게 보여 주는 한 줄
+  String get summary => [
+        if (mood.trim().isNotEmpty) '감정: ${mood.trim()}',
+        if (situation.trim().isNotEmpty) '상황: ${situation.trim()}',
+        if (keywords.isNotEmpty) '키워드: ${keywords.join(', ')}',
+      ].join(' / ');
+
+  factory PhotoTrigger.fromJson(Map<String, dynamic> json) => PhotoTrigger(
+        caption: json['caption'] as String? ?? '',
+        mood: json['mood'] as String? ?? '',
+        situation: json['situation'] as String? ?? '',
+        keywords: [for (final k in json['keywords'] as List? ?? const []) k as String],
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (caption.trim().isNotEmpty) 'caption': caption.trim(),
+        if (mood.trim().isNotEmpty) 'mood': mood.trim(),
+        if (situation.trim().isNotEmpty) 'situation': situation.trim(),
+        if (keywords.isNotEmpty) 'keywords': keywords,
+      };
+}
+
 /// 4. 시나리오 이벤트 모델 (DB 테이블: scenario_events)
 class ScenarioEventModel {
   final String id;
@@ -522,6 +560,8 @@ class ScenarioEventModel {
   final int? cutsceneTriggerStep; // 이 단계(stepOrder)의 대사가 끝나면 컷씬(CG)이 전체 화면으로 뜸
   /// 이 이벤트에 올려 둔 사진들 ('img:번호'). 컷씬과 사진 말풍선이 이 중에서 골라 씀
   final List<String> photoRefs;
+  /// 사진함 사진별 '보낼 때' (사진 번호 → 감정·상황·키워드). 자유대화에서 씀
+  final Map<String, PhotoTrigger> photoTriggers;
   final List<String> participantCharacterIds;
   /// 이 대화가 속한 호감도 단계 이름 (캐릭터의 affectionStages 중 하나)
   /// 이벤트는 그 단계에 도달하면 열리고, 일상 대화는 그 단계에 머무는 동안에만 나옵니다.
@@ -544,6 +584,7 @@ class ScenarioEventModel {
     this.cutsceneImageUrl,
     this.cutsceneTriggerStep,
     this.photoRefs = const [],
+    this.photoTriggers = const {},
     this.participantCharacterIds = const [],
     this.stageLabel,
     this.maxAffection,
@@ -568,6 +609,7 @@ class ScenarioEventModel {
         cutsceneImageUrl: cutsceneImageUrl,
         cutsceneTriggerStep: step,
         photoRefs: photoRefs,
+        photoTriggers: photoTriggers,
         participantCharacterIds: participantCharacterIds,
         stageLabel: stageLabel,
         maxAffection: maxAffection,
@@ -605,6 +647,11 @@ class ScenarioEventModel {
       photoRefs: [
         for (final ref in json['photos'] as List? ?? const []) ref as String,
       ],
+      photoTriggers: {
+        for (final entry in (json['photo_triggers'] as Map? ?? const {}).entries)
+          if (entry.value is Map)
+            entry.key as String: PhotoTrigger.fromJson(Map<String, dynamic>.from(entry.value as Map)),
+      },
       participantCharacterIds: [
         for (final id in json['participants'] as List? ?? const []) id as String,
       ],
@@ -635,6 +682,11 @@ class ScenarioEventModel {
         if (cutsceneImageUrl != null) 'cutscene_image_url': cutsceneImageUrl,
         if (cutsceneTriggerStep != null) 'cutscene_trigger_step': cutsceneTriggerStep,
         if (photoRefs.isNotEmpty) 'photos': photoRefs,
+        if (photoTriggers.values.any((t) => t.isSet))
+          'photo_triggers': {
+            for (final e in photoTriggers.entries)
+              if (e.value.isSet) e.key: e.value.toJson(),
+          },
         if (participantCharacterIds.isNotEmpty) 'participants': participantCharacterIds,
         if (synopsis.isNotEmpty) 'synopsis': synopsis,
         if (realTime != null) 'real_time': realTime!.toJson(),
@@ -831,6 +883,25 @@ class ScenarioBundle {
   String? cutsceneImageFor(ScenarioEventModel event) =>
       photoFor(event.cutsceneImageUrl, event.cutscenePhotoTitle);
 
+  /// 자유대화에서 AI가 골라 보낼 수 있는 사진: 사진함 사진 중 '보낼 때'를 적어 둔 것
+  static final _freeCache = Expando<List<FreeTalkPhoto>>();
+  List<FreeTalkPhoto> get freeTalkPhotos => _freeCache[this] ??= () {
+        final byRef = <String, String>{for (final e in _photosByLabel.entries) e.value: e.key};
+        final list = <FreeTalkPhoto>[];
+        final seen = <String>{};
+        for (final event in events) {
+          for (final entry in event.photoTriggers.entries) {
+            final t = entry.value;
+            if (!t.isSet || !seen.add(entry.key)) continue;
+            final label = t.caption.trim().isNotEmpty
+                ? t.caption.trim()
+                : byRef[entry.key] ?? '${event.title} 사진 ${list.length + 1}';
+            list.add(FreeTalkPhoto(id: 'p${list.length + 1}', ref: entry.key, label: label, trigger: t, event: event));
+          }
+        }
+        return List<FreeTalkPhoto>.unmodifiable(list);
+      }();
+
   /// 앨범에 들어가는 사진 전부: 캐릭터가 보내는 사진 말풍선 + 컷씬 (구분 없이 한 앨범).
   /// 이벤트 순서대로, 설명이 같으면 같은 사진이라 한 번만 넣음
   static final _albumCache = Expando<List<AlbumPhoto>>();
@@ -854,6 +925,11 @@ class ScenarioBundle {
             }
           }
           if (event.hasCutscene) add(event, event.cutscenePhotoTitle, event.cutsceneImageUrl);
+        }
+        // 이야기에는 안 나오고 자유대화에서만 오는 사진
+        for (final p in freeTalkPhotos) {
+          if (!seen.add(p.label)) continue;
+          list.add(AlbumPhoto(label: p.label, event: p.event, image: resolveImage(p.ref), group: '자유대화에서 받은 사진'));
         }
         return List<AlbumPhoto>.unmodifiable(list);
       }();
@@ -911,6 +987,19 @@ class ScenarioBundle {
     }
     return first;
   }
+}
+
+/// 자유대화에서 보낼 수 있는 사진 한 장
+class FreeTalkPhoto {
+  /// AI가 고를 때 쓰는 짧은 이름 (p1, p2 …)
+  final String id;
+  /// 사진 번호 ('img:번호')
+  final String ref;
+  final String label;
+  final PhotoTrigger trigger;
+  final ScenarioEventModel event;
+
+  const FreeTalkPhoto({required this.id, required this.ref, required this.label, required this.trigger, required this.event});
 }
 
 /// 앨범 사진 한 장 (설명 = 사진을 구분하는 이름)
