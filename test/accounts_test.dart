@@ -126,8 +126,13 @@ void main() {
 
     appRouter.go('/settings');
     await settle(tester);
-    expect(find.text('쨋뀨 (jjaet)로 로그인했어요'), findsOneWidget);
+    expect(find.text('jjaet 계정으로 로그인'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('settings_ai')));
+    await settle(tester);
     expect(find.text('Gemini 키 받으러 가기'), findsOneWidget); // 처음이면 Gemini가 기본
+    appRouter.go('/settings/account');
+    await settle(tester);
+    expect(find.text('쨋뀨 (jjaet)'), findsOneWidget);
     await tester.tap(find.text('로그아웃'));
     await settle(tester);
     expect(find.widgetWithText(ElevatedButton, '로그인'), findsOneWidget);
@@ -165,10 +170,13 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('library_v1') ?? prefs.getKeys().join(), isNot(contains('base64')));
 
-    appRouter.go('/add');
+    appRouter.go('/discover');
     await settle(tester);
-    expect(find.text('다른 유저가 만든 캐릭터'), findsOneWidget);
-    expect(find.text('by 다른유저'), findsOneWidget);
+    expect(find.text('다른 유저가 만든 캐릭터'), findsWidgets);
+    expect(find.text('다른유저'), findsWidgets); // 카드마다 만든 사람
+    appRouter.go('/creator/${Uri.encodeComponent('다른유저')}');
+    await settle(tester);
+    expect(find.text('말랑이 1 · 친구 0'), findsOneWidget);
 
     await library.remove('char_mine');
     expect(server.deleted, ['char_mine']);

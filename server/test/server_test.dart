@@ -225,6 +225,25 @@ USE_SERVER_AI_KEYS=true
       expect(((await call('GET', '/api/my/characters', token: a)).$2['characters'] as List), isEmpty);
     });
 
+    test('친구 추가 수: 한 사람은 한 번만 세고, 만든 사람 자신은 안 셈. 목록에 만든 날과 같이 나옴', () async {
+      final a = (await call('POST', '/api/auth/signup', body: {'username': 'maker', 'password': 'mallang123'})).$2['token'] as String;
+      final b = (await call('POST', '/api/auth/signup', body: {'username': 'player', 'password': 'mallang123'})).$2['token'] as String;
+      await call('PUT', '/api/characters/char_1', body: {'bundle': bundle('char_1')}, token: a);
+
+      expect((await call('POST', '/api/characters/char_1/friend')).$1, 401);
+      expect((await call('POST', '/api/characters/none/friend', token: b)).$1, 404);
+      await call('POST', '/api/characters/char_1/friend', token: b);
+      await call('POST', '/api/characters/char_1/friend', token: b);
+      await call('POST', '/api/characters/char_1/friend', token: a);
+      var item = ((await call('GET', '/api/characters')).$2['characters'] as List).single as Map;
+      expect(item['friends'], 1);
+      expect(DateTime.tryParse(item['created_at'] as String), isNotNull);
+
+      await call('DELETE', '/api/characters/char_1/friend', token: b);
+      item = ((await call('GET', '/api/characters')).$2['characters'] as List).single as Map;
+      expect(item['friends'], 0);
+    });
+
     test('앱 저장값 연동: 나중에 바뀐 값이 이기고, 유저끼리는 안 섞임', () async {
       final a = (await call('POST', '/api/auth/signup', body: {'username': 'pcuser', 'password': 'mallang123'})).$2['token'] as String;
       final b = (await call('POST', '/api/auth/signup', body: {'username': 'other', 'password': 'mallang123'})).$2['token'] as String;

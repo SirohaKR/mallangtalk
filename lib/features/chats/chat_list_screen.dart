@@ -36,7 +36,7 @@ class ChatListScreen extends ConsumerWidget {
                           textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
                       const SizedBox(height: AppSpacing.lg),
                       ElevatedButton(
-                        onPressed: () => context.go('/friends'),
+                        onPressed: () => context.go('/my'),
                         child: const Text('친구 보기'),
                       ),
                     ],

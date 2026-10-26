@@ -13,21 +13,22 @@ import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
 import 'package:mallangtalk/features/studio/scenario_draft.dart';
-import 'package:mallangtalk/features/studio/template_scenario.dart';
+import 'fixtures/template_scenario.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers.dart';
 
-/// 하단 탭(말랑 / 채팅 / 말랑이 찾기 / 설정)이 있는 실제 앱 화면 흐름 테스트입니다.
+/// 하단 탭(말랑이 찾기 / 채팅 / 내 말랑이 / 설정)이 있는 실제 앱 화면 흐름 테스트입니다.
 void main() {
   ScenarioBundle loadIjun() => ScenarioBundle.fromJson(
-        jsonDecode(File('assets/scenarios/example_seo_ijun.json').readAsStringSync())
+        jsonDecode(File('test/fixtures/example_seo_ijun.json').readAsStringSync())
             as Map<String, dynamic>,
       );
 
   testWidgets('친구 탭: 맨 위 내 프로필, 별을 누르면 즐겨찾기로 올라감', (tester) async {
     SharedPreferences.setMockInitialValues({...fastTempo, 'my_profile': '{"nickname":"쨋뀨","intro":"고양이 좋아함"}'});
+    appRouter.go('/my');
     await tester.binding.setSurfaceSize(const Size(420, 900));
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -91,6 +92,7 @@ void main() {
       ...fastTempo,
       'chat_rooms_v1': [dohaId],
     });
+    appRouter.go('/my');
     await tester.binding.setSurfaceSize(const Size(420, 900));
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -102,7 +104,7 @@ void main() {
     ));
     await settle(tester);
 
-    // 처음 화면은 내 캐릭터 탭, 기본 캐릭터 윤도하가 있음
+    // 내 말랑이 탭, 기본 캐릭터 윤도하가 있음
     expect(find.text('친구 1'), findsOneWidget);
     expect(find.text('윤도하'), findsOneWidget);
 
@@ -131,7 +133,8 @@ void main() {
 
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('말랑이 찾기')));
     await settle(tester);
-    expect(find.text('받아오기'), findsOneWidget);
+    expect(find.text('오늘의 추천'), findsOneWidget);
+    expect(find.text('새로 올라온 말랑이'), findsOneWidget);
     expect(find.text('친구'), findsWidgets); // 이미 친구인 윤도하 카드에 배지
   });
 
@@ -155,8 +158,8 @@ void main() {
 
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('말랑이 찾기')));
     await settle(tester);
-    expect(find.text('말수 적은 사진 동아리 선배가 자꾸 출사에 부른다'), findsOneWidget);
-    await tester.tap(find.text('서이준'));
+    expect(find.text('말수 적은 사진 동아리 선배가 자꾸 출사에 부른다'), findsWidgets);
+    await tester.tap(find.text('서이준').last);
     await settle(tester);
 
     // 상세: 캐릭터 정보·캐릭터 설정·세계관 설정·나는 이 이야기에서·주변 인물만, 비밀과 제작용 정보는 안 보임
@@ -171,16 +174,14 @@ void main() {
       expect(find.textContaining(hidden), findsNothing, reason: hidden);
     }
 
-    await tester.tap(find.text('친구 추가'));
+    // 아래 고정 버튼: 친구 추가하고 바로 대화 시작 창
+    await tester.tap(find.text('친구 추가하고 대화하기'));
     await settle(tester);
     final container = ProviderScope.containerOf(tester.element(find.byType(Scaffold).first));
     expect(container.read(characterLibraryProvider).map((e) => e.id),
         contains('char_example_seo_ijun'));
-    // 친구가 되기 전엔 톡이 오지 않음 (별명을 정하고 대화를 시작해야 함)
+    // 별명을 정하고 대화를 시작하기 전엔 톡이 오지 않음
     expect(container.read(chatRoomProvider('char_example_seo_ijun')).messages, isEmpty);
-
-    await tester.tap(find.text('친구 · 1:1 채팅'));
-    await settle(tester);
     expect(find.text('서이준과 대화 시작'), findsOneWidget);
     expect(find.widgetWithText(TextField, '말랑'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, '후배님');
@@ -245,7 +246,7 @@ void main() {
 
   testWidgets('설정: 드롭다운으로 AI 회사를 고르고 키와 모델을 저장', (tester) async {
     SharedPreferences.setMockInitialValues({'byok_claude_api_key': 'sk-ant-old-key-123456'});
-    appRouter.go('/settings');
+    appRouter.go('/settings/ai');
     await tester.binding.setSurfaceSize(const Size(420, 1400));
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -282,7 +283,7 @@ void main() {
 
   testWidgets('설정: 말랑톡 서버에서 열면 서버 키 안내와 접속 코드 칸이 보이고, 내 키 없이 저장됨', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    appRouter.go('/settings');
+    appRouter.go('/settings/ai');
     await tester.binding.setSurfaceSize(const Size(420, 1600));
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -301,6 +302,10 @@ void main() {
     expect(find.textContaining('Claude (Anthropic)는 서버 .env 키로'), findsOneWidget);
     expect(find.text('API 키 (안 넣어도 됨)'), findsOneWidget);
 
+    // 접속 코드는 '고급' 안에 숨어 있음
+    expect(find.widgetWithText(TextField, '서버 .env의 ACCESS_CODE'), findsNothing);
+    await tester.tap(find.text('고급 · 서버 접속 코드'));
+    await settle(tester);
     await tester.enterText(find.widgetWithText(TextField, '서버 .env의 ACCESS_CODE'), 'mallang');
     await tester.tap(find.widgetWithText(OutlinedButton, '저장'));
     await settle(tester);
@@ -313,10 +318,10 @@ void main() {
     expect(prefs.getString('byok_claude_model'), 'claude-opus-5-5');
   });
 
-  testWidgets('만들기: 카이엔 설정을 불러오고, 쓰던 초안은 새로 열어도 남아 있음', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+  testWidgets('만들기: 쓰던 초안은 새로 열어도 남아 있음', (tester) async {
+    SharedPreferences.setMockInitialValues({'studio_draft_v1': jsonEncode(kaienScenario().toJson())});
     Future<void> openStudio() async {
-      appRouter.go('/add');
+      appRouter.go('/create');
       await tester.pumpWidget(ProviderScope(
         key: UniqueKey(),
         overrides: [
@@ -327,18 +332,11 @@ void main() {
         child: const MallangTalkApp(),
       ));
       await settle(tester);
-      await tester.tap(find.text('만들기'));
-      await tester.pumpAndSettle();
     }
 
     await tester.binding.setSurfaceSize(const Size(420, 900));
     await openStudio();
-    await tester.tap(find.byTooltip('더 보기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('예시: 카이엔 (설정만)'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('불러오기'));
-    await tester.pumpAndSettle();
+    expect(find.text('새 말랑이 만들기'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '카이엔'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, '카이엔'), '카이엔 루벨리아');
     await tester.pump(const Duration(seconds: 4)); // 자동 저장
@@ -356,9 +354,9 @@ void main() {
     await settle(tester);
   });
 
-  testWidgets('만들기: 예시를 불러와 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    appRouter.go('/add');
+  testWidgets('만들기: 쓰던 초안을 대사 탭에서 고치고 저장하면 내 캐릭터에 생김', (tester) async {
+    SharedPreferences.setMockInitialValues({'studio_draft_v1': jsonEncode(templateScenario().toJson())});
+    appRouter.go('/create');
     await tester.binding.setSurfaceSize(const Size(420, 900));
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -369,16 +367,7 @@ void main() {
       child: const MallangTalkApp(),
     ));
     await settle(tester);
-    await tester.tap(find.text('만들기'));
-    await tester.pumpAndSettle();
     expect(find.text('호감도 단계'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('더 보기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('예시 캐릭터 불러오기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('불러오기'));
-    await tester.pumpAndSettle();
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
     // 캐릭터 탭은 한 항목씩 화살표로 넘김: 기본 정보 → 캐릭터 정보 → 캐릭터 설정(넓은 칸 + 글자 수)
@@ -428,7 +417,7 @@ void main() {
     event.scenes.last.lines.addAll([LineDraft(photo: '필름 카메라 셀카'), LineDraft(photo: '노을 진 옥상')]);
     event.cutscene = '';
     SharedPreferences.setMockInitialValues({'studio_draft_v1': jsonEncode(draft.toBundle().toJson())});
-    appRouter.go('/add');
+    appRouter.go('/create');
     await tester.binding.setSurfaceSize(const Size(420, 900));
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -439,8 +428,6 @@ void main() {
       child: const MallangTalkApp(),
     ));
     await settle(tester);
-    await tester.tap(find.text('만들기'));
-    await tester.pumpAndSettle();
 
     // 이벤트 카드에 사진 꼬리표
     await tester.tap(find.text('이벤트'));

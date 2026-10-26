@@ -21,6 +21,7 @@ final _username = RegExp(r'^[A-Za-z0-9_]{3,20}$');
 /// - POST /api/auth/signup, /api/auth/login, /api/auth/logout, GET /api/me
 /// - GET /api/characters (받아오기 목록), GET /api/characters/:id, GET /api/my/characters
 /// - PUT·DELETE /api/characters/:id (내 캐릭터 저장·지우기), GET /api/images/:id (사진)
+/// - POST·DELETE /api/characters/:id/friend (친구 추가·빼기. 말랑이 찾기 인기순에 쓰는 친구 수)
 /// - GET·PUT /api/my/state (내 프로필·진행도·앨범 같은 앱 저장값. PC와 폰 연동)
 Future<Response?> accountsApi(Request request, Store store) async {
   final segments = request.url.pathSegments; // ['api', ...]
@@ -132,6 +133,18 @@ Future<Response?> accountsApi(Request request, Store store) async {
       store.saveCharacter(id, me.id, saved, published: body!['published'] != false);
       return _json(200, _characterJson(store.character(id)!, me));
 
+    case ['characters', final id, 'friend'] when method == 'POST':
+      final me = _user(request, store);
+      if (me == null) return _needLogin();
+      if (!store.addFriend(me.id, id)) return _json(404, {'error': '없는 캐릭터예요.'});
+      return _json(200, {'ok': true});
+
+    case ['characters', final id, 'friend'] when method == 'DELETE':
+      final me = _user(request, store);
+      if (me == null) return _needLogin();
+      store.removeFriend(me.id, id);
+      return _json(200, {'ok': true});
+
     case ['characters', final id] when method == 'DELETE':
       final me = _user(request, store);
       if (me == null) return _needLogin();
@@ -189,7 +202,9 @@ Map<String, dynamic> _characterJson(CharacterRecord c, UserRecord? me) => {
       'creator': c.ownerNickname,
       'mine': me?.id == c.ownerId,
       'published': c.published,
+      'created_at': c.createdAt.toIso8601String(),
       'updated_at': c.updatedAt.toIso8601String(),
+      'friends': c.friendCount,
       'bundle': jsonDecode(c.bundleJson),
     };
 

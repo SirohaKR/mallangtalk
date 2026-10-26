@@ -22,9 +22,15 @@ class CharacterRecord {
   final int ownerId;
   final String ownerNickname;
   final bool published;
+  final DateTime createdAt;
+
+  /// 이 캐릭터를 친구로 추가한 사람 수 (말랑이 찾기 '인기' 정렬)
+  final int friendCount;
   final String bundleJson;
   final DateTime updatedAt;
-  const CharacterRecord(this.id, this.ownerId, this.ownerNickname, this.published, this.bundleJson, this.updatedAt);
+  const CharacterRecord(this.id, this.ownerId, this.ownerNickname, this.published, this.bundleJson, this.updatedAt,
+      {DateTime? createdAt, this.friendCount = 0})
+      : createdAt = createdAt ?? updatedAt;
 }
 
 /// [초보자 노트] 말랑톡 서버의 DB (SQLite 파일 하나: DATA_DIR/mallangtalk.db).
@@ -83,6 +89,13 @@ class Store {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_id, key)
       );
+      CREATE TABLE IF NOT EXISTS character_friends (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, character_id)
+      );
+      CREATE INDEX IF NOT EXISTS character_friends_character ON character_friends(character_id);
     ''');
     return Store._(db);
   }
@@ -144,21 +157,21 @@ class Store {
 
   CharacterRecord? character(String id) {
     final rows = _db.select('''
-      SELECT c.*, u.nickname FROM characters c JOIN users u ON u.id = c.owner_id WHERE c.id = ?''', [id]);
+      SELECT c.*, u.nickname, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id WHERE c.id = ?''', [id]);
     return rows.isEmpty ? null : _characterFrom(rows.first);
   }
 
   /// 공개된 캐릭터 (최근에 고친 순)
   List<CharacterRecord> publishedCharacters() => [
         for (final row in _db.select('''
-          SELECT c.*, u.nickname FROM characters c JOIN users u ON u.id = c.owner_id
+          SELECT c.*, u.nickname, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id
           WHERE c.published = 1 ORDER BY c.updated_at DESC'''))
           _characterFrom(row),
       ];
 
   List<CharacterRecord> charactersOf(int ownerId) => [
         for (final row in _db.select('''
-          SELECT c.*, u.nickname FROM characters c JOIN users u ON u.id = c.owner_id
+          SELECT c.*, u.nickname, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id
           WHERE c.owner_id = ? ORDER BY c.updated_at DESC''', [ownerId]))
           _characterFrom(row),
       ];
@@ -188,6 +201,19 @@ class Store {
     return true;
   }
 
+  /// 친구 추가 (공개된 캐릭터만, 내 캐릭터는 세지 않음). 이미 했으면 그대로
+  bool addFriend(int userId, String characterId) {
+    final c = character(characterId);
+    if (c == null || !c.published) return false;
+    if (c.ownerId == userId) return true;
+    _db.execute('INSERT OR IGNORE INTO character_friends (user_id, character_id, created_at) VALUES (?, ?, ?)',
+        [userId, characterId, _now()]);
+    return true;
+  }
+
+  void removeFriend(int userId, String characterId) =>
+      _db.execute('DELETE FROM character_friends WHERE user_id = ? AND character_id = ?', [userId, characterId]);
+
   CharacterRecord _characterFrom(Row row) => CharacterRecord(
         row['id'] as String,
         row['owner_id'] as int,
@@ -195,6 +221,8 @@ class Store {
         (row['published'] as int) == 1,
         row['bundle'] as String,
         DateTime.parse(row['updated_at'] as String),
+        createdAt: DateTime.parse(row['created_at'] as String),
+        friendCount: row['friends'] as int? ?? 0,
       );
 
   // ───────────── 사진 ─────────────

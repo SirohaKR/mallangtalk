@@ -8,14 +8,12 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../auth/auth_state.dart';
 import '../auth/state_sync.dart';
 
-/// 앱에 기본으로 들어 있는 캐릭터 시나리오 파일 목록 ('캐릭터 추가 > 받아오기'에 보임)
-const builtinScenarioAssets = [
-  'assets/scenarios/sample_character.json',
-  'assets/scenarios/example_seo_ijun.json',
-];
+/// 앱에 기본으로 들어 있는 캐릭터 시나리오 파일 목록.
+/// 샘플 캐릭터(윤도하·서이준)는 2026-10 화면 개편 때 앱에서 뺐어요 (테스트용 파일은 test/fixtures에 있음)
+const builtinScenarioAssets = <String>[];
 
-/// [초보자 노트] 앱 안에 들어 있는 기본 캐릭터들을 읽어오는 FutureProvider입니다.
-/// '받아오기' 목록에는 이것과 서버에 올라온 유저 캐릭터(galleryProvider)가 같이 보여요.
+/// [초보자 노트] 앱 안에 들어 있는 기본 캐릭터들을 읽어오는 FutureProvider입니다. 지금은 비어 있어요.
+/// '말랑이 찾기'에는 이것과 서버에 올라온 유저 캐릭터(galleryProvider)가 같이 보여요.
 final builtinBundlesProvider = FutureProvider<List<ScenarioBundle>>((ref) async {
   return [
     for (final path in builtinScenarioAssets)
@@ -174,14 +172,28 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
     await _persist();
   }
 
+  /// 말랑이 찾기에서 친구 추가 (서버에 친구 수도 올림. 실패해도 친구 추가는 됨)
+  Future<void> addFriend(ScenarioBundle bundle, CharacterSource source) async {
+    await add(bundle, source);
+    if (source != CharacterSource.imported) return;
+    try {
+      await ref.read(accountApiProvider)?.addFriend(bundle.character.id);
+    } catch (e) {
+      debugPrint('친구 수 올리기 실패: $e');
+    }
+  }
+
   /// 캐릭터 삭제 (대화 기록·앨범도 같이 지움). 내가 만든 캐릭터면 서버에서도 지움
   Future<void> remove(String id) async {
-    if (byId(id)?.source == CharacterSource.created) {
-      try {
+    final source = byId(id)?.source;
+    try {
+      if (source == CharacterSource.created) {
         await ref.read(accountApiProvider)?.deleteCharacter(id);
-      } catch (e) {
-        debugPrint('캐릭터 서버 삭제 실패: $e');
+      } else if (source == CharacterSource.imported) {
+        await ref.read(accountApiProvider)?.removeFriend(id);
       }
+    } catch (e) {
+      debugPrint('캐릭터 서버 삭제 실패: $e');
     }
     state = [for (final e in state) if (e.id != id) e];
     await _persist();
@@ -232,18 +244,30 @@ final librarySyncProvider = FutureProvider<void>((ref) async {
   await ref.read(characterLibraryProvider.notifier).syncWithServer(api);
 });
 
-/// '받아오기' 갤러리의 캐릭터 하나
+/// '말랑이 찾기' 갤러리의 캐릭터 하나
 class GalleryItem {
   final ScenarioBundle bundle;
   /// 만든 사람 닉네임 (앱 기본 캐릭터면 null)
   final String? creator;
   final bool mine;
-  const GalleryItem(this.bundle, {this.creator, this.mine = false});
+  final DateTime? createdAt;
+  final int friends;
+  const GalleryItem(this.bundle, {this.creator, this.mine = false, this.createdAt, this.friends = 0});
 
   bool get isBuiltin => creator == null;
+
+  CharacterModel get character => bundle.character;
+
+  /// 검색: 이름·한줄 소개·태그·만든 사람 중 하나라도 들어 있으면
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final c = character;
+    return [c.name, c.tagline, c.statusMessage, creator ?? '', ...c.tags].any((s) => s.toLowerCase().contains(q.replaceFirst('#', '')));
+  }
 }
 
-/// [초보자 노트] '받아오기' 목록: 앱 기본 캐릭터 + 서버에 올라온 유저들의 캐릭터 (최근에 고친 순)
+/// [초보자 노트] '말랑이 찾기' 목록: 앱 기본 캐릭터 + 서버에 올라온 유저들의 캐릭터 (최근에 고친 순)
 final galleryProvider = FutureProvider<List<GalleryItem>>((ref) async {
   final builtins = await ref.watch(builtinBundlesProvider.future);
   final items = [for (final b in builtins) GalleryItem(b)];
@@ -252,7 +276,9 @@ final galleryProvider = FutureProvider<List<GalleryItem>>((ref) async {
     try {
       final ids = {for (final b in builtins) b.character.id};
       for (final c in await api.publishedCharacters()) {
-        if (!ids.contains(c.bundle.character.id)) items.add(GalleryItem(c.bundle, creator: c.creator, mine: c.mine));
+        if (!ids.contains(c.bundle.character.id)) {
+          items.add(GalleryItem(c.bundle, creator: c.creator, mine: c.mine, createdAt: c.createdAt, friends: c.friends));
+        }
       }
     } catch (e) {
       debugPrint('받아오기 목록을 못 불러옴: $e');

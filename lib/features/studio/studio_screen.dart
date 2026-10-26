@@ -12,14 +12,12 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/mallang_loading.dart';
-import '../add/add_character_screen.dart';
 import '../chat/chat_notifier.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import 'character_import.dart';
 import 'scenario_draft.dart';
 import 'studio_widgets.dart';
-import 'template_scenario.dart';
 
 /// [초보자 노트] 캐릭터 만들기(편집기) 화면입니다. 엑셀 없이 앱 안에서 전부 만듭니다.
 /// 탭: 캐릭터 / 호감도 단계 / 이벤트 / 대사
@@ -71,7 +69,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   bool get _editing => widget.initial != null;
 
   @override
-  bool get wantKeepAlive => true; // 탭을 옮겨도 쓰던 내용 유지
+  bool get wantKeepAlive => true; // 탭을 옮겨도 쓰던 내용 유지 (만들던 초안은 자동 저장돼서 다시 열면 이어 써요)
 
   @override
   void initState() {
@@ -151,14 +149,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       case 'new':
         if (await _confirm('새로 만들기', '지금 적은 내용이 지워져요.', '새로 만들기')) {
           _replaceDraft(ScenarioDraft.blank());
-        }
-      case 'example':
-        if (await _confirm('예시 불러오기', '예시 캐릭터 서이준으로 채워요. 지금 적은 내용은 지워져요.', '불러오기')) {
-          _replaceDraft(ScenarioDraft.fromBundle(templateScenario())..id = 'char_${DateTime.now().millisecondsSinceEpoch}');
-        }
-      case 'example_kaien':
-        if (await _confirm('카이엔 불러오기', '로판 아카데미 황자님 카이엔의 캐릭터 설정(8쪽)과 호감도 단계 5개로 채워요. 지금 적은 내용은 지워져요.', '불러오기')) {
-          _replaceDraft(ScenarioDraft.fromBundle(kaienScenario()));
         }
       case 'import':
         final file = await FileIO.pick(extensions: ['json']);
@@ -525,9 +515,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       Navigator.of(context).pop();
       _toast('${bundle.character.name} 수정 내용을 저장했어요');
     } else {
-      _toast('${bundle.character.name}을(를) 내 캐릭터에 저장했어요. 내 캐릭터에서 대화를 시작해 보세요');
+      _toast('${bundle.character.name}을(를) 저장했어요. 내 말랑이 > 내가 만든에서 볼 수 있어요');
       _replaceDraft(ScenarioDraft.blank());
       _tabs.animateTo(0);
+      if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     }
   }
 
@@ -560,8 +551,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   onSelected: _onMenu,
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'new', child: Text('새로 만들기')),
-                    PopupMenuItem(value: 'example', child: Text('예시 캐릭터 불러오기')),
-                    PopupMenuItem(value: 'example_kaien', child: Text('예시: 카이엔 (설정만)')),
                     PopupMenuItem(value: 'import', child: Text('캐릭터 파일(.json) 불러오기')),
                     PopupMenuItem(value: 'export', child: Text('캐릭터 파일로 내보내기')),
                   ],
@@ -617,9 +606,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           Positioned.fill(child: MallangLoadingOverlay(message: _progressText, progress: _progress)),
       ],
     );
-    if (!_editing) return screen;
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.initial!.character.name} 고치기')),
+      appBar: AppBar(title: Text(_editing ? '${widget.initial!.character.name} 고치기' : '새 말랑이 만들기')),
       body: screen,
     );
   }

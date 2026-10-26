@@ -30,8 +30,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/scenarios/
   # 한국어 기본 글꼴 (자주 쓰는 한글 2,350자만 담아서 가볍게. 없는 글자는 브라우저가 자동으로 보충)
   fonts:
     - family: NotoSansKR
