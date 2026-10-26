@@ -312,6 +312,8 @@ ${_characterSheet(base)}
       userRole: base.userRole,
       extraCast: base.extraCast,
       themeColor: base.themeColor,
+      chatBackground: base.chatBackground,
+      bubbleStyle: base.bubbleStyle,
       typingSpeedMultiplier: base.typingSpeedMultiplier,
       affectionStages: base.affectionStages,
     );

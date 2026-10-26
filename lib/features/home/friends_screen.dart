@@ -9,7 +9,9 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/character_sheet_view.dart';
+import '../chat/affection_gauge.dart';
 import '../chat/chat_notifier.dart';
+import '../chat/chat_theme.dart';
 import '../chat/start_chat.dart';
 import '../library/character_library.dart';
 import '../settings/user_profile.dart';
@@ -296,6 +298,10 @@ class _CharacterProfileSheet extends ConsumerWidget {
     final router = GoRouter.of(parentContext);
 
     void close() => Navigator.of(context).pop();
+    // 대화방 안에서 연 프로필만 대화 상태를 읽음 (안 연 대화방을 깨우지 않게)
+    final received = inChat
+        ? ref.watch(chatRoomProvider(c.id).select((s) => s.receivedPhotos)).toSet()
+        : const <String>{};
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -334,6 +340,15 @@ class _CharacterProfileSheet extends ConsumerWidget {
               const SizedBox(height: 4),
               Text(CharacterModel.fillUserName(c.statusMessage, '너', charName: c.name), textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
             ],
+            // 대화 중에 연 프로필이면 호감도 말랑이 (대화방이 이미 열려 있을 때만 읽음)
+            if (inChat) ...[
+              const SizedBox(height: AppSpacing.lg),
+              AffectionGauge(
+                character: c,
+                affection: ref.watch(chatRoomProvider(c.id).select((s) => s.internalAffection)),
+                accent: ChatTheme.of(c).accent,
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
             ElevatedButton.icon(
               icon: const Icon(Icons.chat_bubble_rounded, size: 18),
@@ -349,7 +364,16 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.photo_library_outlined, size: 18),
-                    label: const FittedBox(fit: BoxFit.scaleDown, child: Text('앨범', maxLines: 1)),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        inChat
+                            ? '앨범 ${bundle.albumPhotos.where((p) => received.contains(p.label)).length}'
+                                '/${bundle.albumPhotos.length}'
+                            : '앨범',
+                        maxLines: 1,
+                      ),
+                    ),
                     onPressed: () {
                       close();
                       router.push('/chat/${c.id}/album');

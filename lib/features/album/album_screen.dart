@@ -5,12 +5,14 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
-import '../../shared/widgets/cutscene_view.dart';
+import '../../shared/widgets/photo_viewer.dart';
 import '../chat/chat_notifier.dart';
+import '../chat/chat_theme.dart';
 import '../library/character_library.dart';
 
-/// [초보자 노트] 지금까지 모은 컷씬(CG)을 모아 보는 앨범 화면입니다.
-/// 아직 못 본 장면은 제목을 가린 채 자물쇠로 보여줘서 "더 모으고 싶게" 만듭니다.
+/// [초보자 노트] 캐릭터에게 받은 사진을 모아 보는 앨범 화면입니다.
+/// 사진 말풍선과 컷씬을 구분하지 않고 전부 여기에 들어가요. 호감도 단계별로 묶어 보여 주고,
+/// 아직 못 받은 사진은 자물쇠 칸으로 남겨서 "더 모으고 싶게" 만듭니다.
 class AlbumScreen extends ConsumerStatefulWidget {
   const AlbumScreen({super.key, required this.characterId});
 
@@ -21,143 +23,167 @@ class AlbumScreen extends ConsumerStatefulWidget {
 }
 
 class _AlbumScreenState extends ConsumerState<AlbumScreen> {
-  ScenarioEventModel? _viewing;
-
   @override
   Widget build(BuildContext context) {
     final bundle = ref.watch(characterBundleProvider(widget.characterId));
     if (bundle == null) {
       return const Scaffold(body: Center(child: Text('캐릭터를 찾을 수 없어요')));
     }
-    final unlocked = ref.watch(
-      chatRoomProvider(widget.characterId).select((s) => s.unlockedCutsceneEventIds),
-    );
-    final cutsceneEvents = bundle.events.where((e) => e.hasCutscene).toList();
+    final received = ref.watch(chatRoomProvider(widget.characterId).select((s) => s.receivedPhotos)).toSet();
+    final theme = ChatTheme.of(bundle.character);
+    final all = bundle.albumPhotos;
+    // 호감도 단계 순서대로 묶음 (단계에 없는 묶음은 맨 뒤)
+    final stageOrder = [for (final s in bundle.character.affectionStages) s.stageLabel];
+    int rank(String g) => stageOrder.contains(g) ? stageOrder.indexOf(g) : stageOrder.length;
+    final byGroup = <String, List<AlbumPhoto>>{};
+    for (final p in all) {
+      (byGroup[p.group] ??= []).add(p);
+    }
+    final keys = byGroup.keys.toList();
+    final groups = {
+      for (final k in keys.toList()..sort((a, b) => rank(a) != rank(b) ? rank(a) - rank(b) : keys.indexOf(a) - keys.indexOf(b)))
+        k: byGroup[k]!,
+    };
+    final got = [for (final g in groups.values) ...g.where((p) => received.contains(p.label))];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${bundle.character.name} 앨범 '
-            '${unlocked.length}/${cutsceneEvents.length}'),
-      ),
+      appBar: AppBar(title: Text('${bundle.character.name}의 앨범')),
       body: Stack(
         children: [
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
-              child: GridView.count(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                crossAxisCount: 2,
-                mainAxisSpacing: AppSpacing.md,
-                crossAxisSpacing: AppSpacing.md,
-                childAspectRatio: 0.78,
-                children: [
-                  for (final event in cutsceneEvents)
-                    _AlbumTile(
-                      event: event,
-                      imageUrl: bundle.cutsceneImageFor(event),
-                      isUnlocked: unlocked.contains(event.id),
-                      onTap: () => setState(() => _viewing = event),
+              child: all.isEmpty
+                  ? const Center(child: Text('이 말랑이는 아직 보내는 사진이 없어요', style: AppTextStyles.systemNotice))
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl),
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(child: Text('받은 사진', style: AppTextStyles.appBarTitle)),
+                            Text('${got.length} / ${all.length}장', style: AppTextStyles.systemNotice),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: got.length / all.length,
+                            minHeight: 6,
+                            color: theme.accent,
+                            backgroundColor: AppColors.borderLight,
+                          ),
+                        ),
+                        for (final entry in groups.entries) ...[
+                          const SizedBox(height: AppSpacing.lg),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Expanded(child: Text(entry.key, style: AppTextStyles.choiceButton)),
+                              Text(
+                                '${entry.value.where((p) => received.contains(p.label)).length} / ${entry.value.length}',
+                                style: AppTextStyles.messageTime,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          GridView.count(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 6,
+                            crossAxisSpacing: 6,
+                            childAspectRatio: 3 / 4,
+                            children: [
+                              for (final photo in entry.value)
+                                received.contains(photo.label)
+                                    ? _PhotoTile(
+                                        photo: photo,
+                                        accent: theme.accent,
+                                        onTap: () => showPhotoViewer(
+                                          context,
+                                          accent: theme.accent,
+                                          initialIndex: got.indexOf(photo),
+                                          items: [
+                                            for (final p in got)
+                                              PhotoViewerItem(
+                                                  label: p.label, image: p.image, chip: p.group, caption: p.event.title),
+                                          ],
+                                        ),
+                                      )
+                                    : const _LockedTile(),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
-                ],
-              ),
             ),
           ),
-          if (_viewing != null)
-            CutsceneView(
-              event: _viewing!,
-              imageUrl: bundle.cutsceneImageFor(_viewing!),
-              footer: '화면을 탭하면 닫혀요',
-              onClose: () => setState(() => _viewing = null),
-            ),
         ],
       ),
     );
   }
 }
 
-class _AlbumTile extends StatelessWidget {
-  final ScenarioEventModel event;
-  /// 컷씬 진짜 사진 (모은 뒤에만 썸네일로 보여 줌)
-  final String? imageUrl;
-  final bool isUnlocked;
-  final VoidCallback onTap;
+class _PhotoTile extends StatelessWidget {
+  const _PhotoTile({required this.photo, required this.accent, required this.onTap});
 
-  const _AlbumTile({
-    required this.event,
-    this.imageUrl,
-    required this.isUnlocked,
-    required this.onTap,
-  });
+  final AlbumPhoto photo;
+  final Color accent;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final photo = isUnlocked ? CharacterImage.providerFor(imageUrl ?? '') : null;
-    if (photo != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image(image: photo, fit: BoxFit.cover),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  color: Colors.black.withValues(alpha: 0.45),
-                  child: Text(
-                    event.title,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.messageTime.copyWith(color: AppColors.surfaceWhite),
-                  ),
+    final image = CharacterImage.providerFor(photo.image ?? '');
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: image != null
+            ? Image(image: image, fit: BoxFit.cover, alignment: const Alignment(0, -0.6), semanticLabel: photo.label)
+            : Container(
+                padding: const EdgeInsets.all(8),
+                color: Color.lerp(AppColors.surfaceWhite, accent, 0.14),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.photo_camera_back_rounded, size: 24, color: accent),
+                    const SizedBox(height: 6),
+                    Text(
+                      photo.label,
+                      textAlign: TextAlign.center,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.messageTime.copyWith(color: AppColors.textPrimary),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      );
-    }
-    return GestureDetector(
-      onTap: isUnlocked ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: isUnlocked ? AppColors.primaryNavy : AppColors.surfaceWhite,
-          borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-          border: Border.all(color: AppColors.borderLight),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isUnlocked ? Icons.auto_awesome_rounded : Icons.lock_rounded,
-              size: 32,
-              color: isUnlocked ? AppColors.myBubble : AppColors.textMuted,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              isUnlocked ? event.title : '???',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.choiceButton.copyWith(
-                color: isUnlocked ? AppColors.surfaceWhite : AppColors.textMuted,
-              ),
-            ),
-            if (isUnlocked && event.cutscenePhotoTitle != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                event.cutscenePhotoTitle!,
-                textAlign: TextAlign.center,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.messageTime.copyWith(color: AppColors.borderLight),
-              ),
-            ],
-          ],
-        ),
+      ),
+    );
+  }
+}
+
+class _LockedTile extends StatelessWidget {
+  const _LockedTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFE6EA),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.lock_rounded, size: 20, color: AppColors.textSecondary),
+          SizedBox(height: 4),
+          Text('아직 못 받은 사진',
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+        ],
       ),
     );
   }

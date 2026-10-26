@@ -187,6 +187,8 @@ class ScenarioDraft {
   String secret = '';
   String quote = '';
   String themeColor = '';
+  String chatBackground = '';
+  String bubbleStyle = '';
   String authorComment = '';
   double typing = 1.0;
   List<PersonalityTrait> traits = [];
@@ -238,6 +240,8 @@ class ScenarioDraft {
       ..secret = c.secret
       ..quote = c.quote
       ..themeColor = c.themeColor
+      ..chatBackground = c.chatBackground
+      ..bubbleStyle = c.bubbleStyle
       ..authorComment = c.authorComment
       ..typing = c.typingSpeedMultiplier
       ..traits = [...c.traits]
@@ -376,6 +380,8 @@ class ScenarioDraft {
             if (e.name.trim().isNotEmpty) ExtraCast(name: e.name.trim(), role: e.role.trim(), speech: e.speech.trim(), characterId: e.characterId),
         ],
         themeColor: themeColor,
+        chatBackground: chatBackground,
+        bubbleStyle: bubbleStyle,
         authorComment: authorComment.trim(),
         typingSpeedMultiplier: typing,
         affectionStages: buildStages(),

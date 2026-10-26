@@ -37,6 +37,8 @@ class ChatRoomState {
   final List<String> completedEventIds;
   /// 지금까지 수집한 컷씬의 이벤트 ID (앨범용, '다시 하기'를 해도 유지됨)
   final List<String> unlockedCutsceneEventIds;
+  /// 앨범에 들어간 사진 설명 (사진 말풍선·컷씬 구분 없이, '다시 하기'를 해도 유지됨)
+  final List<String> receivedPhotos;
   final StoryProgress progress;
   /// 내가 대화방에서 마지막으로 본 메시지 개수 (채팅방 목록의 안 읽은 숫자 계산용)
   final int seenMessageCount;
@@ -67,6 +69,7 @@ class ChatRoomState {
     this.acquiredFlags = const [],
     this.completedEventIds = const [],
     this.unlockedCutsceneEventIds = const [],
+    this.receivedPhotos = const [],
     this.progress = StoryProgress.playing,
     this.seenMessageCount = 0,
     this.userDraft = '',
@@ -106,6 +109,7 @@ class ChatRoomState {
     List<String>? acquiredFlags,
     List<String>? completedEventIds,
     List<String>? unlockedCutsceneEventIds,
+    List<String>? receivedPhotos,
     StoryProgress? progress,
     int? seenMessageCount,
     String? userDraft,
@@ -132,6 +136,7 @@ class ChatRoomState {
       completedEventIds: completedEventIds ?? this.completedEventIds,
       unlockedCutsceneEventIds:
           unlockedCutsceneEventIds ?? this.unlockedCutsceneEventIds,
+      receivedPhotos: receivedPhotos ?? this.receivedPhotos,
       progress: progress ?? this.progress,
       seenMessageCount: seenMessageCount ?? this.seenMessageCount,
       userDraft: userDraft ?? this.userDraft,
@@ -197,6 +202,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _store = ref.watch(localStoreProvider);
     final album = _store.loadAlbum(characterId);
     final saved = _store.loadRun(characterId);
+    _restoreReceivedPhotos(album, saved?.messages ?? const []);
     _seenScripts
       ..clear()
       ..addAll(_store.loadSeenEvents(characterId))
@@ -254,6 +260,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       messages: const [],
       currentChoices: const [],
       unlockedCutsceneEventIds: unlockedCutscenes,
+      receivedPhotos: _store.loadReceivedPhotos(_bundle.character.id),
       freeTalkUnlocked: _store.freeTalkUnlocked(_bundle.character.id),
       scriptsSeen: _scriptIds.where(_seenScripts.contains).length,
       scriptsTotal: _scriptIds.length,
@@ -470,6 +477,30 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       unlockedCutsceneEventIds: [...state.unlockedCutsceneEventIds, event.id],
     );
     _store.saveAlbum(_bundle.character.id, state.unlockedCutsceneEventIds);
+    _receivePhoto(event.cutscenePhotoTitle);
+  }
+
+  /// 사진 말풍선·컷씬을 받으면 앨범에 넣음
+  void _receivePhoto(String? label) {
+    final key = label?.trim() ?? '';
+    if (key.isEmpty || state.receivedPhotos.contains(key)) return;
+    state = state.copyWith(receivedPhotos: [...state.receivedPhotos, key]);
+    _store.saveReceivedPhotos(_bundle.character.id, state.receivedPhotos);
+  }
+
+  /// 앨범을 사진 전체로 바꾸기 전 기록도 인정: 모은 컷씬 + 대화에서 받은 사진
+  void _restoreReceivedPhotos(List<String> cutsceneIds, List<ChatMessageLog> messages) {
+    final id = _bundle.character.id;
+    final received = {..._store.loadReceivedPhotos(id)};
+    final before = received.length;
+    for (final e in _bundle.events) {
+      final title = e.cutscenePhotoTitle?.trim() ?? '';
+      if (cutsceneIds.contains(e.id) && title.isNotEmpty) received.add(title);
+    }
+    for (final m in messages) {
+      if (!m.isUser && m.hasPhoto) received.add(m.photoLabel!.trim());
+    }
+    if (received.length != before) _store.saveReceivedPhotos(id, received.toList());
   }
 
   /// 이벤트 하나를 끝내고 다음 이벤트로 넘어가거나, 공략 완료/막힘을 판정합니다.
@@ -652,6 +683,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       isCharacterTyping: false,
       messages: [...state.messages, reply],
     );
+    if (reply.hasPhoto) _receivePhoto(reply.photoLabel);
     return true;
   }
 

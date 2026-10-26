@@ -200,7 +200,7 @@ class LocalStore {
   // AI 키·로그인 표·만들던 초안은 이 기기에만 두고, 아래 값만 서버와 맞춰요.
 
   static const _syncedExact = {'my_profile', 'favorites_v1', 'chat_rooms_v1', 'library_v1'};
-  static const _syncedPrefixes = ['run_', 'album_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
+  static const _syncedPrefixes = ['run_', 'album_', 'photos_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
   static const _syncTimesKey = 'sync_ts_v1';
 
   static bool isSyncedKey(String key) => _syncedExact.contains(key) || _syncedPrefixes.any(key.startsWith);
@@ -297,6 +297,13 @@ class LocalStore {
   Future<void> saveAlbum(String characterId, List<String> eventIds) =>
       _write(_albumKey(characterId), List<String>.of(eventIds));
 
+  /// 앨범에 들어간 사진 (사진 설명 목록). 사진 말풍선·컷씬을 받으면 쌓이고 '다시 하기'를 해도 남음
+  List<String> loadReceivedPhotos(String characterId) =>
+      _getStringList('photos_$characterId') ?? const [];
+
+  Future<void> saveReceivedPhotos(String characterId, List<String> labels) =>
+      _write('photos_$characterId', List<String>.of(labels));
+
   /// 지금까지 끝까지 본 이벤트(호감도·일상·엔딩) ID. '다시 하기'를 해도 남음 (자유대화 잠금 해제 판정용)
   List<String> loadSeenEvents(String characterId) => _getStringList('seen_$characterId') ?? const [];
 
@@ -374,6 +381,7 @@ class LocalStore {
   Future<void> forgetCharacter(String characterId) async {
     await clearRun(characterId);
     await _write(_albumKey(characterId), null);
+    await _write('photos_$characterId', null);
     await _write('tempo_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);

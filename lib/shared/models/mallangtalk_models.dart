@@ -175,6 +175,10 @@ class CharacterModel {
   final List<ExtraCast> extraCast;
   /// 캐릭터 대표 색 (#RRGGBB, 비우면 기본 분홍)
   final String themeColor;
+  /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색
+  final String chatBackground;
+  /// 내 말풍선 색: '' = 대표색, 'pink' = 기본 분홍
+  final String bubbleStyle;
   /// 작가 코멘트: 제작자가 플레이어에게 남기는 한마디 (상세 화면 맨 아래)
   final String authorComment;
   /// 캐릭터 기본 타자 속도 배율 (0.7 = 손이 빨라서 답장이 빠름, 1.3 = 신중해서 천천히 침)
@@ -200,6 +204,8 @@ class CharacterModel {
     this.userRole = '',
     this.extraCast = const [],
     this.themeColor = '',
+    this.chatBackground = '',
+    this.bubbleStyle = '',
     this.authorComment = '',
     this.typingSpeedMultiplier = 1.0,
     required this.affectionStages,
@@ -237,6 +243,8 @@ class CharacterModel {
           ExtraCast.fromJson(e as Map<String, dynamic>),
       ],
       themeColor: json['theme_color'] as String? ?? '',
+      chatBackground: json['chat_background'] as String? ?? '',
+      bubbleStyle: json['bubble_style'] as String? ?? '',
       authorComment: json['author_comment'] as String? ?? '',
       typingSpeedMultiplier:
           (json['typing_speed_multiplier'] as num?)?.toDouble() ?? 1.0,
@@ -266,6 +274,8 @@ class CharacterModel {
         if (userRole.isNotEmpty) 'user_role': userRole,
         if (extraCast.isNotEmpty) 'extra_cast': [for (final e in extraCast) e.toJson()],
         if (themeColor.isNotEmpty) 'theme_color': themeColor,
+        if (chatBackground.isNotEmpty) 'chat_background': chatBackground,
+        if (bubbleStyle.isNotEmpty) 'bubble_style': bubbleStyle,
         if (authorComment.isNotEmpty) 'author_comment': authorComment,
         'typing_speed_multiplier': typingSpeedMultiplier,
         'affection_stages': [for (final stage in affectionStages) stage.toJson()],
@@ -286,6 +296,8 @@ class CharacterModel {
     String? userRole,
     List<ExtraCast>? extraCast,
     String? themeColor,
+    String? chatBackground,
+    String? bubbleStyle,
     String? authorComment,
   }) {
     return CharacterModel(
@@ -306,6 +318,8 @@ class CharacterModel {
       userRole: userRole ?? this.userRole,
       extraCast: extraCast ?? this.extraCast,
       themeColor: themeColor ?? this.themeColor,
+      chatBackground: chatBackground ?? this.chatBackground,
+      bubbleStyle: bubbleStyle ?? this.bubbleStyle,
       authorComment: authorComment ?? this.authorComment,
       typingSpeedMultiplier: typingSpeedMultiplier,
       affectionStages: affectionStages,
@@ -789,6 +803,33 @@ class ScenarioBundle {
   String? cutsceneImageFor(ScenarioEventModel event) =>
       photoFor(event.cutsceneImageUrl, event.cutscenePhotoTitle);
 
+  /// 앨범에 들어가는 사진 전부: 캐릭터가 보내는 사진 말풍선 + 컷씬 (구분 없이 한 앨범).
+  /// 이벤트 순서대로, 설명이 같으면 같은 사진이라 한 번만 넣음
+  static final _albumCache = Expando<List<AlbumPhoto>>();
+  List<AlbumPhoto> get albumPhotos => _albumCache[this] ??= () {
+        final list = <AlbumPhoto>[];
+        final seen = <String>{};
+        void add(ScenarioEventModel event, String? label, String? ref) {
+          final key = label?.trim() ?? '';
+          if (key.isEmpty || !seen.add(key)) return;
+          final group = event.stageLabel ??
+              character.stageFor(affectionRangeOf(event).min)?.stageLabel ??
+              '그 밖의 사진';
+          list.add(AlbumPhoto(label: key, event: event, image: photoFor(ref, key), group: group));
+        }
+        for (final event in events) {
+          final eventNodes = nodes.values.where((n) => n.eventId == event.id).toList()
+            ..sort((a, b) => a.stepOrder.compareTo(b.stepOrder));
+          for (final n in eventNodes) {
+            for (final b in n.characterBubbles) {
+              if (b.hasPhoto) add(event, b.photoLabel, b.photoImage);
+            }
+          }
+          if (event.hasCutscene) add(event, event.cutscenePhotoTitle, event.cutsceneImageUrl);
+        }
+        return List<AlbumPhoto>.unmodifiable(list);
+      }();
+
   factory ScenarioBundle.fromJson(Map<String, dynamic> json) {
     final events = [
       for (final event in json['events'] as List)
@@ -842,6 +883,20 @@ class ScenarioBundle {
     }
     return first;
   }
+}
+
+/// 앨범 사진 한 장 (설명 = 사진을 구분하는 이름)
+class AlbumPhoto {
+  final String label;
+  final ScenarioEventModel event;
+
+  /// 진짜 사진 주소 (아직 안 올렸으면 null → 설명 카드)
+  final String? image;
+
+  /// 앨범에서 묶어 보여 주는 이름: 이 사진이 오는 호감도 단계
+  final String group;
+
+  const AlbumPhoto({required this.label, required this.event, this.image, required this.group});
 }
 
 /// 8. 실제 채팅창에 표시되는 개별 말풍선 로그 모델 (DB 테이블: chat_logs)

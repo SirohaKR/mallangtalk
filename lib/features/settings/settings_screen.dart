@@ -270,13 +270,6 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
     super.dispose();
   }
 
-  /// AI 회사별 API 키 발급 페이지
-  static String _keyPage(AiProvider provider) => switch (provider) {
-        AiProvider.gemini => 'https://aistudio.google.com/apikey',
-        AiProvider.claude => 'https://console.anthropic.com/settings/keys',
-        AiProvider.openai => 'https://platform.openai.com/api-keys',
-      };
-
   static String _usd(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
   void _toast(String text) {
@@ -364,7 +357,7 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
                   child: TextButton.icon(
                     icon: const Icon(Icons.open_in_new_rounded, size: 16),
                     label: Text('${_provider.label.split(' ').first} 키 받으러 가기'),
-                    onPressed: () => launchUrl(Uri.parse(_keyPage(_provider)), webOnlyWindowName: '_blank'),
+                    onPressed: () => launchUrl(Uri.parse(aiKeyPage(_provider)), webOnlyWindowName: '_blank'),
                   ),
                 ),
               const SizedBox(height: AppSpacing.md),

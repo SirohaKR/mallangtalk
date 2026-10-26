@@ -100,3 +100,16 @@ class ByokSettingsNotifier extends Notifier<ByokSettings> {
 final byokSettingsProvider = NotifierProvider<ByokSettingsNotifier, ByokSettings>(
   ByokSettingsNotifier.new,
 );
+
+/// AI 회사별 API 키 발급 페이지
+String aiKeyPage(AiProvider provider) => switch (provider) {
+      AiProvider.gemini => 'https://aistudio.google.com/apikey',
+      AiProvider.claude => 'https://console.anthropic.com/settings/keys',
+      AiProvider.openai => 'https://platform.openai.com/api-keys',
+    };
+
+/// 'Claude (Anthropic)' → 'Claude'
+String aiShortName(AiProvider provider) => provider.label.split(' (').first;
+
+/// 대화방에 보여 줄 모델 이름 (목록에 없으면 직접 입력한 이름 그대로)
+String aiModelName(ByokSettings s) => s.modelOption?.label ?? s.model;
