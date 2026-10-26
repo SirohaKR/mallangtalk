@@ -208,6 +208,21 @@ void main() {
       expect(c.aiCharacterSheet, '도하는 {{user}}의 남사친이다.');
     });
 
+    test('성별·대표색·톡방 꾸미기·공개 여부도 초안을 거쳐 그대로 저장되고, 성별은 AI 설정에 들어감', () {
+      final draft = ScenarioDraft.fromBundle(loadSampleBundle())
+        ..gender = 'none'
+        ..themeColor = '#3B4A8C'
+        ..chatBackground = 'white'
+        ..bubbleStyle = 'pink'
+        ..unlisted = true;
+      final c = ScenarioDraft.fromBundle(draft.toBundle()).toBundle().character;
+      expect([c.gender, c.themeColor, c.chatBackground, c.bubbleStyle, c.unlisted],
+          ['none', '#3B4A8C', 'white', 'pink', true]);
+      expect(c.aiCharacterSheet, contains('성별: 미정'));
+      expect(c.copyWith(gender: 'male').aiCharacterSheet, contains('성별: 남성'));
+      expect(c.copyWith(gender: '').aiCharacterSheet, isNot(contains('성별')));
+    });
+
     test('AI에게 넘기는 설정에는 세계관·비밀·유저 설정까지 들어감', () {
       final sheet = loadSampleBundle().character.aiCharacterSheet;
       expect(sheet, contains('새벽녘 라디오'));

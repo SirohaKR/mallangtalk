@@ -347,7 +347,7 @@ void main() {
     // 앱을 새로 띄워도(새 버전·새로고침) 쓰던 초안이 그대로
     await openStudio();
     expect(find.widgetWithText(TextFormField, '카이엔 루벨리아'), findsOneWidget);
-    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.tap(find.byKey(const ValueKey('studio_step_2'))); // 위 막대로 3단계 프로필로 바로
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextFormField, '루벨리아 제국 제2황자'), findsOneWidget);
     appRouter.go('/friends'); // 만들기 화면을 닫아 자동 저장 타이머 정리
@@ -367,26 +367,38 @@ void main() {
       child: const MallangTalkApp(),
     ));
     await settle(tester);
-    expect(find.text('호감도 단계'), findsOneWidget);
+    expect(find.text('1 / 8'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
-    // 캐릭터 탭은 한 항목씩 화살표로 넘김: 기본 정보 → 캐릭터 정보 → 캐릭터 설정(넓은 칸 + 글자 수)
-    expect(find.text('1/9'), findsOneWidget);
-    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    // 한 화면에 한 단계씩 '다음'으로 넘김: 기본 → 대표색 → 프로필 … 이야기(넓은 칸 + 글자 수)
+    await tester.tap(find.byKey(const ValueKey('studio_next')));
     await tester.pumpAndSettle();
-    expect(find.text('2/9'), findsOneWidget);
+    expect(find.text('2 / 8'), findsOneWidget);
+    expect(find.byKey(const ValueKey('studio_color_preview')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('studio_next')));
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 8'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '시각디자인과 4학년'), findsOneWidget);
-    await tester.tap(find.widgetWithIcon(OutlinedButton, Icons.arrow_forward_rounded));
+    await tester.tap(find.text('여성'));
     await tester.pumpAndSettle();
-    expect(find.text('3/9'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('studio_step_4')));
+    await tester.pumpAndSettle();
+    expect(find.text('5 / 8'), findsOneWidget);
     final setting = templateScenario().character.worldviewPrompt;
     expect(find.text('${setting.characters.length}자'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, setting), '$setting 커피는 늘 블랙.');
     await tester.pump();
     expect(find.text('${setting.characters.length + 10}자'), findsOneWidget);
 
-    // 대사 탭: 첫 대화의 첫 말풍선을 고침
-    await tester.tap(find.text('대사'));
+    // 7단계 호감도·대본: 첫 대화를 펼쳐 대사 편집으로 들어가 첫 말풍선을 고침
+    await tester.tap(find.byKey(const ValueKey('studio_step_6')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('studio_ai_generate')), findsOneWidget);
+    await tester.tap(find.text('1. ${templateScenario().events.first.title}'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('대사 편집').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('대사 편집').first);
     await tester.pumpAndSettle();
     expect(find.text('장면 1'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, '내일 출사 가는데.'), '내일 출사 가는데 같이 갈래.');
@@ -404,6 +416,7 @@ void main() {
     final first = made.bundle.firstNodeOf(made.bundle.events.first.id)!;
     expect(first.characterBubbles.map((b) => b.text), contains('내일 출사 가는데 같이 갈래.'));
     expect(made.bundle.character.worldviewPrompt, endsWith('커피는 늘 블랙.'));
+    expect(made.bundle.character.gender, 'female');
     // 저장하면 새 캐릭터를 만들 수 있게 빈 칸으로 돌아감
     expect(find.widgetWithText(TextFormField, '서이준'), findsNothing);
   });
@@ -429,8 +442,8 @@ void main() {
     ));
     await settle(tester);
 
-    // 이벤트 카드에 사진 꼬리표
-    await tester.tap(find.text('이벤트'));
+    // 7단계 대화 카드에 사진 꼬리표
+    await tester.tap(find.byKey(const ValueKey('studio_step_6')));
     await tester.pumpAndSettle();
     expect(find.text('사진함 1장'), findsOneWidget);
     expect(find.text('사진 말풍선 0/2'), findsOneWidget);

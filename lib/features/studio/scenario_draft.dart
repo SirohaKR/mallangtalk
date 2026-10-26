@@ -188,6 +188,8 @@ class ScenarioDraft {
   String quote = '';
   String themeColor = '';
   String chatBackground = '';
+  String gender = '';
+  bool unlisted = false;
   String bubbleStyle = '';
   String authorComment = '';
   double typing = 1.0;
@@ -241,6 +243,8 @@ class ScenarioDraft {
       ..quote = c.quote
       ..themeColor = c.themeColor
       ..chatBackground = c.chatBackground
+      ..gender = c.gender
+      ..unlisted = c.unlisted
       ..bubbleStyle = c.bubbleStyle
       ..authorComment = c.authorComment
       ..typing = c.typingSpeedMultiplier
@@ -381,6 +385,8 @@ class ScenarioDraft {
         ],
         themeColor: themeColor,
         chatBackground: chatBackground,
+        gender: gender,
+        unlisted: unlisted,
         bubbleStyle: bubbleStyle,
         authorComment: authorComment.trim(),
         typingSpeedMultiplier: typing,
