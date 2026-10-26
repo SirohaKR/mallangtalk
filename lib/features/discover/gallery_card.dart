@@ -55,10 +55,28 @@ class GalleryCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(character.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(character.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+                      ),
+                      if (character.isService) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFCEFD2),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text('서비스',
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF6B4800))),
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     taglineOf(character),

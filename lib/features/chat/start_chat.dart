@@ -54,6 +54,7 @@ Future<_ChatProfile?> _askProfile(
       initial: current,
       initialPersona: container.read(chatPersonaProvider(character.id)),
       isFirstTime: isFirstTime,
+      chooseMode: isFirstTime && !character.isService,
     ),
   );
   if (result == null) return null;
@@ -124,12 +125,16 @@ class _NicknameDialog extends StatefulWidget {
     required this.initial,
     required this.initialPersona,
     required this.isFirstTime,
+    this.chooseMode = false,
   });
 
   final CharacterModel character;
   final String initial;
   final String initialPersona;
   final bool isFirstTime;
+
+  /// 스토리/자유대화 고르는 카드를 보일지 (처음 대화 + 이야기 말랑이)
+  final bool chooseMode;
 
   @override
   State<_NicknameDialog> createState() => _NicknameDialogState();
@@ -165,7 +170,7 @@ class _NicknameDialogState extends State<_NicknameDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.isFirstTime) ...[
+            if (widget.chooseMode) ...[
               IntrinsicHeight(
                 child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

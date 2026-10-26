@@ -8,6 +8,7 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
+import 'service_messages.dart';
 
 /// 지금 시각 (테스트에서 특별 이벤트 시간을 바꿔 보려고 따로 둠)
 final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
@@ -218,6 +219,14 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   late bool _free;
   late String _characterId;
 
+  /// 서비스 말랑이 대화방인지 (정해진 때 먼저 톡, 호감도·이야기 없음)
+  bool _service = false;
+  Timer? _serviceTimer;
+  bool _delivering = false;
+
+  /// 이야기 없이 AI와만 주고받는 방 (자유대화 방·서비스 말랑이)
+  bool get _aiRoom => _free || _service;
+
   /// 진행 기록을 저장하는 이름 (스토리 방은 캐릭터 ID, 자유대화 방은 ID#free)
   String get _roomId => _free ? freeRoomId(_characterId) : _characterId;
 
@@ -227,6 +236,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final characterId = _characterId = characterIdOfRoom(roomId);
     ref.onDispose(() {
       _userBurstReplyTimer?.cancel();
+      _serviceTimer?.cancel();
       _runId++; // 대화방이 닫히면(캐릭터 삭제 등) 돌던 연출을 멈춤
     });
 
@@ -237,7 +247,22 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     }
     _bundle = bundle;
     _store = ref.watch(localStoreProvider);
+    _service = !_free && bundle.character.isService;
     final album = _store.loadAlbum(characterId);
+    if (_service) {
+      // 서비스 말랑이: 정해진 때가 지났으면 그동안 온 톡을 쌓아 두고, 방이 살아 있는 동안 30초마다 확인
+      final savedService = _store.loadRun(roomId);
+      _serviceTimer?.cancel();
+      _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) => _deliverService());
+      Future.microtask(_deliverService);
+      return _freshRunState(unlockedCutscenes: album).copyWith(
+        isByokAiModeEnabled: true,
+        internalAffection: 100,
+        messages: savedService?.messages ?? const [],
+        seenMessageCount: savedService?.messages.length ?? 0,
+        memories: savedService?.memories ?? const [],
+      );
+    }
     if (_free) {
       // 자유대화 방: 이야기는 진행하지 않고, 지난 대화와 한 줄 기억만 이어서
       final savedFree = _store.loadRun(roomId);
@@ -357,7 +382,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 별명을 정하고 대화방에 처음 들어올 때 대화 시작 (이미 시작했으면 아무 일 없음)
   void begin() {
-    if (_free || _started || state.messages.isNotEmpty) return;
+    if (_aiRoom || _started || state.messages.isNotEmpty) return;
     _started = true;
     _advance(_runId);
   }
@@ -368,8 +393,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _userBurstReplyTimer?.cancel();
     _pendingUserBurstTexts.clear();
     _freeTurns = 0;
-    if (_free) {
-      // 자유대화 방은 대화만 비움 (한 줄 기억은 남김)
+    if (_aiRoom) {
+      // 자유대화 방·서비스 말랑이는 대화만 비움 (한 줄 기억은 남김)
       state = state.copyWith(messages: const [], seenMessageCount: 0, isCharacterTyping: false, canRetryFreeTalk: false);
       _saveRun();
       return;
@@ -460,7 +485,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 대화방에 들어올 때: 이야기가 멈춰 있는 상태(공략 완료·막힘)면 특별 이벤트 시간인지 확인
   void checkSpecialEvents() {
-    if (_free) return;
+    if (_aiRoom) return;
     if (state.isCharacterTyping || state.currentChoices.isNotEmpty) return;
     if (state.progress == StoryProgress.playing) return;
     _playSpecialIfDue(_runId);
@@ -686,6 +711,89 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     }
   }
 
+  /// 서비스 말랑이: '한 번 더 뽑기' (지금 바로 새 문구 한 통)
+  Future<void> rerollService() => _deliverService(reroll: true);
+
+  /// 서비스 말랑이: 보낼 때가 된 톡을 보냄. 처음 대화방이 생기면 바로 한 통,
+  /// 앱을 안 연 동안 지난 시각들은 그 시각으로 쌓아 둠 (AI 모드는 가장 최근 한 통만)
+  Future<void> _deliverService({bool reroll = false}) async {
+    final config = _bundle.character.service;
+    if (!_service || config == null || _delivering) return;
+    _delivering = true;
+    final runId = _runId;
+    try {
+      final saved = _store.loadServiceState(_characterId);
+      final now = ref.read(clockProvider)();
+      final used = {...saved.used};
+      var slots = reroll || saved.last == null ? [now] : dueServiceSlots(config, saved.last!, now);
+      if (slots.isEmpty) return;
+      if (config.mode == 'ai') slots = [slots.last];
+      for (final slot in slots) {
+        final text = await _composeService(config, slot, used, loud: reroll);
+        if (runId != _runId) return;
+        if (text == null) break;
+        if (reroll) {
+          if (!await _typeOut(ScriptBubblePiece(text: text), () => runId == _runId)) return;
+        } else {
+          state = state.copyWith(messages: [
+            ...state.messages,
+            ChatMessageLog(
+              id: 'svc_${slot.millisecondsSinceEpoch}_${_random.nextInt(1 << 20)}',
+              isUser: false,
+              speakerCharacterId: state.character.id,
+              speakerName: state.character.name,
+              text: text,
+              timestamp: slot,
+            ),
+          ]);
+        }
+      }
+      await _store.saveServiceState(_characterId, now, used.toList());
+      _saveRun();
+    } finally {
+      _delivering = false;
+    }
+  }
+
+  /// 문구 하나 만들기 (목록·표는 바로, AI는 내 AI 키로). 못 만들면 null
+  Future<String?> _composeService(ServiceConfig config, DateTime when, Set<String> used, {bool loud = false}) async {
+    if (config.mode == 'ai') {
+      final byok = ref.read(byokSettingsProvider);
+      if (!byok.canUseAi) {
+        if (loud) _addSystemNotice('AI 키를 넣으면 ${state.character.name}의 톡을 AI가 새로 써요');
+        return null;
+      }
+      try {
+        return await ref.read(claudeChatClientProvider).serviceMessage(
+              provider: byok.provider,
+              apiKey: byok.apiKey ?? '',
+              relay: byok.relay,
+              model: byok.model,
+              character: state.character,
+              prompt: config.aiPrompt,
+              userName: _nickname,
+              now: when,
+            );
+      } on ClaudeChatException catch (e) {
+        if (loud) _addSystemNotice(e.message);
+        return null;
+      }
+    }
+    final count = config.mode == 'table' ? config.rows.length : config.lines.where((l) => l.trim().isNotEmpty).length;
+    if (config.noRepeat && count > 0 && used.length >= count) used.clear(); // 한 바퀴 다 돌았으면 처음부터
+    final msg = composeServiceMessage(
+      config,
+      userName: _nickname,
+      charName: state.character.name,
+      now: when,
+      random: ref.read(storyRandomProvider),
+      used: used,
+    );
+    if (msg == null) return null;
+    used.add(msg.key);
+    return msg.text;
+  }
+
   /// 이 대화 바로 뒤에 붙은 '이어지는 대화' (이번 회차에 아직 안 봤고 조건이 맞는 것)
   ScenarioEventModel? _followUpOf(ScenarioEventModel event) => _bundle.events
       .where((e) =>
@@ -708,7 +816,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 공략 뒤 다시 볼 수 있는 대화 (안 고른 선택지가 남은 것, 이야기 순서대로)
   List<ReplayableEvent> get replayableEvents {
-    if (_free) return const [];
+    if (_aiRoom) return const [];
     final out = <ReplayableEvent>[];
     final events = [..._bundle.events]..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     for (final e in events) {
@@ -988,7 +1096,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     bool stillValid() => runId == _runId && state.isByokAiModeEnabled;
 
     // 스토리 방에서 이야기 진행 중이면 정해진 만큼 주고받은 뒤 캐릭터가 마무리 (자유대화 방·공략 뒤에는 끝없이)
-    final limited = !_free && _storyWaiting;
+    final limited = !_aiRoom && _storyWaiting;
     _freeTurns++;
     final pace = limited
         ? FreeTalkPace(
@@ -1023,7 +1131,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               relay: byok.relay,
               model: byok.model,
               character: state.character,
-              stageLabel: _free ? null : _currentStageLabel(),
+              stageLabel: _aiRoom ? null : _currentStageLabel(),
               userName: _nickname,
               userIntro: ref.read(userProfileProvider).intro,
               userPersona: ref.read(chatPersonaProvider(_characterId)),
@@ -1050,7 +1158,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           for (final text in reply.bubbles) ScriptBubblePiece(text: text),
           if (photo != null) ScriptBubblePiece(text: '', photoLabel: photo.label, photoImage: photo.ref),
         ];
-        affectionDelta = _free ? 0 : reply.affectionDelta; // 자유대화 방은 호감도 없음
+        affectionDelta = _aiRoom ? 0 : reply.affectionDelta; // 자유대화 방·서비스 말랑이는 호감도 없음
         ends = limited && (reply.ends || pace.mustEnd);
         memory = reply.memory;
       } on ClaudeChatException catch (e) {
@@ -1233,7 +1341,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 자유대화 켜기·끄기. 이야기 도중에 켜면 하던 이벤트를 멈추고, 끄면 이야기로 돌아감
   void toggleDirectInputMode(bool enabled) {
-    if (_free || enabled == state.isByokAiModeEnabled) return;
+    if (_aiRoom || enabled == state.isByokAiModeEnabled) return;
     if (enabled && !state.freeTalkUnlocked) return; // 공략을 끝내고 스크립트를 다 봐야 열림
     if (!enabled) {
       _endFreeTalk(byCharacter: false);

@@ -6,6 +6,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/character_sheet_view.dart';
+import '../chat/service_messages.dart';
 import '../chat/start_chat.dart';
 import '../discover/gallery_card.dart';
 import '../library/character_library.dart';
@@ -96,6 +97,21 @@ class CharacterDetailScreen extends ConsumerWidget {
                       const SizedBox(height: 6),
                       Text(CharacterModel.fillUserName(c.tagline, '너', charName: c.name),
                           style: AppTextStyles.chatBubbleBody),
+                    ],
+                    if (c.isService && c.service != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        key: const ValueKey('detail_service'),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFCEFD2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '서비스 말랑이 · ${serviceScheduleLabel(c.service!)} 먼저 톡이 와요',
+                          style: AppTextStyles.messageTime.copyWith(color: const Color(0xFF6B4800), fontWeight: FontWeight.w700),
+                        ),
+                      ),
                     ],
                     if (c.tags.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.sm),

@@ -154,6 +154,56 @@ ${newUserMessages.join('\n')}''';
     return _parse(json);
   }
 
+  /// 서비스 말랑이가 정해진 때 먼저 보내는 톡 한 개를 AI가 씀 (AI 모드)
+  Future<String> serviceMessage({
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required String prompt,
+    required String userName,
+    required DateTime now,
+  }) async {
+    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+    final system = '''
+너는 메신저 속 서비스 캐릭터 "${character.name}"이다. 정해진 시간마다 유저에게 먼저 톡을 보낸다. 유저와는 처음부터 친한 사이다.
+
+[캐릭터 설정]
+${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
+
+[이번에 보낼 톡]
+${prompt.trim()}
+
+[규칙]
+- 카톡 한 개, 1~4문장. 괄호 지문·행동 묘사는 쓰지 않는다.
+- 유저 이름(별명)은 "$userName"이다.
+- 오늘은 ${now.month}월 ${now.day}일 ${weekdays[now.weekday - 1]}요일 ${now.hour}시쯤이다. 매번 다른 내용으로 쓴다.''';
+    final (json, _) = await callJsonModel(
+      _dio,
+      provider: provider,
+      apiKey: apiKey, relay: relay,
+      model: model,
+      system: system,
+      user: '지금 보낼 톡을 써 줘.',
+      schema: const {
+        'type': 'object',
+        'properties': {
+          'text': {'type': 'string', 'description': '보낼 톡 한 개'},
+        },
+        'required': ['text'],
+        'additionalProperties': false,
+      },
+      maxTokens: 2000,
+      effort: 'low',
+      refusalMessage: 'AI가 이번 톡을 쓰지 않았어요.',
+      unreadableMessage: 'AI 톡을 읽지 못했어요.',
+    );
+    final text = (json['text'] as String? ?? '').trim();
+    if (text.isEmpty) throw const ClaudeChatException('AI 톡을 읽지 못했어요.');
+    return text;
+  }
+
   static String _paceRule(FreeTalkPace pace) {
     if (pace.mustEnd) {
       return '\n- 이번 답장으로 반드시 대화를 마무리한다. 씻으러 간다, 잠이 온다, 일이 생겼다처럼 캐릭터다운 핑계를 대고 end_conversation은 true.';

@@ -191,6 +191,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final id = characterIdOfRoom(roomId);
     final free = isFreeRoom(roomId);
     final chatState = ref.watch(chatRoomProvider(roomId));
+    final service = chatState.character.isService;
     final notifier = ref.read(chatRoomProvider(roomId).notifier);
     final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.canUseAi));
     final bundle = ref.watch(characterBundleProvider(id));
@@ -243,10 +244,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(chatState.character.name,
-                      overflow: TextOverflow.ellipsis),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(child: Text(chatState.character.name, overflow: TextOverflow.ellipsis)),
+                      if (service) ...[
+                        const SizedBox(width: 6),
+                        const _ServiceBadge(),
+                      ],
+                    ],
+                  ),
                   // 자유대화 방이면 상태 메시지 대신 지금 쓰는 AI (누르면 바꾸기)
-                  if (free)
+                  if (free || (service && chatState.character.service?.mode == 'ai'))
                     GestureDetector(
                       key: const ValueKey('chat_ai_pill'),
                       onTap: () => showChatAiSheet(context, accent: theme.accent),
@@ -258,7 +267,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '자유대화 · ${aiModelName(ref.watch(byokSettingsProvider))} ▾',
+                          '${service ? 'AI' : '자유대화'} · ${aiModelName(ref.watch(byokSettingsProvider))} ▾',
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.messageTime.copyWith(
                             color: Color.lerp(theme.accent, AppColors.textPrimary, 0.35),
@@ -281,11 +290,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: '앨범',
-            onPressed: () => context.push('/chat/$id/album'),
-            icon: const Icon(Icons.photo_library_outlined),
-          ),
+          if (!service)
+            IconButton(
+              tooltip: '앨범',
+              onPressed: () => context.push('/chat/$id/album'),
+              icon: const Icon(Icons.photo_library_outlined),
+            ),
           PopupMenuButton<String>(
             tooltip: '대화 설정',
             icon: const Icon(Icons.more_vert_rounded),
@@ -310,9 +320,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 child: Text('내 별명·설정: ${ref.read(chatNicknameProvider(id))}'),
               ),
               const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
-              PopupMenuItem(value: 'switch', child: Text(free ? '스토리 대화방으로' : '자유대화 방 열기')),
-              const PopupMenuItem(value: 'ai', child: Text('자유대화 AI 고르기')),
-              PopupMenuItem(value: 'restart', child: Text(free ? '대화 비우기' : '처음부터 다시')),
+              if (!service)
+                PopupMenuItem(value: 'switch', child: Text(free ? '스토리 대화방으로' : '자유대화 방 열기')),
+              PopupMenuItem(value: 'ai', child: Text(service ? '답장 AI 고르기' : '자유대화 AI 고르기')),
+              PopupMenuItem(value: 'restart', child: Text(free || service ? '대화 비우기' : '처음부터 다시')),
             ],
           ),
           const SizedBox(width: 4),
@@ -367,6 +378,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (!free &&
+                        !service &&
                         chatState.progress != StoryProgress.playing &&
                         !chatState.isReplaying &&
                         chatState.currentChoices.isEmpty &&
@@ -432,6 +444,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             'AI 키를 넣으면 진짜 AI가 답해요. 눌러서 연결하기 →',
                             textAlign: TextAlign.center,
                             style: AppTextStyles.systemNotice,
+                          ),
+                        ),
+                      ),
+                    // 서비스 말랑이: 지금 바로 새 문구 한 통
+                    if (service && (chatState.character.service?.reroll ?? false))
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: OutlinedButton.icon(
+                            key: const ValueKey('service_reroll'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Color.lerp(theme.accent, AppColors.textPrimary, 0.3),
+                              side: BorderSide(color: theme.accent, width: 1.5),
+                              shape: const StadiumBorder(),
+                            ),
+                            onPressed: chatState.isCharacterTyping ? null : notifier.rerollService,
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('한 번 더 뽑기'),
                           ),
                         ),
                       ),
@@ -866,6 +897,20 @@ class _FreeRoomIntro extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 서비스 말랑이 이름 옆 작은 표시
+class _ServiceBadge extends StatelessWidget {
+  const _ServiceBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      decoration: BoxDecoration(color: const Color(0xFFFCEFD2), borderRadius: BorderRadius.circular(999)),
+      child: const Text('서비스', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF6B4800))),
     );
   }
 }
