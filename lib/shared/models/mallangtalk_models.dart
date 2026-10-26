@@ -144,6 +144,96 @@ class ExtraCast {
 
 /// 2. 캐릭터 기본 설정 모델 (DB 테이블: characters)
 /// 설정 항목은 쨋뀨의 캐릭터 아카이브 loreshelf(인물·유저·기타 인물 카드)를 참고했어요.
+/// 서비스 말랑이가 언제 무슨 톡을 보낼지
+class ServiceConfig {
+  /// 보내는 요일 (1 월요일 ~ 7 일요일)
+  final List<int> days;
+  /// 보내는 시각 'HH:MM' (24시간)
+  final List<String> times;
+  /// 문구 만드는 법: list(써 둔 문구 중 랜덤) / table(데이터 표 한 줄을 틀에 넣기) / ai(매번 AI가 씀)
+  final String mode;
+  final List<String> lines;
+  /// 데이터 표: 칸 이름과 줄들
+  final List<String> columns;
+  final List<List<String>> rows;
+  /// 데이터 표 모드의 보낼 말 틀 ({칸 이름}, {이름}, {날짜}, {요일}, {숫자})
+  final String template;
+  /// AI 모드: 어떤 톡을 쓸지 (예: 오늘의 운세를 짧고 다정하게)
+  final String aiPrompt;
+  /// 한 바퀴 돌 때까지 같은 문구·줄이 안 나오게
+  final bool noRepeat;
+  /// 대화방에 '한 번 더 뽑기' 버튼
+  final bool reroll;
+
+  const ServiceConfig({
+    this.days = const [1, 2, 3, 4, 5, 6, 7],
+    this.times = const ['08:00'],
+    this.mode = 'list',
+    this.lines = const [],
+    this.columns = const [],
+    this.rows = const [],
+    this.template = '',
+    this.aiPrompt = '',
+    this.noRepeat = true,
+    this.reroll = true,
+  });
+
+  static const modes = ['list', 'table', 'ai'];
+
+  ServiceConfig copyWith({
+    List<int>? days,
+    List<String>? times,
+    String? mode,
+    List<String>? lines,
+    List<String>? columns,
+    List<List<String>>? rows,
+    String? template,
+    String? aiPrompt,
+    bool? noRepeat,
+    bool? reroll,
+  }) =>
+      ServiceConfig(
+        days: days ?? this.days,
+        times: times ?? this.times,
+        mode: mode ?? this.mode,
+        lines: lines ?? this.lines,
+        columns: columns ?? this.columns,
+        rows: rows ?? this.rows,
+        template: template ?? this.template,
+        aiPrompt: aiPrompt ?? this.aiPrompt,
+        noRepeat: noRepeat ?? this.noRepeat,
+        reroll: reroll ?? this.reroll,
+      );
+
+  factory ServiceConfig.fromJson(Map<String, dynamic> json) => ServiceConfig(
+        days: [for (final d in json['days'] as List? ?? const [1, 2, 3, 4, 5, 6, 7]) (d as num).toInt()],
+        times: [for (final t in json['times'] as List? ?? const ['08:00']) t as String],
+        mode: json['mode'] as String? ?? 'list',
+        lines: [for (final l in json['lines'] as List? ?? const []) l as String],
+        columns: [for (final c in json['columns'] as List? ?? const []) c as String],
+        rows: [
+          for (final r in json['rows'] as List? ?? const []) [for (final v in r as List) '$v'],
+        ],
+        template: json['template'] as String? ?? '',
+        aiPrompt: json['ai_prompt'] as String? ?? '',
+        noRepeat: json['no_repeat'] != false,
+        reroll: json['reroll'] != false,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'days': days,
+        'times': times,
+        'mode': mode,
+        if (lines.isNotEmpty) 'lines': lines,
+        if (columns.isNotEmpty) 'columns': columns,
+        if (rows.isNotEmpty) 'rows': rows,
+        if (template.isNotEmpty) 'template': template,
+        if (aiPrompt.isNotEmpty) 'ai_prompt': aiPrompt,
+        'no_repeat': noRepeat,
+        'reroll': reroll,
+      };
+}
+
 class CharacterModel {
   final String id;
   final String creatorId;
@@ -179,6 +269,10 @@ class CharacterModel {
   final String gender;
   /// 말랑이 찾기에 안 올림 (내 말랑이에서만 보임)
   final bool unlisted;
+  /// 말랑이 종류: '' = 이야기 말랑이, 'service' = 서비스 말랑이 (정해진 때 먼저 톡, 호감도·엔딩 없음)
+  final String kind;
+  /// 서비스 말랑이의 보내기 설정 (이야기 말랑이는 null)
+  final ServiceConfig? service;
   /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색
   final String chatBackground;
   /// 내 말풍선 색: '' = 대표색, 'pink' = 기본 분홍
@@ -210,6 +304,8 @@ class CharacterModel {
     this.themeColor = '',
     this.gender = '',
     this.unlisted = false,
+    this.kind = '',
+    this.service,
     this.chatBackground = '',
     this.bubbleStyle = '',
     this.authorComment = '',
@@ -251,6 +347,10 @@ class CharacterModel {
       themeColor: json['theme_color'] as String? ?? '',
       gender: json['gender'] as String? ?? '',
       unlisted: json['unlisted'] == true,
+      kind: json['kind'] as String? ?? '',
+      service: json['service'] is Map
+          ? ServiceConfig.fromJson(Map<String, dynamic>.from(json['service'] as Map))
+          : null,
       chatBackground: json['chat_background'] as String? ?? '',
       bubbleStyle: json['bubble_style'] as String? ?? '',
       authorComment: json['author_comment'] as String? ?? '',
@@ -284,6 +384,8 @@ class CharacterModel {
         if (themeColor.isNotEmpty) 'theme_color': themeColor,
         if (gender.isNotEmpty) 'gender': gender,
         if (unlisted) 'unlisted': true,
+        if (kind.isNotEmpty) 'kind': kind,
+        if (service != null) 'service': service!.toJson(),
         if (chatBackground.isNotEmpty) 'chat_background': chatBackground,
         if (bubbleStyle.isNotEmpty) 'bubble_style': bubbleStyle,
         if (authorComment.isNotEmpty) 'author_comment': authorComment,
@@ -332,6 +434,8 @@ class CharacterModel {
       themeColor: themeColor ?? this.themeColor,
       gender: gender ?? this.gender,
       unlisted: unlisted ?? this.unlisted,
+      kind: kind,
+      service: service,
       chatBackground: chatBackground ?? this.chatBackground,
       bubbleStyle: bubbleStyle ?? this.bubbleStyle,
       authorComment: authorComment ?? this.authorComment,
@@ -340,6 +444,10 @@ class CharacterModel {
       isPublished: isPublished,
     );
   }
+
+  /// 서비스 말랑이인지 (호감도 처음부터 100, 단계·엔딩 없음)
+  bool get isService => kind == serviceKind;
+  static const serviceKind = 'service';
 
   /// 화면·AI에 쓰는 성별 이름 (미정이면 빈 문자열)
   String get genderLabel => switch (gender) { 'male' => '남성', 'female' => '여성', 'none' => '미정', _ => '' };

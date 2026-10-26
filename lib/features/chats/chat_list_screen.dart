@@ -63,6 +63,7 @@ class _ChatRoomTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final room = ref.watch(chatRoomProvider(roomId));
     final free = isFreeRoom(roomId);
+    final service = room.character.isService;
     final last = room.lastBubble;
     final unread = room.unreadCount;
     final preview = room.isCharacterTyping
@@ -87,15 +88,27 @@ class _ChatRoomTile extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
             decoration: BoxDecoration(
-              color: free ? const Color(0xFFEDE7FB) : const Color(0xFFFCE8EF),
+              color: service
+                  ? const Color(0xFFFCEFD2)
+                  : free
+                      ? const Color(0xFFEDE7FB)
+                      : const Color(0xFFFCE8EF),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              free ? '자유대화' : '스토리',
+              service
+                  ? '서비스'
+                  : free
+                      ? '자유대화'
+                      : '스토리',
               style: TextStyle(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w700,
-                color: free ? AppColors.aiActivePurple : AppColors.primaryPink,
+                color: service
+                    ? const Color(0xFF6B4800)
+                    : free
+                        ? AppColors.aiActivePurple
+                        : AppColors.primaryPink,
               ),
             ),
           ),

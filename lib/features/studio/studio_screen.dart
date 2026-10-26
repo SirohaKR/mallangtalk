@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/claude_chat_client.dart';
@@ -14,8 +15,10 @@ import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/mallang_loading.dart';
 import '../chat/chat_notifier.dart';
 import '../chat/chat_theme.dart';
+import '../chat/service_messages.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
+import '../settings/user_profile.dart';
 import 'character_import.dart';
 import 'scenario_draft.dart';
 import 'studio_widgets.dart';
@@ -497,7 +500,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       _toast('사진을 안 고른 $linked곳에 이벤트 사진을 자동으로 연결했어요');
     }
     var bundle = _draft.toBundle();
-    if (!bestPathClears(bundle)) {
+    if (!_draft.isService && !bestPathClears(bundle)) {
       final fix = await _confirm(
         '호감도 자동으로 맞추기',
         '좋은 선택만 골라도 다음 단계 점수에 못 가서 막히는 이벤트가 있어요. 선택지 호감도를 조금씩 올려서 맞출까요?',
@@ -526,8 +529,11 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
 
   // ───────────────────────── 화면 ─────────────────────────
 
-  /// 만들기 8단계 (한 화면에 한 단계, 위 막대를 누르면 바로 이동)
-  static const _steps = [
+  /// 만들기 단계 (한 화면에 한 단계, 위 막대를 누르면 바로 이동).
+  /// 이야기 말랑이는 8단계, 서비스 말랑이는 기본·대표색·보내기·마무리 4단계
+  List<int> get _stepIds => _draft.isService ? const [0, 1, 8, 7] : const [0, 1, 2, 3, 4, 5, 6, 7];
+
+  static const _stepNames = [
     ('기본', '말랑이 찾기 카드와 채팅방에 보이는 것들'),
     ('대표색', ''),
     ('프로필', ''),
@@ -536,7 +542,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     ('인물·비밀', ''),
     ('호감도·대본', ''),
     ('마무리', ''),
+    ('보내기', ''),
   ];
+
+  List<(String, String)> get _steps => [for (final id in _stepIds) _stepNames[id]];
 
   /// 이 단계에서 '빈 칸 AI로 채우기'로 채울 칸 (없으면 버튼 없음)
   static const _fillFields = <int, List<String>>{
@@ -561,7 +570,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     super.build(context);
     final (title, _) = _steps[_step];
     final last = _steps.length - 1;
-    final fill = _fillFields[_step];
+    final fill = _fillFields[_stepIds[_step]];
     final body = Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
@@ -627,7 +636,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               ),
             ),
             const Divider(height: 1),
-            Expanded(child: _stepBody(_step)),
+            Expanded(child: _stepBody(_stepIds[_step])),
             Container(
               padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 10, AppSpacing.lg, 14),
               decoration: const BoxDecoration(
@@ -709,6 +718,29 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         return ListView(
           padding: pad,
           children: [
+            const Text('어떤 말랑이인가요', style: AppTextStyles.speakerName),
+            const SizedBox(height: 6),
+            SegmentedButton<String>(
+              key: const ValueKey('studio_kind'),
+              segments: const [
+                ButtonSegment(value: '', label: Text('이야기 말랑이')),
+                ButtonSegment(value: CharacterModel.serviceKind, label: Text('서비스 말랑이')),
+              ],
+              selected: {d.kind},
+              showSelectedIcon: false,
+              onSelectionChanged: (v) => setState(() {
+                d.kind = v.first;
+                _step = 0;
+              }),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              d.isService
+                  ? '정해진 때마다 먼저 톡을 보내 주는 말랑이 (운세·행운의 편지·아침 응원 같은). 호감도·엔딩 없이 처음부터 친한 사이예요.'
+                  : '호감도 단계·이벤트·엔딩이 있는 말랑이. 스토리와 자유대화 둘 다 돼요.',
+              style: AppTextStyles.messageTime,
+            ),
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
                 CharacterAvatar(character: preview, radius: 34),
@@ -746,6 +778,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         );
       case 1:
         return ListView(padding: pad, children: [_colorStep()]);
+      case 8:
+        return _serviceStep(pad);
       case 2:
         return ListView(
           padding: pad,
@@ -1096,20 +1130,271 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   }
 
   /// 8단계: 사진함 확인 + 작가 코멘트 + 공개
+  /// 미리보기에서 다른 줄을 뽑을 때마다 바뀜
+  int _previewSeed = 0;
+
+  /// 서비스 말랑이: 언제, 무슨 문구를 보낼지
+  Widget _serviceStep(EdgeInsets pad) {
+    final d = _draft;
+    final s = d.service;
+    void set(ServiceConfig c) => setState(() => d.service = c);
+    const days = ['월', '화', '수', '목', '금', '토', '일'];
+    final holes = ['이름', '날짜', '요일', '숫자', ...s.columns.where((c) => c.trim().isNotEmpty)];
+    final userName = ref.read(userProfileProvider).nickname;
+    final preview = composeServiceMessage(
+      s,
+      userName: userName.isEmpty ? '다홍' : userName,
+      charName: d.name.trim().isEmpty ? '말랑이' : d.name.trim(),
+      now: DateTime.now(),
+      random: Random(_previewSeed),
+    );
+    return ListView(
+      padding: pad,
+      children: [
+        const Text('언제 보낼까요', style: AppTextStyles.speakerName),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (var i = 0; i < 7; i++)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Material(
+                    color: s.days.contains(i + 1) ? AppColors.myBubble : AppColors.surfaceWhite,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: s.days.contains(i + 1) ? AppColors.primaryPink : const Color(0xFFE5D6DC)),
+                    ),
+                    child: InkWell(
+                      key: ValueKey('studio_day_${i + 1}'),
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        final on = !s.days.contains(i + 1);
+                        set(s.copyWith(
+                          days: on ? ({...s.days, i + 1}.toList()..sort()) : [for (final x in s.days) if (x != i + 1) x],
+                        ));
+                      },
+                      child: SizedBox(
+                        height: 40,
+                        child: Center(
+                          child: Text(days[i],
+                              style: AppTextStyles.choiceButton.copyWith(
+                                  color: s.days.contains(i + 1) ? AppColors.primaryPink : AppColors.textMuted)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final t in s.times)
+              InputChip(
+                label: Text(serviceTimeLabel(t)),
+                onDeleted: () => set(s.copyWith(times: [for (final x in s.times) if (x != t) x])),
+              ),
+            ActionChip(
+              key: const ValueKey('studio_add_time'),
+              avatar: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('시간 추가'),
+              onPressed: () async {
+                final picked = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 8, minute: 0));
+                if (picked == null) return;
+                final t = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                set(s.copyWith(times: ({...s.times, t}.toList()..sort())));
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text('앱을 안 켜 둔 동안 온 톡은 대화방을 열면 쌓여 있어요', style: AppTextStyles.messageTime),
+        const SizedBox(height: AppSpacing.lg),
+        const Text('문구는 어떻게 만들까요', style: AppTextStyles.speakerName),
+        const SizedBox(height: 6),
+        SegmentedButton<String>(
+          key: const ValueKey('studio_service_mode'),
+          segments: const [
+            ButtonSegment(value: 'list', label: Text('문구 목록')),
+            ButtonSegment(value: 'table', label: Text('데이터 표')),
+            ButtonSegment(value: 'ai', label: Text('AI')),
+          ],
+          selected: {s.mode},
+          showSelectedIcon: false,
+          onSelectionChanged: (v) => set(s.copyWith(mode: v.first)),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          switch (s.mode) {
+            'table' => '표의 한 줄을 골라 아래 틀에 넣어서 보내요. 엑셀·구글 시트에서 칸째 복사해 붙여 넣으면 돼요',
+            'ai' => '보낼 때마다 AI가 새로 써요. 대화방을 보는 사람의 AI 키를 써요',
+            _ => '적어 둔 문구 중에서 랜덤으로 보내요. {이름}·{날짜}·{요일}·{숫자}를 넣을 수 있어요',
+          },
+          style: AppTextStyles.messageTime,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (s.mode == 'list')
+          EditField(
+            fieldKey: _k(d, 'svc_lines'),
+            value: s.lines.join('\n'),
+            label: '보낼 문구 (한 줄에 하나)',
+            hint: '예: 이 편지를 받은 사람은 3일 안에 좋은 소식을 듣게 돼요!',
+            lines: 6,
+            onChanged: (v) => set(s.copyWith(lines: v.split('\n'))),
+          ),
+        if (s.mode == 'table') ...[
+          EditField(
+            fieldKey: _k(d, 'svc_table'),
+            value: [s.columns.join('\t'), for (final r in s.rows) r.join('\t')].where((l) => l.isNotEmpty).join('\n'),
+            label: '데이터 표 붙여 넣기 (첫 줄은 칸 이름)',
+            hint: '띠\t운세\n쥐띠\t작은 친절이 큰 행운으로 돌아오는 날',
+            lines: 5,
+            onChanged: (v) {
+              final t = parseServiceTable(v);
+              set(s.copyWith(columns: t.columns, rows: t.rows));
+            },
+          ),
+          if (s.columns.isNotEmpty) ...[
+            Text('${s.rows.length}줄 · ${s.columns.length}칸', style: AppTextStyles.messageTime),
+            const SizedBox(height: 4),
+            Table(
+              border: TableBorder.all(color: AppColors.borderLight),
+              children: [
+                TableRow(
+                  decoration: const BoxDecoration(color: Color(0xFFF5EFF2)),
+                  children: [for (final c in s.columns) _cell(c, bold: true)],
+                ),
+                for (final r in s.rows.take(3))
+                  TableRow(children: [for (var i = 0; i < s.columns.length; i++) _cell(i < r.length ? r[i] : '')]),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          EditField(
+            fieldKey: _k(d, 'svc_template-$_version'),
+            value: s.template,
+            label: '보낼 말 틀',
+            hint: '예: {이름}! 오늘 {띠} 운세는… {운세} 행운의 숫자는 {숫자}',
+            lines: 3,
+            onChanged: (v) => set(s.copyWith(template: v)),
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final h in holes)
+                StudioPill(
+                  label: '{$h}',
+                  selected: false,
+                  onTap: () => setState(() {
+                    d.service = s.copyWith(template: '${s.template}{$h}');
+                    _version++;
+                  }),
+                ),
+            ],
+          ),
+        ],
+        if (s.mode == 'ai')
+          EditField(
+            fieldKey: _k(d, 'svc_ai'),
+            value: s.aiPrompt,
+            label: 'AI에게 맡길 톡',
+            hint: '예: 오늘의 운세를 띠 하나 골라서 짧고 다정하게. 행운의 숫자도 하나',
+            lines: 3,
+            onChanged: (v) => set(s.copyWith(aiPrompt: v)),
+          ),
+        if (s.mode != 'ai')
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('한 바퀴 돌 때까지 같은 문구 안 나오게', style: AppTextStyles.choiceButton),
+            value: s.noRepeat,
+            activeTrackColor: const Color(0xFFB83B66),
+            onChanged: (v) => set(s.copyWith(noRepeat: v)),
+          ),
+        SwitchListTile(
+          key: const ValueKey('studio_service_reroll'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text("대화방에 '한 번 더 뽑기' 버튼", style: AppTextStyles.choiceButton),
+          subtitle: const Text('누를 때마다 새 문구가 와요', style: AppTextStyles.messageTime),
+          value: s.reroll,
+          activeTrackColor: const Color(0xFFB83B66),
+          onChanged: (v) => set(s.copyWith(reroll: v)),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        const Text('미리보기', style: AppTextStyles.speakerName),
+        const SizedBox(height: 6),
+        Container(
+          key: const ValueKey('studio_service_preview'),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F2F7),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(4),
+              topRight: Radius.circular(14),
+              bottomLeft: Radius.circular(14),
+              bottomRight: Radius.circular(14),
+            ),
+          ),
+          child: Text(
+            s.mode == 'ai'
+                ? '(보낼 때마다 AI가 새로 써요)'
+                : preview?.text ?? '문구를 적으면 여기에 보여요',
+            style: AppTextStyles.chatBubbleBody,
+          ),
+        ),
+        if (s.mode != 'ai')
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _previewSeed++),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('다른 문구로 미리보기'),
+            ),
+          ),
+        const SizedBox(height: AppSpacing.md),
+        EditField(
+          fieldKey: _k(d, 'svc_setting'),
+          value: d.setting,
+          label: '캐릭터 설정 · 말투 (답장할 때 AI가 참고)',
+          hint: '예: 운세를 알려 주는 떡 요정. 반말, 밝고 수다스러움',
+          lines: 3,
+          onChanged: (v) => d.setting = v,
+        ),
+      ],
+    );
+  }
+
+  Widget _cell(String text, {bool bold = false}) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Text(text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.messageTime.copyWith(
+                color: AppColors.textPrimary, fontWeight: bold ? FontWeight.w700 : FontWeight.w400)),
+      );
+
   Widget _finishStep() {
     final d = _draft;
     final withPhotos = [for (final e in d.events) if (e.photos.isNotEmpty || e.photoSlots.isNotEmpty) e];
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl),
       children: [
-        const Text('사진함', style: AppTextStyles.speakerName),
-        const Text('대화마다 올린 사진과 사진 자리예요. 누르면 그 대화의 대사 편집으로 가요', style: AppTextStyles.messageTime),
-        const SizedBox(height: 6),
-        if (withPhotos.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('아직 사진이 들어갈 대화가 없어요', style: AppTextStyles.systemNotice),
-          ),
+        if (!d.isService) ...[
+          const Text('사진함', style: AppTextStyles.speakerName),
+          const Text('대화마다 올린 사진과 사진 자리예요. 누르면 그 대화의 대사 편집으로 가요', style: AppTextStyles.messageTime),
+          const SizedBox(height: 6),
+          if (withPhotos.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('아직 사진이 들어갈 대화가 없어요', style: AppTextStyles.systemNotice),
+            ),
+        ],
+        if (!d.isService)
         for (final e in withPhotos)
           StudioCard(
             child: InkWell(

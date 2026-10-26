@@ -205,6 +205,10 @@ class ScenarioDraft {
   String chatBackground = '';
   String gender = '';
   bool unlisted = false;
+  /// 말랑이 종류: '' 이야기 말랑이, 'service' 서비스 말랑이
+  String kind = '';
+  /// 서비스 말랑이의 보내기 설정
+  ServiceConfig service = const ServiceConfig();
   String bubbleStyle = '';
   String authorComment = '';
   double typing = 1.0;
@@ -260,6 +264,8 @@ class ScenarioDraft {
       ..chatBackground = c.chatBackground
       ..gender = c.gender
       ..unlisted = c.unlisted
+      ..kind = c.kind
+      ..service = c.service ?? const ServiceConfig()
       ..bubbleStyle = c.bubbleStyle
       ..authorComment = c.authorComment
       ..typing = c.typingSpeedMultiplier
@@ -409,11 +415,15 @@ class ScenarioDraft {
         chatBackground: chatBackground,
         gender: gender,
         unlisted: unlisted,
+        kind: kind,
+        service: isService ? service : null,
         bubbleStyle: bubbleStyle,
         authorComment: authorComment.trim(),
         typingSpeedMultiplier: typing,
-        affectionStages: buildStages(),
+        affectionStages: isService ? const [] : buildStages(),
       );
+
+  bool get isService => kind == CharacterModel.serviceKind;
 
   static String nodeId(EventDraft e, int sceneIndex) => '${e.id}_${sceneIndex + 1}';
 
@@ -515,6 +525,8 @@ class ScenarioDraft {
   }
 
   ScenarioBundle toBundle() {
+    // 서비스 말랑이는 이야기(이벤트·대사)가 없음
+    if (isService) return ScenarioBundle(character: buildCharacter(), events: const [], nodes: const {});
     final events = <ScenarioEventModel>[];
     final nodes = <String, ScriptNodeModel>{};
     for (var i = 0; i < this.events.length; i++) {
@@ -562,6 +574,7 @@ class ScenarioDraft {
   List<String> problems() {
     final out = <String>[];
     if (name.trim().isEmpty) out.add('[캐릭터] 이름을 적어 주세요.');
+    if (isService) return out..addAll(serviceProblems());
     final named = [for (final s in stages) if (s.name.trim().isNotEmpty) s];
     if (named.isEmpty) out.add('[호감도 단계] 단계를 하나 이상 만들어 주세요.');
     if (named.length != stages.length) out.add('[호감도 단계] 이름이 빈 단계가 있어요.');
@@ -624,6 +637,19 @@ class ScenarioDraft {
 
   /// 사진을 안 골랐어도 설명이 같은 다른 자리의 사진이 나오면 그 사진
   String? sharedPhotoFor(PhotoSlot slot) => slot.hasOwnLabel ? _photosByLabel()[slot.label] : null;
+
+  /// 서비스 말랑이 보내기 설정에서 고칠 곳
+  List<String> serviceProblems() {
+    final s = service;
+    return [
+      if (s.days.isEmpty) '[보내기] 보낼 요일을 하나 이상 골라 주세요.',
+      if (s.times.isEmpty) '[보내기] 보낼 시간을 하나 이상 넣어 주세요.',
+      if (s.mode == 'list' && !s.lines.any((l) => l.trim().isNotEmpty)) '[보내기] 보낼 문구를 하나 이상 적어 주세요.',
+      if (s.mode == 'table' && s.rows.isEmpty) '[보내기] 데이터 표를 붙여 넣어 주세요.',
+      if (s.mode == 'table' && s.template.trim().isEmpty) '[보내기] 보낼 말 틀을 적어 주세요.',
+      if (s.mode == 'ai' && s.aiPrompt.trim().isEmpty) '[보내기] AI가 어떤 톡을 쓸지 적어 주세요.',
+    ];
+  }
 
   /// 저장하기 전에 빈 사진 자리를 채워 줌. 채운 자리 수를 돌려줌
   /// 1) 설명이 같은 컷씬·사진 말풍선의 사진

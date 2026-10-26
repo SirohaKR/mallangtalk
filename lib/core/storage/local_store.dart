@@ -200,7 +200,7 @@ class LocalStore {
   // AI 키·로그인 표·만들던 초안은 이 기기에만 두고, 아래 값만 서버와 맞춰요.
 
   static const _syncedExact = {'my_profile', 'favorites_v1', 'chat_rooms_v1', 'library_v1'};
-  static const _syncedPrefixes = ['run_', 'album_', 'photos_', 'chosen_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
+  static const _syncedPrefixes = ['run_', 'album_', 'photos_', 'chosen_', 'svc_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
   static const _syncTimesKey = 'sync_ts_v1';
 
   static bool isSyncedKey(String key) => _syncedExact.contains(key) || _syncedPrefixes.any(key.startsWith);
@@ -304,6 +304,25 @@ class LocalStore {
   Future<void> saveReceivedPhotos(String characterId, List<String> labels) =>
       _write('photos_$characterId', List<String>.of(labels));
 
+  /// 서비스 말랑이: 마지막으로 보낸 때와 이번 바퀴에 쓴 문구 표시
+  ({DateTime? last, List<String> used}) loadServiceState(String characterId) {
+    final raw = _getString('svc_$characterId');
+    if (raw == null) return (last: null, used: const []);
+    try {
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      final ms = (json['last'] as num?)?.toInt();
+      return (
+        last: ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms),
+        used: [for (final u in json['used'] as List? ?? const []) u as String],
+      );
+    } catch (_) {
+      return (last: null, used: const []);
+    }
+  }
+
+  Future<void> saveServiceState(String characterId, DateTime last, List<String> used) =>
+      _write('svc_$characterId', jsonEncode({'last': last.millisecondsSinceEpoch, 'used': used}));
+
   /// 지금까지 한 번이라도 고른 선택지 ID (모든 회차, 안 본 갈래 반짝이·다시 보기용)
   List<String> loadChosenChoices(String characterId) =>
       _getStringList('chosen_$characterId') ?? const [];
@@ -391,6 +410,7 @@ class LocalStore {
     await _write(_albumKey(characterId), null);
     await _write('photos_$characterId', null);
     await _write('chosen_$characterId', null);
+    await _write('svc_$characterId', null);
     await _write('tempo_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
