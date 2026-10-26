@@ -15,10 +15,16 @@ import 'test_helpers.dart';
 /// 말랑이 찾기: 오늘의 추천·정렬·검색·제작자
 void main() {
   GalleryItem item(String id, String name,
-          {String creator = '쨋뀨', int friends = 0, int daysAgo = 0, List<String> tags = const [], String tagline = ''}) =>
+          {String creator = '쨋뀨',
+          int friends = 0,
+          int daysAgo = 0,
+          List<String> tags = const [],
+          String tagline = '',
+          String gender = ''}) =>
       GalleryItem(
         ScenarioBundle(
-          character: loadSampleBundle().character.copyWith(id: id, name: name, tags: tags, tagline: tagline),
+          character:
+              loadSampleBundle().character.copyWith(id: id, name: name, tags: tags, tagline: tagline, gender: gender),
           events: const [],
           nodes: const {},
         ),
@@ -49,6 +55,20 @@ void main() {
     expect(items.where((g) => g.matches('')).length, 2);
   });
 
+  test('성별 필터: 남성·여성만 골라 보고, 성별을 안 고른 말랑이는 미정에 함께', () {
+    final items = [
+      item('a', '카이엔', gender: 'male'),
+      item('b', '서윤', gender: 'female'),
+      item('c', '말랑', gender: 'none'),
+      item('d', '안 고름'),
+    ];
+    ids(String? g) => genderFiltered(items, g).map((e) => e.character.id).toList();
+    expect(ids(null), ['a', 'b', 'c', 'd']);
+    expect(ids('male'), ['a']);
+    expect(ids('female'), ['b']);
+    expect(ids('none'), ['c', 'd']);
+  });
+
   testWidgets('첫 화면은 말랑이 찾기, 검색창을 누르면 검색 화면에서 바로 찾음', (tester) async {
     SharedPreferences.setMockInitialValues({});
     appRouter.go('/discover');
@@ -64,6 +84,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('오늘의 추천'), findsOneWidget);
     expect(find.text('윤도하'), findsWidgets);
+    // 샘플 윤도하는 성별을 안 골라서 미정: 남성을 고르면 비고, 다시 누르면 전체
+    await tester.tap(find.byKey(const ValueKey('gender_male')));
+    await tester.pumpAndSettle();
+    expect(find.text('조건에 맞는 말랑이가 없어요'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('gender_male')));
+    await tester.pumpAndSettle();
+    expect(find.text('오늘의 추천'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('discover_search')));
     await tester.pumpAndSettle();

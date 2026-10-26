@@ -159,6 +159,8 @@ void main() {
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('말랑이 찾기')));
     await settle(tester);
     expect(find.text('말수 적은 사진 동아리 선배가 자꾸 출사에 부른다'), findsWidgets);
+    await tester.ensureVisible(find.text('서이준').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('서이준').last);
     await settle(tester);
 
