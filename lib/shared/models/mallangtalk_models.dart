@@ -445,6 +445,8 @@ class ScenarioEventType {
   static const String daily = 'daily';
   /// 실제 시각(밤 11시~새벽 2시, 12월 25일 등)에 대화방에 있을 때만 한 번 오는 특별한 톡 (공략 조건 아님)
   static const String special = 'special';
+  /// 엔딩을 본 뒤 차례대로 오는 '공략 후 이야기' (공략 조건 아님)
+  static const String afterEnding = 'after_ending';
 }
 
 /// 특별 이벤트가 열리는 실제 시간 (시각 구간, 날짜는 둘 중 하나만 있어도 됨)
@@ -526,6 +528,8 @@ class ScenarioEventModel {
   final String? stageLabel;
   /// 이 점수를 넘으면 더는 안 나옴 (주로 일상 대화용, 비우면 제한 없음)
   final int? maxAffection;
+  /// 이어지는 대화: 이 ID의 대화가 끝나면 바로 이어서 나옴 (일상 대화를 무작위 순서에서 빼서 붙여 둘 때)
+  final String? followsEventId;
 
   const ScenarioEventModel({
     required this.id,
@@ -545,6 +549,7 @@ class ScenarioEventModel {
     this.maxAffection,
     this.synopsis = '',
     this.realTime,
+    this.followsEventId,
   });
 
   bool get hasCutscene => cutsceneTriggerStep != null;
@@ -568,10 +573,12 @@ class ScenarioEventModel {
         maxAffection: maxAffection,
         synopsis: synopsis,
         realTime: realTime,
+        followsEventId: followsEventId,
       );
   bool get isEnding => eventType == ScenarioEventType.ending;
   bool get isDaily => eventType == ScenarioEventType.daily;
   bool get isSpecial => eventType == ScenarioEventType.special;
+  bool get isAfterEnding => eventType == ScenarioEventType.afterEnding;
 
   /// 공략 완료 판정에 들어가는 '호감도 이벤트'인지 (엔딩·난입 이벤트는 제외)
   bool get isAffectionEvent =>
@@ -607,6 +614,7 @@ class ScenarioEventModel {
       realTime: json['real_time'] is Map
           ? RealTimeWindow.fromJson(json['real_time'] as Map<String, dynamic>)
           : null,
+      followsEventId: json['follows'] as String?,
     );
   }
 
@@ -630,6 +638,7 @@ class ScenarioEventModel {
         if (participantCharacterIds.isNotEmpty) 'participants': participantCharacterIds,
         if (synopsis.isNotEmpty) 'synopsis': synopsis,
         if (realTime != null) 'real_time': realTime!.toJson(),
+        if (followsEventId != null) 'follows': followsEventId,
       };
 }
 

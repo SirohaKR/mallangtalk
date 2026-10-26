@@ -10,11 +10,18 @@ enum DraftKind {
   story('호감도 이벤트', '그 단계가 되면 열려요. 공략하려면 다 봐야 해요'),
   daily('일상 대화', '그 단계에 머무는 동안 이벤트 사이사이에 와요'),
   special('특별 이벤트', '실제 시간에 대화방에 있을 때만 한 번 와요'),
-  ending('엔딩', '이벤트를 다 보고 컷씬을 다 모으면 나와요');
+  ending('엔딩', '호감도 이벤트를 다 끝내면 나와요. 엔딩 이름은 제목이에요'),
+  afterEnding('공략 후 이야기', '엔딩을 본 뒤 순서대로 와요. 사진도 넣을 수 있어요');
 
   const DraftKind(this.label, this.note);
   final String label;
   final String note;
+
+  /// 호감도 단계를 골라야 하는 종류 (엔딩·공략 후 이야기는 단계 없음)
+  bool get needsStage => this != ending && this != afterEnding;
+
+  /// '이어지는 대화'로 다른 대화 뒤에 붙일 수 있는 종류
+  bool get canFollow => this == daily || this == afterEnding;
 }
 
 class FieldDraft {
@@ -93,6 +100,8 @@ class EventDraft {
   int toHour;
   String date;
   List<String> requiredFlags;
+  /// 이어지는 대화: 이 대화(ID)가 끝나면 바로 이어서 나옴. 비우면 따로
+  String follows;
   /// 불러온 시나리오에 단계 대신 점수로 적힌 조건 (단계를 안 바꾸면 그대로 지킴)
   final int keptMin;
   final String keptStage;
@@ -110,6 +119,7 @@ class EventDraft {
     this.toHour = 2,
     this.date = '',
     this.requiredFlags = const [],
+    this.follows = '',
     this.keptMin = 0,
     this.keptStage = '',
     List<SceneDraft>? scenes,
@@ -319,7 +329,9 @@ class ScenarioDraft {
       id: e.id,
       kind: e.isEnding
           ? DraftKind.ending
-          : e.isDaily
+          : e.isAfterEnding
+              ? DraftKind.afterEnding
+              : e.isDaily
               ? DraftKind.daily
               : e.isSpecial
                   ? DraftKind.special
@@ -335,6 +347,7 @@ class ScenarioDraft {
       toHour: e.realTime?.toHour ?? 2,
       date: e.realTime?.date ?? '',
       requiredFlags: e.requiredFlags,
+      follows: e.followsEventId ?? '',
       keptMin: e.requiredAffection,
       keptStage: stage,
       scenes: scenes.values.isEmpty ? null : scenes.values.toList(),
@@ -401,16 +414,21 @@ class ScenarioDraft {
     return ScenarioEventModel(
       id: e.id,
       characterId: id,
-      chapterOrder: e.kind == DraftKind.ending ? 999 : (order + 1) * 10,
+      chapterOrder: switch (e.kind) {
+        DraftKind.ending => 999,
+        DraftKind.afterEnding => 1000 + (order + 1) * 10,
+        _ => (order + 1) * 10,
+      },
       eventType: switch (e.kind) {
         DraftKind.story => ScenarioEventType.custom,
         DraftKind.daily => ScenarioEventType.daily,
         DraftKind.special => ScenarioEventType.special,
         DraftKind.ending => ScenarioEventType.ending,
+        DraftKind.afterEnding => ScenarioEventType.afterEnding,
       },
       title: e.title.trim(),
       timeNotice: e.kind == DraftKind.special || e.notice.trim().isEmpty ? null : e.notice.trim(),
-      stageLabel: e.kind == DraftKind.ending || e.stage.trim().isEmpty ? null : e.stage.trim(),
+      stageLabel: !e.kind.needsStage || e.stage.trim().isEmpty ? null : e.stage.trim(),
       requiredFlags: e.requiredFlags,
       requiredAffection: e.stage == e.keptStage ? e.keptMin : 0,
       synopsis: e.synopsis.trim(),
@@ -424,6 +442,9 @@ class ScenarioDraft {
       ],
       realTime: e.kind == DraftKind.special
           ? RealTimeWindow(fromHour: e.fromHour, toHour: e.toHour, date: e.date.trim().isEmpty ? null : e.date.trim())
+          : null,
+      followsEventId: e.follows.isNotEmpty && e.kind.canFollow && events.any((o) => o.id == e.follows && o != e)
+          ? e.follows
           : null,
       participantCharacterIds: [id],
     );
@@ -550,7 +571,7 @@ class ScenarioDraft {
       final e = events[i];
       final where = '[이벤트 ${i + 1}${e.title.trim().isEmpty ? '' : ' · ${e.title.trim()}'}]';
       if (e.title.trim().isEmpty) out.add('$where 제목을 적어 주세요.');
-      if (e.kind != DraftKind.ending && !names.contains(e.stage.trim())) {
+      if (e.kind.needsStage && !names.contains(e.stage.trim())) {
         out.add('$where 호감도 단계를 골라 주세요.');
       }
       if (e.kind == DraftKind.special && e.fromHour == e.toHour && e.date.trim().isEmpty) {

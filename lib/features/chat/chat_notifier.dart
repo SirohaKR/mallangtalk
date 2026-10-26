@@ -12,13 +12,18 @@ import '../settings/user_profile.dart';
 /// 지금 시각 (테스트에서 특별 이벤트 시간을 바꿔 보려고 따로 둠)
 final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
+/// 일상 대화 순서를 섞는 주사위 (테스트에서 순서를 고정하려고 따로 둠)
+final storyRandomProvider = Provider<Random>((ref) => Random());
+
 /// 공략 진행 상황 (대화방 하단에 '다시 하기' 버튼을 띄울지 판단하는 용도)
 enum StoryProgress {
   playing, // 이벤트 진행 중
-  missedCutscenes, // 이벤트는 다 끝냈는데 못 본 컷씬이 남음 → 다시 하기로 수집
   stuck, // 남은 이벤트가 있지만 호감도·플래그 조건이 안 맞아 더 진행 불가
-  cleared, // 공략 완료 (모든 컷씬 수집 + 모든 호감도 이벤트 완료)
+  cleared, // 공략 완료 (호감도 이벤트를 모두 끝내고 엔딩까지 봄. 사진 수와는 상관없음)
 }
+
+/// 공략 뒤 다시 볼 수 있는 대화: 아직 안 고른 선택지가 남은 대화
+typedef ReplayableEvent = ({ScenarioEventModel event, int unseenChoices});
 
 /// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
 const _freeSuffix = '#free';
@@ -62,6 +67,10 @@ class ChatRoomState {
   /// 본 스크립트 수 / 전체 (잠겨 있을 때 안내용)
   final int scriptsSeen;
   final int scriptsTotal;
+  /// 지금 선택지 중 예전 회차에 한 번도 안 고른 것 (공략을 한 번 끝낸 뒤 반짝이로 보여 줌)
+  final List<String> sparkleChoiceIds;
+  /// 공략 뒤 '안 본 갈래 다시 보기' 중인지 (진행·호감도에 영향 없음)
+  final bool isReplaying;
 
   const ChatRoomState({
     required this.character,
@@ -86,6 +95,8 @@ class ChatRoomState {
     this.freeTalkJustUnlocked = false,
     this.scriptsSeen = 0,
     this.scriptsTotal = 0,
+    this.sparkleChoiceIds = const [],
+    this.isReplaying = false,
   });
 
   /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
@@ -126,6 +137,8 @@ class ChatRoomState {
     bool? freeTalkJustUnlocked,
     int? scriptsSeen,
     int? scriptsTotal,
+    List<String>? sparkleChoiceIds,
+    bool? isReplaying,
   }) {
     return ChatRoomState(
       character: character,
@@ -153,6 +166,8 @@ class ChatRoomState {
       freeTalkJustUnlocked: freeTalkJustUnlocked ?? this.freeTalkJustUnlocked,
       scriptsSeen: scriptsSeen ?? this.scriptsSeen,
       scriptsTotal: scriptsTotal ?? this.scriptsTotal,
+      sparkleChoiceIds: sparkleChoiceIds ?? this.sparkleChoiceIds,
+      isReplaying: isReplaying ?? this.isReplaying,
     );
   }
 }
@@ -193,6 +208,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 지금 이벤트를 시작할 때의 호감도·플래그 (자유대화로 미룬 이벤트를 다음에 처음부터 다시 하려고)
   ({int affection, List<String> flags})? _eventStart;
 
+  /// 지금까지 모든 회차에서 한 번이라도 고른 선택지 ID
+  final Set<String> _chosen = {};
+
+  /// 다시 보기 전 진행 상태 (끝나면 그대로 돌려놓음)
+  ({int affection, List<String> flags, List<String> completed})? _replaySnapshot;
+
   /// 이 대화방이 자유대화 방인지 (스토리 방과 따로, 호감도·이야기 없이 AI와만 대화)
   late bool _free;
   late String _characterId;
@@ -228,6 +249,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       );
     }
     final saved = _store.loadRun(characterId);
+    _chosen
+      ..clear()
+      ..addAll(_store.loadChosenChoices(characterId));
+    _replaySnapshot = null;
     _restoreReceivedPhotos(album, saved?.messages ?? const []);
     _seenScripts
       ..clear()
@@ -300,28 +325,29 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       ];
 
   void _markSeen(ScenarioEventModel event) {
-    if (!(event.isAffectionEvent || event.isDaily || event.isEnding)) return;
+    if (!(event.isAffectionEvent || event.isDaily || event.isEnding || event.isAfterEnding)) return;
     if (!_seenScripts.add(event.id)) return;
     _store.saveSeenEvents(_bundle.character.id, _seenScripts.toList());
     state = state.copyWith(scriptsSeen: _scriptIds.where(_seenScripts.contains).length);
   }
 
-  /// 공략을 끝낸 뒤: 아직 못 본 일상 대화를 이어서 보여 주고, 다 봤으면 자유대화를 엶
+  /// 공략을 끝낸 뒤: 공략 후 이야기를 순서대로, 그다음 아직 한 번도 못 본 일상 대화를 이어서 보여 줌
   Future<void> _continueEpilogue(int runId) async {
     if (state.progress != StoryProgress.cleared) return;
-    final ids = _scriptIds;
-    if (state.freeTalkUnlocked) return;
-    final next = _bundle.events.where((e) => e.isDaily && !_seenScripts.contains(e.id)).firstOrNull;
-    if (next != null) {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      if (runId != _runId) return;
-      await _playEvent(next, runId);
-      return;
-    }
-    if (!ids.every(_seenScripts.contains)) return; // (엔딩을 다시 하기로 지난 회차 등 — 여기선 거의 없음)
-    _store.saveFreeTalkUnlocked(_bundle.character.id);
-    state = state.copyWith(freeTalkUnlocked: true, freeTalkJustUnlocked: true);
-    _addSystemNotice('스크립트를 전부 봤어요. 이제 자유대화를 할 수 있어요');
+    final after = _bundle.events
+        .where((e) =>
+            e.isAfterEnding &&
+            e.followsEventId == null &&
+            !state.completedEventIds.contains(e.id) &&
+            e.requiredFlags.every(state.acquiredFlags.contains))
+        .toList()
+      ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
+    final next = after.firstOrNull ??
+        _bundle.events.where((e) => e.isDaily && !_seenScripts.contains(e.id)).firstOrNull;
+    if (next == null) return;
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (runId != _runId) return;
+    await _playEvent(next, runId);
   }
 
   /// '스크립트를 전부 봤어요' 팝업을 닫음
@@ -348,6 +374,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       _saveRun();
       return;
     }
+    _replaySnapshot = null;
     state = _freshRunState(unlockedCutscenes: state.unlockedCutsceneEventIds)
         .copyWith(memories: state.memories);
     _store.clearRun(_bundle.character.id);
@@ -359,12 +386,15 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// [node]·[nextBubble]로 돌아올 자리를 함께 저장해서 나갔다 와도 그 자리부터 이어짐
   void _saveRun({bool? cleared, ScriptNodeModel? node, int nextBubble = 0}) {
     cleared ??= state.progress == StoryProgress.cleared;
+    // 다시 보기 중에는 원래 진행 상태로 저장 (나갔다 오면 다시 보기는 접힘)
+    final snap = _replaySnapshot;
+    if (snap != null) node = null;
     _store.saveRun(
       _roomId,
       SavedRun(
-        affection: state.internalAffection,
-        flags: state.acquiredFlags,
-        completedEventIds: state.completedEventIds,
+        affection: snap?.affection ?? state.internalAffection,
+        flags: snap?.flags ?? state.acquiredFlags,
+        completedEventIds: snap?.completed ?? state.completedEventIds,
         messages: state.messages,
         cleared: cleared,
         eventId: node?.eventId,
@@ -386,13 +416,18 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   /// 지금 호감도 단계에서 나올 수 있는, 이번 회차에 아직 안 본 일상 대화
+  /// 여러 개면 무작위로 하나 (이어지는 대화로 붙여 둔 건 앞 대화 뒤에만 나와서 빼요)
   ScenarioEventModel? _nextDailyTalk() {
-    for (final event in _bundle.events) {
-      if (!event.isDaily) continue;
-      if (state.completedEventIds.contains(event.id)) continue;
-      if (_isUnlocked(event)) return event;
-    }
-    return null;
+    final candidates = [
+      for (final event in _bundle.events)
+        if (event.isDaily &&
+            event.followsEventId == null &&
+            !state.completedEventIds.contains(event.id) &&
+            _isUnlocked(event))
+          event,
+    ];
+    if (candidates.isEmpty) return null;
+    return candidates[ref.read(storyRandomProvider).nextInt(candidates.length)];
   }
 
   bool _isUnlocked(ScenarioEventModel event) {
@@ -488,11 +523,11 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
     state = state.copyWith(currentStepOrder: node.stepOrder);
 
-    // 제작자가 지정한 단계의 대사까지 보면 그 장면(CG)이 앨범에 모임 (대화는 멈추지 않음)
-    // 선택지 갈래 때문에 그 단계를 건너뛰어도, 뒤 단계에 오거나 이벤트가 끝나면 모음 (안 그러면 엔딩이 막힘)
+    // 제작자가 컷씬을 둔 장면(단계)의 대사까지 보면 그 장면(CG)이 앨범에 모임 (대화는 멈추지 않음)
+    // 다른 갈래로 가서 못 받은 사진은 공략 뒤 '안 본 갈래 다시 보기'나 다음 회차에 모을 수 있어요 (엔딩과는 상관없음)
     final event = _eventById(node.eventId);
     final trigger = event?.cutsceneTriggerStep;
-    if (event != null && trigger != null && (node.stepOrder >= trigger || node.choices.isEmpty)) {
+    if (event != null && trigger != null && node.stepOrder == trigger) {
       _collectCutscene(event);
     }
 
@@ -500,7 +535,14 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       if (event != null) await _finishEvent(event, runId);
       return;
     }
-    state = state.copyWith(currentChoices: node.choices);
+    state = state.copyWith(
+      currentChoices: node.choices,
+      sparkleChoiceIds: [
+        if (_clearedOnce)
+          for (final c in node.choices)
+            if (!_chosen.contains(c.id)) c.id,
+      ],
+    );
     _saveRun(node: node, nextBubble: node.characterBubbles.length);
   }
 
@@ -549,6 +591,20 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
     _markSeen(event);
+    if (_replaySnapshot case final snap?) {
+      // 다시 보기 끝: 진행 상태를 그대로 돌려놓음 (받은 사진·고른 선택지만 남음)
+      _replaySnapshot = null;
+      state = state.copyWith(
+        internalAffection: snap.affection,
+        acquiredFlags: snap.flags,
+        completedEventIds: snap.completed,
+        isReplaying: false,
+        clearEvent: true,
+      );
+      _addSystemNotice('다시 보기가 끝났어요');
+      _saveRun();
+      return;
+    }
     if (event.isEnding) {
       _addSystemNotice('${state.character.name} 공략 완료');
       state = state.copyWith(progress: StoryProgress.cleared);
@@ -561,6 +617,14 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       completedEventIds: {...state.completedEventIds, event.id}.toList(),
     );
     _saveRun();
+    // 이어지는 대화가 붙어 있으면 바로 이어서
+    final followUp = _followUpOf(event);
+    if (followUp != null) {
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (runId != _runId) return;
+      await _playEvent(followUp, runId);
+      return;
+    }
     if (state.progress == StoryProgress.cleared) {
       await _continueEpilogue(runId); // 엔딩 뒤 남은 일상 대화
       return;
@@ -610,13 +674,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
 
-    if (missedCutsceneCount > 0) {
-      _addSystemNotice('아직 보지 못한 장면이 $missedCutsceneCount개 남아 있어요');
-      state = state.copyWith(progress: StoryProgress.missedCutscenes);
-      return;
-    }
-
-    // 모든 호감도 이벤트 완료 + 모든 컷씬 수집 → 엔딩 재생
+    // 호감도 이벤트를 모두 끝내면 엔딩 (사진을 다 못 모아도 나옴)
     final ending = _bundle.events.where((e) => e.isEnding).firstOrNull;
     if (ending != null) {
       await _playEvent(ending, runId);
@@ -628,13 +686,58 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     }
   }
 
-  /// 호감도 이벤트에 걸린 컷씬 중 아직 한 번도 못 본 개수 (지난 회차에 본 것도 인정)
-  int get missedCutsceneCount => _bundle.events
+  /// 이 대화 바로 뒤에 붙은 '이어지는 대화' (이번 회차에 아직 안 봤고 조건이 맞는 것)
+  ScenarioEventModel? _followUpOf(ScenarioEventModel event) => _bundle.events
       .where((e) =>
-          e.isAffectionEvent &&
-          e.hasCutscene &&
-          !state.unlockedCutsceneEventIds.contains(e.id))
-      .length;
+          e.followsEventId == event.id &&
+          !e.isSpecial &&
+          !state.completedEventIds.contains(e.id) &&
+          e.requiredFlags.every(state.acquiredFlags.contains))
+      .firstOrNull;
+
+  /// 한 번이라도 공략을 끝낸 적이 있는지 (그 뒤로는 안 고른 선택지에 반짝이)
+  bool get _clearedOnce =>
+      state.progress == StoryProgress.cleared ||
+      _bundle.events.any((e) => e.isEnding && _seenScripts.contains(e.id));
+
+  /// 앨범에 아직 안 들어간 사진 수
+  int get missedPhotoCount {
+    final received = state.receivedPhotos.toSet();
+    return _bundle.albumPhotos.where((p) => !received.contains(p.label)).length;
+  }
+
+  /// 공략 뒤 다시 볼 수 있는 대화 (안 고른 선택지가 남은 것, 이야기 순서대로)
+  List<ReplayableEvent> get replayableEvents {
+    if (_free) return const [];
+    final out = <ReplayableEvent>[];
+    final events = [..._bundle.events]..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
+    for (final e in events) {
+      if (e.isSpecial || !_seenScripts.contains(e.id)) continue;
+      final unseen = _bundle.nodes.values
+          .where((n) => n.eventId == e.id)
+          .expand((n) => n.choices)
+          .where((c) => !_chosen.contains(c.id))
+          .length;
+      if (unseen > 0) out.add((event: e, unseenChoices: unseen));
+    }
+    return out;
+  }
+
+  /// 공략 뒤 '안 본 갈래 다시 보기': 대화를 처음부터 다시 보되 호감도·진행은 끝나면 그대로 돌려놓음.
+  /// 안 고른 선택지는 반짝이로 보여서, 놓친 사진을 모을 수 있어요
+  Future<void> replayEvent(String eventId) async {
+    final event = _eventById(eventId);
+    if (_free || event == null || state.progress != StoryProgress.cleared) return;
+    if (state.isCharacterTyping || state.currentChoices.isNotEmpty || _replaySnapshot != null) return;
+    _replaySnapshot = (
+      affection: state.internalAffection,
+      flags: state.acquiredFlags,
+      completed: state.completedEventIds,
+    );
+    state = state.copyWith(isReplaying: true);
+    _addSystemNotice('다시 보기: ${event.title} (진행에는 영향 없어요)');
+    await _playEvent(event, _runId);
+  }
 
   ScenarioEventModel? _eventById(String id) =>
       _bundle.events.where((e) => e.id == id).firstOrNull;
@@ -783,8 +886,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   Future<void> selectChoice(ChoiceOption choice) async {
     final runId = _runId;
     _userBurstReplyTimer?.cancel();
+    if (_chosen.add(choice.id)) _store.saveChosenChoices(_bundle.character.id, _chosen.toList());
     state = state.copyWith(
       currentChoices: const [],
+      sparkleChoiceIds: const [],
       internalAffection: (state.internalAffection + choice.affectionDelta).clamp(0, 100),
       acquiredFlags: [
         ...state.acquiredFlags,

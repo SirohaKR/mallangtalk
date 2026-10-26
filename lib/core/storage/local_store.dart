@@ -200,7 +200,7 @@ class LocalStore {
   // AI 키·로그인 표·만들던 초안은 이 기기에만 두고, 아래 값만 서버와 맞춰요.
 
   static const _syncedExact = {'my_profile', 'favorites_v1', 'chat_rooms_v1', 'library_v1'};
-  static const _syncedPrefixes = ['run_', 'album_', 'photos_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
+  static const _syncedPrefixes = ['run_', 'album_', 'photos_', 'chosen_', 'specials_', 'tempo_', 'nickname_', 'persona_', 'seen_', 'freetalk_'];
   static const _syncTimesKey = 'sync_ts_v1';
 
   static bool isSyncedKey(String key) => _syncedExact.contains(key) || _syncedPrefixes.any(key.startsWith);
@@ -304,6 +304,13 @@ class LocalStore {
   Future<void> saveReceivedPhotos(String characterId, List<String> labels) =>
       _write('photos_$characterId', List<String>.of(labels));
 
+  /// 지금까지 한 번이라도 고른 선택지 ID (모든 회차, 안 본 갈래 반짝이·다시 보기용)
+  List<String> loadChosenChoices(String characterId) =>
+      _getStringList('chosen_$characterId') ?? const [];
+
+  Future<void> saveChosenChoices(String characterId, List<String> ids) =>
+      _write('chosen_$characterId', List<String>.of(ids));
+
   /// 지금까지 끝까지 본 이벤트(호감도·일상·엔딩) ID. '다시 하기'를 해도 남음 (자유대화 잠금 해제 판정용)
   List<String> loadSeenEvents(String characterId) => _getStringList('seen_$characterId') ?? const [];
 
@@ -383,6 +390,7 @@ class LocalStore {
     await clearRun('$characterId#free'); // 자유대화 방
     await _write(_albumKey(characterId), null);
     await _write('photos_$characterId', null);
+    await _write('chosen_$characterId', null);
     await _write('tempo_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);

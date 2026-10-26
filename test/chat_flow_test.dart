@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
+import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers.dart';
@@ -16,7 +17,7 @@ void main() {
     return openDohaChat(tester);
   }
 
-  testWidgets('모든 컷씬을 모으면 엔딩 후 공략 완료', (tester) async {
+  testWidgets('호감도 이벤트를 다 끝내면 엔딩 후 공략 완료', (tester) async {
     final container = await openChat(tester);
     ChatRoomState state() => container.read(chatRoomProvider(dohaId));
 
@@ -51,16 +52,19 @@ void main() {
     expect(state().progress, StoryProgress.cleared);
     expect(state().unlockedCutsceneEventIds, hasLength(4));
     expect(find.text('윤도하 공략 완료'), findsOneWidget);
-    expect(find.text('처음부터 다시 하기'), findsOneWidget);
+    await skipDailyTalks(tester);
+    expect(find.textContaining('처음부터 다시 하기'), findsOneWidget);
   });
 
-  testWidgets('공연을 거절하면 컷씬을 놓치고, 다시 하기로 모으면 이미 본 컷씬은 인정됨', (tester) async {
+  testWidgets('공연을 거절해 사진을 놓쳐도 엔딩은 나오고, 공략 뒤 안 본 갈래 다시 보기로 모음', (tester) async {
     final container = await openChat(tester);
     ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
 
     await choose(tester, '츄르 봉지를 흔들어 보라고 하기');
     await choose(tester, '두부 사진 더 보내달라고 조르기');
     await choose(tester, '다음엔 나도 같이 뛰자고 하기');
+    expect(state().sparkleChoiceIds, isEmpty, reason: '첫 회차엔 반짝이 없음');
     await choose(tester, '토요일엔 선약이 있다고 거절하기');
     expect(state().unlockedCutsceneEventIds, isNot(contains('evt_gig_tickets')));
     await choose(tester, '누가 봐도 하트라고 해주기');
@@ -70,28 +74,108 @@ void main() {
     await choose(tester, '장난이었다고 사과하기');
     await choose(tester, '지금 간다고 하기');
 
-    expect(state().progress, StoryProgress.missedCutscenes);
-    expect(container.read(chatRoomProvider(dohaId).notifier).missedCutsceneCount, 1);
-    expect(find.text('그날 늦은 밤'), findsNothing);
-
-    await tester.tap(find.text('처음부터 다시 하기'));
-    await settle(tester);
-    expect(state().progress, StoryProgress.playing);
-    expect(state().unlockedCutsceneEventIds, hasLength(3));
-
-    await choose(tester, '침대 밑이랑 좁은 곳부터 찾아보라고 하기');
-    await choose(tester, '두부 사진 더 보내달라고 조르기');
-    await choose(tester, '방금 일어났다고, 사진 예쁘다고 답하기');
-    await choose(tester, '좋다고, 무슨 밴드냐고 묻기');
-    await choose(tester, '벌써 기대된다고 하기');
-    await choose(tester, '감자 같다고 놀리기');
-    await choose(tester, '내 생일 기억한 거냐고 묻기');
-    await choose(tester, '들어보고 울컥했다고 말하기');
-    await choose(tester, '우리 처음 만난 날이라고 답하기');
-    await choose(tester, '뭐가 그날부터냐고 묻기');
-    await choose(tester, '지금 간다고 하기');
+    // 사진을 다 못 모아도 엔딩
+    expect(find.text('그날 늦은 밤'), findsOneWidget);
     await choose(tester, '좋다고 대답하기');
     expect(state().progress, StoryProgress.cleared);
+    expect(notifier.missedPhotoCount, greaterThan(0));
+    final replayable = notifier.replayableEvents.map((r) => r.event.id);
+    expect(replayable, contains('evt_gig_tickets'));
+    expect(find.byKey(const ValueKey('replay_button')), findsOneWidget);
+
+    // 다시 보기: 안 고른 선택지에 반짝이, 사진은 모이고 진행은 그대로
+    final affection = state().internalAffection;
+    final completed = state().completedEventIds;
+    await tester.tap(find.byKey(const ValueKey('replay_button')));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    await tester.tap(find.byKey(const ValueKey('replay_evt_gig_tickets')));
+    await settle(tester);
+    expect(state().isReplaying, isTrue);
+    expect(find.byKey(const ValueKey('replay_button')), findsNothing);
+    final yes = state().currentChoices.firstWhere((c) => c.buttonLabel == '좋다고, 무슨 밴드냐고 묻기');
+    expect(state().sparkleChoiceIds, contains(yes.id));
+    expect(find.byKey(ValueKey('choice_new_${yes.id}')), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, yes.buttonLabel));
+    await settle(tester);
+    expect(state().unlockedCutsceneEventIds, contains('evt_gig_tickets'));
+    while (state().currentChoices.isNotEmpty) {
+      await tester.tap(find.widgetWithText(ElevatedButton, state().currentChoices.first.buttonLabel));
+      await settle(tester);
+    }
+    expect(state().isReplaying, isFalse);
+    expect(state().progress, StoryProgress.cleared);
+    expect(state().internalAffection, affection);
+    expect(state().completedEventIds, completed);
+    expect(find.text('다시 보기가 끝났어요'), findsOneWidget);
+
+    // 다음 회차: 첫 대화부터 예전에 안 고른 선택지에 반짝이
+    await tester.tap(find.textContaining('처음부터 다시 하기'));
+    await settle(tester);
+    expect(state().progress, StoryProgress.playing);
+    final first = state().currentChoices.firstWhere((c) => c.buttonLabel == '지금 바로 같이 찾으러 가겠다고 하기');
+    final picked = state().currentChoices.firstWhere((c) => c.buttonLabel == '츄르 봉지를 흔들어 보라고 하기');
+    expect(state().sparkleChoiceIds, contains(first.id));
+    expect(state().sparkleChoiceIds, isNot(contains(picked.id)));
+  });
+
+  testWidgets('이어지는 대화는 앞 대화 바로 뒤에 오고, 일상 대화 순서는 주사위로 정함', (tester) async {
+    final base = loadSampleBundle();
+    final bundle = ScenarioBundle(
+      character: base.character,
+      events: [
+        for (final e in base.events)
+          if (e.id == 'daily_rain')
+            ScenarioEventModel.fromJson({...e.toJson(), 'follows': 'evt_dubu_missing'})
+          else
+            e,
+      ],
+      nodes: base.nodes,
+    );
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    final container = await openDohaChat(tester, bundle: bundle);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+    await tester.tap(find.widgetWithText(ElevatedButton, '지금 바로 같이 찾으러 가겠다고 하기'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, '다음엔 직접 두부 보러 가겠다고 하기'));
+    await settle(tester);
+    expect(state().currentEventId, 'daily_rain', reason: '두부 사건 바로 뒤에 붙여 둔 비 오는 날 대화');
+  });
+
+  testWidgets('공략 후 이야기는 엔딩 뒤에 순서대로 옴', (tester) async {
+    final base = loadSampleBundle();
+    final bundle = ScenarioBundle(
+      character: base.character,
+      events: [
+        for (final e in base.events)
+          if (e.id == 'daily_weird_dream')
+            ScenarioEventModel.fromJson({...e.toJson(), 'event_type': ScenarioEventType.afterEnding})
+          else
+            e,
+      ],
+      nodes: base.nodes,
+    );
+    final run = SavedRun(
+      affection: 100,
+      flags: const [],
+      completedEventIds: [
+        for (final e in bundle.events)
+          if ((e.isAffectionEvent || e.isDaily) && e.id != 'daily_weird_dream') e.id,
+      ],
+      messages: const [],
+      cleared: true,
+    );
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'run_$dohaId': jsonEncode(run.toJson()),
+      'seen_$dohaId': [for (final e in bundle.events) if (e.isDaily || e.isAffectionEvent || e.isEnding) e.id],
+    });
+    final container = await openDohaChat(tester, bundle: bundle);
+    expect(container.read(chatRoomProvider(dohaId)).currentEventId, 'daily_weird_dream');
+    await skipDailyTalks(tester);
+    expect(container.read(chatRoomProvider(dohaId)).completedEventIds, contains('daily_weird_dream'));
+    await settle(tester);
   });
 
   testWidgets('계속 무심하게 답하면 연락이 끊김', (tester) async {

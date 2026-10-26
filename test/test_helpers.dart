@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:convert';
 import 'dart:io';
 
@@ -57,6 +58,7 @@ Future<ProviderContainer> openDohaChat(
         builtinBundlesProvider.overrideWith((ref) async => [bundle!]),
         sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
         clockProvider.overrideWithValue(testNow),
+        storyRandomProvider.overrideWithValue(FirstPick()),
         ...extra,
       ],
       child: MaterialApp(theme: AppTheme.lightTheme, home: BootGate(roomId: roomId)),
@@ -64,6 +66,16 @@ Future<ProviderContainer> openDohaChat(
   );
   await settle(tester);
   return ProviderScope.containerOf(tester.element(find.byType(ChatScreen)));
+}
+
+/// 일상 대화를 무작위 대신 늘 첫 번째로 고르는 주사위 (테스트 흐름 고정용)
+class FirstPick implements Random {
+  @override
+  int nextInt(int max) => 0;
+  @override
+  double nextDouble() => 0;
+  @override
+  bool nextBool() => false;
 }
 
 /// 타자 연출 타이머를 충분히 흘려보냄

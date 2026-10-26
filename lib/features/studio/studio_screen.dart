@@ -1485,9 +1485,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                       kind: kind,
                       stage: d.stageNames.isEmpty ? '' : d.stageNames.last,
                     );
-                    // 엔딩은 맨 끝, 나머지는 엔딩 앞에
+                    // 엔딩·공략 후 이야기는 맨 끝, 나머지는 엔딩 앞에
                     final endingAt = d.events.indexWhere((e) => e.kind == DraftKind.ending);
-                    if (kind == DraftKind.ending || endingAt < 0) {
+                    if (kind == DraftKind.ending || kind == DraftKind.afterEnding || endingAt < 0) {
                       d.events.add(event);
                     } else {
                       d.events.insert(endingAt, event);
@@ -1532,7 +1532,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               Text(
                 [
                   e.kind.label,
-                  if (e.kind != DraftKind.ending && e.stage.isNotEmpty) e.stage,
+                  if (e.kind.needsStage && e.stage.isNotEmpty) e.stage,
+                  if (e.follows.isNotEmpty && e.kind.canFollow) '이어지는 대화',
                   if (e.kind == DraftKind.special) _windowLabel(e),
                   if (e.kind != DraftKind.special && e.notice.isNotEmpty) e.notice,
                   '말풍선 $lines개',
@@ -1560,7 +1561,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                if (e.kind != DraftKind.ending)
+                if (e.kind.needsStage)
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       key: ValueKey(_k(e, 'stage-${d.stageNames.join('|')}')),
@@ -1577,6 +1578,33 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               padding: const EdgeInsets.only(top: 4, bottom: 8),
               child: Text(e.kind.note, style: AppTextStyles.messageTime),
             ),
+            if (e.kind.canFollow)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey(_k(e, 'follows-${d.events.length}')),
+                  isExpanded: true,
+                  initialValue: d.events.any((o) => o.id == e.follows && o != e) ? e.follows : '',
+                  decoration: const InputDecoration(
+                    labelText: '이어지는 대화',
+                    helperText: '고르면 그 대화가 끝난 바로 뒤에 와요. 안 고른 일상 대화는 무작위 순서로 와요',
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('따로 (이어지지 않음)')),
+                    for (var j = 0; j < d.events.length; j++)
+                      if (d.events[j] != e && d.events[j].kind != DraftKind.special)
+                        DropdownMenuItem(
+                          value: d.events[j].id,
+                          child: Text(
+                            '${j + 1}. ${d.events[j].title.trim().isEmpty ? '(제목 없음)' : d.events[j].title.trim()} 다음에',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                  ],
+                  onChanged: (v) => setState(() => e.follows = v ?? ''),
+                ),
+              ),
             EditField(fieldKey: _k(e, 'title'), value: e.title, label: '제목', hint: '예: 두부 실종 사건',
                 onChanged: (v) => setState(() => e.title = v)),
             if (e.kind == DraftKind.special)
