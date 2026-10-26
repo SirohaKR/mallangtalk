@@ -155,7 +155,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               ),
               const SizedBox(height: AppSpacing.lg),
               const Text(
-                '캐릭터와 대화를 처음 시작할 때 이 별명이 기본으로 들어가요. 말랑이를 공개하면 만든 사람 이름으로도 보여요.',
+                '캐릭터와 대화를 처음 시작할 때 이 별명이 기본으로 들어가요. 로그인한 상태면 이 사진·별명·소개가 '
+                '말랑이 찾기에 보이는 제작자 프로필로도 쓰여요.',
                 style: AppTextStyles.systemNotice,
               ),
               const SizedBox(height: AppSpacing.md),

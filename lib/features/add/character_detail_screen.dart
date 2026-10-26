@@ -91,7 +91,7 @@ class CharacterDetailScreen extends ConsumerWidget {
                     Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 22)),
                     if (item.creator != null) ...[
                       const SizedBox(height: 8),
-                      CreatorLine(creator: item.creator!, mine: item.mine, size: 22),
+                      CreatorLine(creator: item.creator!, avatarUrl: item.creatorAvatar, mine: item.mine, size: 22),
                     ],
                     if (c.tagline.isNotEmpty) ...[
                       const SizedBox(height: 6),

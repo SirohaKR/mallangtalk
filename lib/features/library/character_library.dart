@@ -259,10 +259,19 @@ class GalleryItem {
   final ScenarioBundle bundle;
   /// 만든 사람 닉네임 (앱 기본 캐릭터면 null)
   final String? creator;
+  /// 만든 사람의 프로필 사진·한줄 소개 (서버에서 같이 옴)
+  final String creatorAvatar;
+  final String creatorIntro;
   final bool mine;
   final DateTime? createdAt;
   final int friends;
-  const GalleryItem(this.bundle, {this.creator, this.mine = false, this.createdAt, this.friends = 0});
+  const GalleryItem(this.bundle,
+      {this.creator,
+      this.creatorAvatar = '',
+      this.creatorIntro = '',
+      this.mine = false,
+      this.createdAt,
+      this.friends = 0});
 
   bool get isBuiltin => creator == null;
 
@@ -287,7 +296,13 @@ final galleryProvider = FutureProvider<List<GalleryItem>>((ref) async {
       final ids = {for (final b in builtins) b.character.id};
       for (final c in await api.publishedCharacters()) {
         if (!ids.contains(c.bundle.character.id)) {
-          items.add(GalleryItem(c.bundle, creator: c.creator, mine: c.mine, createdAt: c.createdAt, friends: c.friends));
+          items.add(GalleryItem(c.bundle,
+              creator: c.creator,
+              creatorAvatar: c.creatorAvatar,
+              creatorIntro: c.creatorIntro,
+              mine: c.mine,
+              createdAt: c.createdAt,
+              friends: c.friends));
         }
       }
     } catch (e) {

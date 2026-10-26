@@ -188,6 +188,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         return GalleryCard(
                           character: item.character,
                           creator: item.creator,
+                          creatorAvatar: item.creatorAvatar,
                           mine: item.mine,
                           isFriend: friends.contains(item.character.id),
                           onTap: () => context.push('/gallery/${item.character.id}'),
@@ -365,7 +366,7 @@ class _PickCard extends StatelessWidget {
           ),
           if (item.creator != null) ...[
             const SizedBox(height: 6),
-            CreatorLine(creator: item.creator!, mine: item.mine),
+            CreatorLine(creator: item.creator!, avatarUrl: item.creatorAvatar, mine: item.mine),
           ],
         ],
       ),
@@ -510,7 +511,7 @@ class GalleryRow extends StatelessWidget {
                   Row(
                     children: [
                       if (showCreator && item.creator != null) ...[
-                        Flexible(child: CreatorLine(creator: item.creator!, mine: item.mine, size: 16)),
+                        Flexible(child: CreatorLine(creator: item.creator!, avatarUrl: item.creatorAvatar, mine: item.mine, size: 16)),
                         const SizedBox(width: 8),
                       ],
                       if (item.friends > 0) Text('친구 ${item.friends}', style: AppTextStyles.messageTime),
@@ -537,6 +538,9 @@ class CreatorScreen extends ConsumerWidget {
     final all = ref.watch(galleryProvider).valueOrNull ?? const <GalleryItem>[];
     final items = all.where((g) => g.creator == creator).toList()..sort(_byLatest);
     final friends = items.fold(0, (sum, g) => sum + g.friends);
+    // 사진·소개는 그 사람의 계정 프로필을 그대로 따라와요 (어느 말랑이에 실려 와도 같은 값)
+    final avatar = items.map((g) => g.creatorAvatar).firstWhere((a) => a.isNotEmpty, orElse: () => '');
+    final intro = items.map((g) => g.creatorIntro).firstWhere((a) => a.isNotEmpty, orElse: () => '');
 
     return Scaffold(
       appBar: AppBar(title: const Text('제작자')),
@@ -549,7 +553,7 @@ class CreatorScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Row(
                   children: [
-                    CreatorAvatar(name: creator, size: 64),
+                    CreatorAvatar(name: creator, avatarUrl: avatar, size: 64),
                     const SizedBox(width: AppSpacing.lg),
                     Expanded(
                       child: Column(
@@ -558,6 +562,10 @@ class CreatorScreen extends ConsumerWidget {
                           Text(creator, style: AppTextStyles.appBarTitle.copyWith(fontSize: 20)),
                           const SizedBox(height: 4),
                           Text('말랑이 ${items.length} · 친구 $friends', style: AppTextStyles.systemNotice),
+                          if (intro.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(intro, style: AppTextStyles.systemNotice.copyWith(color: AppColors.textSecondary)),
+                          ],
                         ],
                       ),
                     ),

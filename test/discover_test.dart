@@ -6,6 +6,7 @@ import 'package:mallangtalk/core/router/app_router.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/discover/discover_screen.dart';
+import 'package:mallangtalk/features/discover/gallery_card.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -67,6 +68,51 @@ void main() {
     expect(ids('male'), ['a']);
     expect(ids('female'), ['b']);
     expect(ids('none'), ['c', 'd']);
+  });
+
+  testWidgets('제작자 동그라미는 그 사람 프로필 사진을 쓰고, 사진이 없으면 이름 첫 글자', (tester) async {
+    // 1×1 투명 png
+    const photo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4z'
+        'wAAAgEBAFzN8/8AAAAASUVORK5CYII=';
+    await tester.pumpWidget(const MaterialApp(
+      home: Row(children: [
+        CreatorAvatar(name: '쨋뀨', avatarUrl: photo, size: 40),
+        CreatorAvatar(name: '말랑작가', size: 40),
+      ]),
+    ));
+    await tester.pump();
+    expect(find.text('쨋'), findsNothing); // 사진이 있으면 첫 글자 대신 사진
+    expect(find.text('말'), findsOneWidget);
+    final withPhoto = tester.widgetList<CircleAvatar>(find.byType(CircleAvatar)).single;
+    expect(withPhoto.backgroundImage, isA<MemoryImage>());
+  });
+
+  testWidgets('제작자 프로필에 사진과 한줄 소개가 보임', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    appRouter.go('/creator/${Uri.encodeComponent('말랑작가')}');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    final mine = GalleryItem(
+      ScenarioBundle(
+        character: loadSampleBundle().character.copyWith(id: 'z', name: '카이엔'),
+        events: const [],
+        nodes: const {},
+      ),
+      creator: '말랑작가',
+      creatorIntro: '로판 말랑이만 만들어요',
+      createdAt: DateTime(2026, 10, 26),
+    );
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => []),
+        galleryProvider.overrideWith((ref) async => [mine]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('말랑작가'), findsOneWidget);
+    expect(find.text('로판 말랑이만 만들어요'), findsOneWidget);
   });
 
   testWidgets('첫 화면은 말랑이 찾기, 검색창을 누르면 검색 화면에서 바로 찾음', (tester) async {

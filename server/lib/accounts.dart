@@ -22,6 +22,7 @@ final _username = RegExp(r'^[A-Za-z0-9_]{3,20}$');
 /// - GET /api/characters (받아오기 목록), GET /api/characters/:id, GET /api/my/characters
 /// - PUT·DELETE /api/characters/:id (내 캐릭터 저장·지우기), GET /api/images/:id (사진)
 /// - POST·DELETE /api/characters/:id/friend (친구 추가·빼기. 말랑이 찾기 인기순에 쓰는 친구 수)
+/// - PUT /api/my/profile (제작자 프로필: 별명·사진·한줄 소개)
 /// - GET·PUT /api/my/state (내 프로필·진행도·앨범 같은 앱 저장값. PC와 폰 연동)
 Future<Response?> accountsApi(Request request, Store store) async {
   final segments = request.url.pathSegments; // ['api', ...]
@@ -56,6 +57,29 @@ Future<Response?> accountsApi(Request request, Store store) async {
       final token = _token(request);
       if (token != null) store.deleteSession(token);
       return _json(200, {'ok': true});
+
+    case ['my', 'profile'] when method == 'PUT':
+      final me = _user(request, store);
+      if (me == null) return _needLogin();
+      final body = await _readJson(request, _maxImageBytes + 64 * 1024);
+      if (body == null) return _json(400, {'error': '요청 모양이 이상해요.'});
+      String? nickname;
+      if (body['nickname'] is String) {
+        nickname = _clip('${body['nickname']}'.trim(), 12);
+        if (nickname.isEmpty) return _json(400, {'error': '별명을 적어 주세요.'});
+      }
+      String? avatar;
+      if (body['avatar_url'] is String) {
+        try {
+          avatar = _storedImage('${body['avatar_url']}', me.id, store);
+        } on FormatException catch (e) {
+          return _json(400, {'error': e.message});
+        }
+      }
+      final intro = body['intro'] is String ? _clip('${body['intro']}'.trim(), 200) : null;
+      final updated = store.updateProfile(me.id, nickname: nickname, avatarUrl: avatar, intro: intro);
+      if (updated == null) return _json(404, {'error': '계정을 찾지 못했어요.'});
+      return _json(200, {'user': updated.toJson()});
 
     case ['me'] when method == 'GET':
       final user = _user(request, store);
@@ -163,25 +187,28 @@ Future<Response?> accountsApi(Request request, Store store) async {
   return null;
 }
 
+/// data: 사진 한 장을 DB에 넣고 /api/images/… 주소로. 이미 주소면 그대로
+String _storedImage(String value, int ownerId, Store store) {
+  if (!value.startsWith('data:')) return value;
+  final comma = value.indexOf(',');
+  final header = comma < 0 ? '' : value.substring(5, comma); // image/jpeg;base64
+  final mime = header.split(';').first;
+  if (!header.endsWith(';base64') || !mime.startsWith('image/')) {
+    throw const FormatException('사진 형식이 이상해요.');
+  }
+  final Uint8List bytes;
+  try {
+    bytes = base64Decode(value.substring(comma + 1));
+  } on FormatException {
+    throw const FormatException('사진을 읽지 못했어요.');
+  }
+  if (bytes.length > _maxImageBytes) throw const FormatException('사진 한 장이 너무 커요 (4MB까지).');
+  return '/api/images/${store.saveImage(ownerId, mime, bytes)}';
+}
+
 /// 캐릭터 파일 안의 data: 사진(사진 표·프로필 사진)을 DB 사진으로 옮기고 주소만 남김
 Map<String, dynamic> _moveImagesToStore(Map<String, dynamic> bundle, int ownerId, Store store) {
-  String moved(String value) {
-    if (!value.startsWith('data:')) return value;
-    final comma = value.indexOf(',');
-    final header = comma < 0 ? '' : value.substring(5, comma); // image/jpeg;base64
-    final mime = header.split(';').first;
-    if (!header.endsWith(';base64') || !mime.startsWith('image/')) {
-      throw const FormatException('사진 형식이 이상해요.');
-    }
-    final Uint8List bytes;
-    try {
-      bytes = base64Decode(value.substring(comma + 1));
-    } on FormatException {
-      throw const FormatException('사진을 읽지 못했어요.');
-    }
-    if (bytes.length > _maxImageBytes) throw const FormatException('사진 한 장이 너무 커요 (4MB까지).');
-    return '/api/images/${store.saveImage(ownerId, mime, bytes)}';
-  }
+  String moved(String value) => _storedImage(value, ownerId, store);
 
   final images = bundle['images'];
   final character = Map<String, dynamic>.of(bundle['character'] as Map<String, dynamic>);
@@ -200,6 +227,8 @@ Map<String, dynamic> _moveImagesToStore(Map<String, dynamic> bundle, int ownerId
 Map<String, dynamic> _characterJson(CharacterRecord c, UserRecord? me) => {
       'id': c.id,
       'creator': c.ownerNickname,
+      'creator_avatar': c.ownerAvatar,
+      'creator_intro': c.ownerIntro,
       'mine': me?.id == c.ownerId,
       'published': c.published,
       'created_at': c.createdAt.toIso8601String(),

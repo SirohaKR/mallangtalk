@@ -16,28 +16,49 @@ class ApiException implements Exception {
 class AccountUser {
   final String username;
   final String nickname;
-  const AccountUser({required this.username, required this.nickname});
+  /// 제작자 프로필 사진 (/api/images/… 주소). 다른 사람에게도 보임
+  final String avatarUrl;
+  /// 제작자 한줄 소개
+  final String intro;
+  const AccountUser({required this.username, required this.nickname, this.avatarUrl = '', this.intro = ''});
 
-  factory AccountUser.fromJson(Map json) =>
-      AccountUser(username: json['username'] as String? ?? '', nickname: json['nickname'] as String? ?? '');
+  factory AccountUser.fromJson(Map json) => AccountUser(
+        username: json['username'] as String? ?? '',
+        nickname: json['nickname'] as String? ?? '',
+        avatarUrl: json['avatar_url'] as String? ?? '',
+        intro: json['intro'] as String? ?? '',
+      );
 
-  Map<String, dynamic> toJson() => {'username': username, 'nickname': nickname};
+  Map<String, dynamic> toJson() =>
+      {'username': username, 'nickname': nickname, 'avatar_url': avatarUrl, 'intro': intro};
 }
 
 /// 서버에 저장된 캐릭터 (받아오기 목록·내 캐릭터)
 class ServerCharacter {
   final ScenarioBundle bundle;
   final String creator;
+  /// 만든 사람의 프로필 사진·한줄 소개 (카드와 제작자 프로필에 보임)
+  final String creatorAvatar;
+  final String creatorIntro;
   final bool mine;
   /// 처음 올린 때 (말랑이 찾기 '최신' 정렬)
   final DateTime? createdAt;
   /// 친구로 추가한 사람 수 ('인기' 정렬)
   final int friends;
-  const ServerCharacter({required this.bundle, required this.creator, required this.mine, this.createdAt, this.friends = 0});
+  const ServerCharacter(
+      {required this.bundle,
+      required this.creator,
+      required this.mine,
+      this.creatorAvatar = '',
+      this.creatorIntro = '',
+      this.createdAt,
+      this.friends = 0});
 
   factory ServerCharacter.fromJson(Map json) => ServerCharacter(
         bundle: ScenarioBundle.fromJson(json['bundle'] as Map<String, dynamic>),
         creator: json['creator'] as String? ?? '',
+        creatorAvatar: json['creator_avatar'] as String? ?? '',
+        creatorIntro: json['creator_intro'] as String? ?? '',
         mine: json['mine'] == true,
         createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
         friends: json['friends'] as int? ?? 0,
@@ -99,6 +120,16 @@ class MallangtalkApi {
   Future<void> logout() => _send('POST', '/api/auth/logout');
 
   Future<AccountUser> me() async => AccountUser.fromJson((await _send('GET', '/api/me'))['user'] as Map);
+
+  /// 제작자 프로필 바꾸기 (별명·사진·한줄 소개). 사진은 data: 사진을 보내면 서버가 DB에 넣고 주소로 바꿔 줌
+  Future<AccountUser> updateProfile({String? nickname, String? avatarUrl, String? intro}) async {
+    final json = await _send('PUT', '/api/my/profile', data: {
+      if (nickname != null) 'nickname': nickname,
+      if (avatarUrl != null) 'avatar_url': avatarUrl,
+      if (intro != null) 'intro': intro,
+    });
+    return AccountUser.fromJson(json['user'] as Map);
+  }
 
   Future<List<ServerCharacter>> publishedCharacters() async => _characters(await _send('GET', '/api/characters'));
 
