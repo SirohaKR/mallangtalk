@@ -312,12 +312,69 @@ ${_characterSheet(base)}
       userRole: base.userRole,
       extraCast: base.extraCast,
       themeColor: base.themeColor,
+      gender: base.gender,
+      unlisted: base.unlisted,
       chatBackground: base.chatBackground,
       bubbleStyle: base.bubbleStyle,
       typingSpeedMultiplier: base.typingSpeedMultiplier,
       affectionStages: base.affectionStages,
     );
     return (talks, character);
+  }
+
+  /// 만들기 단계의 '빈 칸 AI로 채우기': 캐릭터 설정을 보고 [fields]에 든 칸만 써서 돌려줌 (화면이 빈 칸에만 넣음)
+  /// fields: profile_fields, quote, sample_quotes, traits, world_setting, user_role, extra_cast, secret
+  Future<Map<String, dynamic>> fillBlanks({
+    required AiProvider provider,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required List<String> fields,
+  }) async {
+    Map<String, dynamic> pairs(String a, String b, String description) => {
+          'type': 'array',
+          'description': description,
+          'items': {
+            'type': 'object',
+            'properties': {a: {'type': 'string'}, b: {'type': 'string'}},
+            'required': [a, b],
+            'additionalProperties': false,
+          },
+        };
+    final all = <String, Map<String, dynamic>>{
+      'profile_fields': pairs('label', 'value', '캐릭터 정보 항목 5~7개. 예: 나이, 직업, 생일, 외모, 좋아하는 것, 싫어하는 것'),
+      'quote': {'type': 'string', 'description': '캐릭터를 한 번에 보여 주는 대표 대사 한 줄'},
+      'sample_quotes': pairs('situation', 'body', '상황별 대사 예시 3개 (말투가 드러나게)'),
+      'traits': {
+        'type': 'array',
+        'description': '성격 막대 3~4개. left↔right 양쪽 성향과 right 쪽으로 기운 정도(0~100)',
+        'items': {
+          'type': 'object',
+          'properties': {'left': {'type': 'string'}, 'right': {'type': 'string'}, 'percent': {'type': 'integer'}},
+          'required': ['left', 'right', 'percent'],
+          'additionalProperties': false,
+        },
+      },
+      'world_setting': {'type': 'string', 'description': '세계관 설정 2~3문장 (배경이 되는 곳·시대·분위기)'},
+      'user_role': {'type': 'string', 'description': '이 이야기에서 유저가 누구인지 1~2문장. 유저 이름 자리는 {{user}}'},
+      'extra_cast': pairs('name', 'role', '대화에 이름이 나올 주변 인물 2~3명 (친구·가족·반려동물). role은 캐릭터와의 관계와 한 줄 특징'),
+      'secret': {'type': 'string', 'description': '유저는 아직 모르고 이야기가 서서히 드러낼 캐릭터의 비밀 1~2문장. 유저 이름 자리는 {{user}}'},
+    };
+    final wanted = [for (final f in fields) if (all.containsKey(f)) f];
+    if (wanted.isEmpty) return const {};
+    final schema = {
+      'type': 'object',
+      'properties': {for (final f in wanted) f: all[f]},
+      'required': wanted,
+      'additionalProperties': false,
+    };
+    final user = '''
+${_characterSheet(character)}
+
+위 캐릭터 설정에 어울리게 아래 칸을 채워 줘. 설정에 이미 있는 사실과 어긋나지 않게 쓴다.
+채울 칸: ${wanted.join(', ')}''';
+    return _call(provider: provider, apiKey: apiKey, relay: relay, model: model, user: user, schema: schema, maxTokens: 4000);
   }
 
   /// 대화 하나의 대사(장면·말풍선·선택지)를 씀. 돌려주는 값: (대사 노드, 컷씬이 뜨는 단계)

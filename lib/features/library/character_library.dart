@@ -139,7 +139,7 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
     final api = ref.read(accountApiProvider);
     if (api == null) return;
     try {
-      final saved = await api.saveCharacter(bundle);
+      final saved = await api.saveCharacter(bundle, published: !bundle.character.unlisted);
       // 서버가 사진을 주소로 바꾼 파일로 교체 → 브라우저 저장소에는 사진이 안 남음
       if (byId(saved.character.id) != null) await _putLocal(saved, CharacterSource.created);
     } catch (e) {

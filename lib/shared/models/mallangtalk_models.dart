@@ -175,6 +175,10 @@ class CharacterModel {
   final List<ExtraCast> extraCast;
   /// 캐릭터 대표 색 (#RRGGBB, 비우면 기본 분홍)
   final String themeColor;
+  /// 성별: 'male' / 'female' / 'none'(미정 → AI가 성별을 드러내지 않게 씀) / ''(안 고름)
+  final String gender;
+  /// 말랑이 찾기에 안 올림 (내 말랑이에서만 보임)
+  final bool unlisted;
   /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색
   final String chatBackground;
   /// 내 말풍선 색: '' = 대표색, 'pink' = 기본 분홍
@@ -204,6 +208,8 @@ class CharacterModel {
     this.userRole = '',
     this.extraCast = const [],
     this.themeColor = '',
+    this.gender = '',
+    this.unlisted = false,
     this.chatBackground = '',
     this.bubbleStyle = '',
     this.authorComment = '',
@@ -243,6 +249,8 @@ class CharacterModel {
           ExtraCast.fromJson(e as Map<String, dynamic>),
       ],
       themeColor: json['theme_color'] as String? ?? '',
+      gender: json['gender'] as String? ?? '',
+      unlisted: json['unlisted'] == true,
       chatBackground: json['chat_background'] as String? ?? '',
       bubbleStyle: json['bubble_style'] as String? ?? '',
       authorComment: json['author_comment'] as String? ?? '',
@@ -274,6 +282,8 @@ class CharacterModel {
         if (userRole.isNotEmpty) 'user_role': userRole,
         if (extraCast.isNotEmpty) 'extra_cast': [for (final e in extraCast) e.toJson()],
         if (themeColor.isNotEmpty) 'theme_color': themeColor,
+        if (gender.isNotEmpty) 'gender': gender,
+        if (unlisted) 'unlisted': true,
         if (chatBackground.isNotEmpty) 'chat_background': chatBackground,
         if (bubbleStyle.isNotEmpty) 'bubble_style': bubbleStyle,
         if (authorComment.isNotEmpty) 'author_comment': authorComment,
@@ -296,6 +306,8 @@ class CharacterModel {
     String? userRole,
     List<ExtraCast>? extraCast,
     String? themeColor,
+    String? gender,
+    bool? unlisted,
     String? chatBackground,
     String? bubbleStyle,
     String? authorComment,
@@ -318,6 +330,8 @@ class CharacterModel {
       userRole: userRole ?? this.userRole,
       extraCast: extraCast ?? this.extraCast,
       themeColor: themeColor ?? this.themeColor,
+      gender: gender ?? this.gender,
+      unlisted: unlisted ?? this.unlisted,
       chatBackground: chatBackground ?? this.chatBackground,
       bubbleStyle: bubbleStyle ?? this.bubbleStyle,
       authorComment: authorComment ?? this.authorComment,
@@ -327,9 +341,14 @@ class CharacterModel {
     );
   }
 
+  /// 화면·AI에 쓰는 성별 이름 (미정이면 빈 문자열)
+  String get genderLabel => switch (gender) { 'male' => '남성', 'female' => '여성', 'none' => '미정', _ => '' };
+
   /// AI에게 넘길 캐릭터 설정 전체 (비밀 포함)
   String get aiCharacterSheet {
     final lines = <String>[
+      if (gender == 'none') '성별: 미정 (대사·설정에서 캐릭터 성별을 드러내지 않는다)',
+      if (genderLabel.isNotEmpty && gender != 'none') '성별: $genderLabel',
       worldviewPrompt.trim(),
       if (worldSetting.trim().isNotEmpty) '세계관: ${worldSetting.trim()}',
       if (profileFields.isNotEmpty)

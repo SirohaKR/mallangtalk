@@ -96,7 +96,7 @@ void main() {
     expect(find.text('새 말랑이 만들기'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('my_create')));
     await tester.pumpAndSettle();
-    expect(find.text('호감도 단계'), findsOneWidget);
+    expect(find.text('1 / 8'), findsOneWidget);
     appRouter.go('/my'); // 만들기 화면을 닫아 자동 저장 타이머 정리
     await tester.pumpAndSettle();
   });
