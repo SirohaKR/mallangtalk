@@ -45,7 +45,7 @@ class ChatListScreen extends ConsumerWidget {
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                   itemCount: rooms.length,
-                  itemBuilder: (context, index) => _ChatRoomTile(characterId: rooms[index]),
+                  itemBuilder: (context, index) => _ChatRoomTile(roomId: rooms[index]),
                 ),
         ),
       ),
@@ -54,13 +54,15 @@ class ChatListScreen extends ConsumerWidget {
 }
 
 class _ChatRoomTile extends ConsumerWidget {
-  const _ChatRoomTile({required this.characterId});
+  const _ChatRoomTile({required this.roomId});
 
-  final String characterId;
+  /// 스토리 방은 캐릭터 ID, 자유대화 방은 ID#free
+  final String roomId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final room = ref.watch(chatRoomProvider(characterId));
+    final room = ref.watch(chatRoomProvider(roomId));
+    final free = isFreeRoom(roomId);
     final last = room.lastBubble;
     final unread = room.unreadCount;
     final preview = room.isCharacterTyping
@@ -74,7 +76,31 @@ class _ChatRoomTile extends ConsumerWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
       leading: CharacterAvatar(character: room.character, radius: 24),
-      title: Text(room.character.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(room.character.name,
+                overflow: TextOverflow.ellipsis, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+          ),
+          const SizedBox(width: 6),
+          // 어느 방인지 (스토리/자유대화)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+            decoration: BoxDecoration(
+              color: free ? const Color(0xFFEDE7FB) : const Color(0xFFFCE8EF),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              free ? '자유대화' : '스토리',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: free ? AppColors.aiActivePurple : AppColors.primaryPink,
+              ),
+            ),
+          ),
+        ],
+      ),
       subtitle: Text(
         preview,
         maxLines: 1,
@@ -106,7 +132,7 @@ class _ChatRoomTile extends ConsumerWidget {
             ),
         ],
       ),
-      onTap: () => openChat(context, room.character),
+      onTap: () => openChat(context, room.character, roomId: roomId),
     );
   }
 

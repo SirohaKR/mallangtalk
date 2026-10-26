@@ -23,9 +23,12 @@ import 'chat_theme.dart';
 /// - 상단 버튼으로 앨범(모은 컷씬)과 설정(내 AI 키)으로 이동합니다.
 /// 지운 캐릭터의 주소로 들어오면 안내만 보여주고, 있으면 대화방을 엶
 class ChatRoomPage extends ConsumerWidget {
-  const ChatRoomPage({super.key, required this.characterId});
+  const ChatRoomPage({super.key, required this.characterId, this.free = false});
 
   final String characterId;
+
+  /// 자유대화 방이면 true (스토리 방과 따로)
+  final bool free;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,14 +42,15 @@ class ChatRoomPage extends ConsumerWidget {
                 style: AppTextStyles.systemNotice)),
       );
     }
-    return ChatScreen(characterId: characterId);
+    return ChatScreen(key: ValueKey(free), roomId: free ? freeRoomId(characterId) : characterId);
   }
 }
 
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.characterId});
+  const ChatScreen({super.key, required this.roomId});
 
-  final String characterId;
+  /// 스토리 방은 캐릭터 ID, 자유대화 방은 캐릭터 ID#free
+  final String roomId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -65,8 +69,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // 대화방에 들어오면 채팅방 목록 맨 위로 + 지금까지 온 톡은 읽음
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(chatRoomsProvider.notifier).open(widget.characterId);
-      final notifier = ref.read(chatRoomProvider(widget.characterId).notifier);
+      ref.read(chatRoomsProvider.notifier).open(widget.roomId);
+      final notifier = ref.read(chatRoomProvider(widget.roomId).notifier);
       notifier.markSeen();
       notifier.checkSpecialEvents(); // 이야기가 멈춰 있어도 특별한 시간이면 톡이 옴
     });
@@ -183,14 +187,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final id = widget.characterId;
-    final chatState = ref.watch(chatRoomProvider(id));
-    final notifier = ref.read(chatRoomProvider(id).notifier);
+    final roomId = widget.roomId;
+    final id = characterIdOfRoom(roomId);
+    final free = isFreeRoom(roomId);
+    final chatState = ref.watch(chatRoomProvider(roomId));
+    final notifier = ref.read(chatRoomProvider(roomId).notifier);
     final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.canUseAi));
     final bundle = ref.watch(characterBundleProvider(id));
     final theme = ChatTheme.of(chatState.character);
 
-    ref.listen<ChatRoomState>(chatRoomProvider(id), (prev, next) {
+    ref.listen<ChatRoomState>(chatRoomProvider(roomId), (prev, next) {
       if (prev?.messages.length != next.messages.length ||
           prev?.isCharacterTyping != next.isCharacterTyping ||
           prev?.progress != next.progress) {
@@ -201,19 +207,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) notifier.markSeen();
         });
-      }
-      if (next.freeTalkJustUnlocked && !(prev?.freeTalkJustUnlocked ?? false)) {
-        notifier.ackFreeTalkUnlocked();
-        showDialog<void>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('스크립트를 전부 봤어요'),
-            content: Text('${next.character.name}의 이야기를 끝까지 다 봤어요. 이제 오른쪽 위에서 자유대화를 켜고 마음껏 얘기할 수 있어요.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('좋아요')),
-            ],
-          ),
-        );
       }
     });
 
@@ -252,8 +245,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 children: [
                   Text(chatState.character.name,
                       overflow: TextOverflow.ellipsis),
-                  // 자유대화 중이면 상태 메시지 대신 지금 쓰는 AI (누르면 바꾸기)
-                  if (chatState.isByokAiModeEnabled)
+                  // 자유대화 방이면 상태 메시지 대신 지금 쓰는 AI (누르면 바꾸기)
+                  if (free)
                     GestureDetector(
                       key: const ValueKey('chat_ai_pill'),
                       onTap: () => showChatAiSheet(context, accent: theme.accent),
@@ -304,6 +297,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   pickChatTempo(context, chatState.character);
                 case 'ai':
                   showChatAiSheet(context, accent: theme.accent);
+                case 'switch':
+                  // 스토리 방 ↔ 자유대화 방 (지금 방은 닫고 다른 방으로)
+                  context.pushReplacement(free ? '/chat/$id' : '/free/$id');
                 case 'restart':
                   notifier.restart();
               }
@@ -314,48 +310,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 child: Text('내 별명·설정: ${ref.read(chatNicknameProvider(id))}'),
               ),
               const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
+              PopupMenuItem(value: 'switch', child: Text(free ? '스토리 대화방으로' : '자유대화 방 열기')),
               const PopupMenuItem(value: 'ai', child: Text('자유대화 AI 고르기')),
-              const PopupMenuItem(value: 'restart', child: Text('처음부터 다시')),
+              PopupMenuItem(value: 'restart', child: Text(free ? '대화 비우기' : '처음부터 다시')),
             ],
           ),
-          // [AI 자유대화 ON/OFF] 토글: 켜면 하던 이야기는 멈추고(선택지 사라짐) 직접 입력. 캐릭터가 마무리하면 이야기로 돌아감
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!chatState.freeTalkUnlocked)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 2),
-                    child: Icon(Icons.lock_rounded, size: 13, color: AppColors.textSecondary),
-                  ),
-                Text(
-                  '자유대화',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: chatState.isByokAiModeEnabled
-                        ? AppColors.aiActivePurple
-                        : AppColors.textSecondary,
-                  ),
-                ),
-                Switch(
-                  value: chatState.isByokAiModeEnabled,
-                  activeTrackColor: AppColors.aiActivePurple,
-                  onChanged: chatState.freeTalkUnlocked
-                      ? notifier.toggleDirectInputMode
-                      : (_) => ScaffoldMessenger.of(context)
-                        ..hideCurrentSnackBar()
-                        ..showSnackBar(SnackBar(
-                          content: Text(
-                            '공략을 끝내고 스크립트를 전부 보면 자유대화가 열려요 '
-                            '(본 스크립트 ${chatState.scriptsSeen}/${chatState.scriptsTotal})',
-                          ),
-                        )),
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Stack(
@@ -364,7 +324,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             children: [
               // 1. 대화창 메시지 리스트
               Expanded(
-                child: ListView.builder(
+                child: free && chatState.messages.isEmpty && !chatState.isCharacterTyping
+                    ? _FreeRoomIntro(name: chatState.character.name, accent: theme.accent)
+                    : ListView.builder(
                   controller: _scrollController,
                   reverse: true,
                   padding: AppSpacing.screenPadding,
@@ -404,7 +366,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (chatState.progress != StoryProgress.playing)
+                    if (!free && chatState.progress != StoryProgress.playing)
                       _RunEndPanel(
                         progress: chatState.progress,
                         collected: chatState.unlockedCutsceneEventIds.length,
@@ -461,7 +423,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ),
                     const SizedBox(height: 4),
                     _InputBar(
-                      // 자유대화가 꺼져 있거나 선택지 대사가 쳐지는 중이면 보이기만 하고 못 누름
+                      // 스토리 방이거나 선택지 대사가 쳐지는 중이면 보이기만 하고 못 누름
                       enabled: chatState.isByokAiModeEnabled &&
                           chatState.userDraft.isEmpty,
                       draft: chatState.userDraft,
@@ -797,6 +759,39 @@ class _RunEndPanel extends StatelessWidget {
             label: const Text('처음부터 다시 하기'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 자유대화 방에 아직 톡이 없을 때 가운데 안내
+class _FreeRoomIntro extends StatelessWidget {
+  const _FreeRoomIntro({required this.name, required this.accent});
+
+  final String name;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      key: const ValueKey('free_room_intro'),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.forum_outlined, size: 40, color: accent),
+            const SizedBox(height: 12),
+            const Text('자유대화 방', style: AppTextStyles.appBarTitle),
+            const SizedBox(height: 6),
+            Text(
+              '정해진 이야기 없이 $name의 설정과 내 설정대로 AI가 답해요.\n'
+              '호감도는 오르지 않고, 스토리 방과 따로 이어져요. 먼저 말을 걸어 보세요.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.systemNotice,
+            ),
+          ],
+        ),
       ),
     );
   }

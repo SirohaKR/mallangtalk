@@ -77,7 +77,7 @@ class ClaudeChatClient {
     AiRelay? relay,
     required String model,
     required CharacterModel character,
-    required String stageLabel,
+    required String? stageLabel,
     required String? currentEventTitle,
     required List<ChatMessageLog> history,
     required List<String> newUserMessages,
@@ -110,7 +110,7 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 이름(별명): $userName${userIntro.isNotEmpty ? '\n소개: $userIntro' : ''}${userPersona.isNotEmpty ? '\n유저 설정(페르소나, 캐릭터는 이 설정을 이미 알고 있는 것처럼 대한다):\n$userPersona' : ''}
 
 [현재 관계]
-${character.name}에게 유저는 지금 "$stageLabel" 단계다.${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
+${stageLabel != null ? '${character.name}에게 유저는 지금 "$stageLabel" 단계다.' : '정해진 이야기 없이 설정과 유저 페르소나대로 자유롭게 이어 가는 대화다. 관계는 설정에 맞춰 자연스럽게 정한다.'}${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
 
 ${memories.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억]\n${memories.map((m) => '- $m').join('\n')}\n\n'}[답장 규칙]
 - 실제 카톡처럼 짧게 1~4개 말풍선으로 끊어서 보낸다. 괄호 지문, 행동 묘사, 이모지 남발은 쓰지 않는다.

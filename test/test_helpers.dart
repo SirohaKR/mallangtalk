@@ -26,13 +26,15 @@ ScenarioBundle loadSampleBundle() => ScenarioBundle.fromJson(
 
 /// 앱의 로딩 문지기와 같은 역할: 기본 캐릭터와 저장소가 준비되면 윤도하 대화방을 띄움
 class BootGate extends ConsumerWidget {
-  const BootGate({super.key});
+  const BootGate({super.key, this.roomId = dohaId});
+
+  final String roomId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ready = ref.watch(builtinBundlesProvider).hasValue &&
         ref.watch(sharedPreferencesProvider).hasValue;
-    return ready ? const ChatScreen(characterId: dohaId) : const Scaffold(body: SizedBox());
+    return ready ? ChatScreen(roomId: roomId) : const Scaffold(body: SizedBox());
   }
 }
 
@@ -44,6 +46,7 @@ Future<ProviderContainer> openDohaChat(
   WidgetTester tester, {
   List<Override> extra = const [],
   ScenarioBundle? bundle,
+  String roomId = dohaId,
 }) async {
   bundle ??= loadSampleBundle();
   await tester.binding.setSurfaceSize(const Size(420, 900));
@@ -56,7 +59,7 @@ Future<ProviderContainer> openDohaChat(
         clockProvider.overrideWithValue(testNow),
         ...extra,
       ],
-      child: MaterialApp(theme: AppTheme.lightTheme, home: const BootGate()),
+      child: MaterialApp(theme: AppTheme.lightTheme, home: BootGate(roomId: roomId)),
     ),
   );
   await settle(tester);

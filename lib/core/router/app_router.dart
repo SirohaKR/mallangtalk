@@ -19,7 +19,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 /// - 새 말랑이 만들기: /create, 만든 캐릭터 고치기: /edit/캐릭터ID
 /// - 설정 안쪽: /settings/account(계정 · 프로필), /settings/ai(AI 연결)
 /// - 내가 만든 캐릭터끼리 관계도: /relations
-/// - 대화방은 탭 위에 전체 화면으로: /chat/캐릭터ID, 앨범은 /chat/캐릭터ID/album
+/// - 대화방은 탭 위에 전체 화면으로: /chat/캐릭터ID(스토리), /free/캐릭터ID(자유대화), 앨범은 /chat/캐릭터ID/album
 /// 옛 주소(/friends, /add)로 들어오면 새 탭으로 보내요.
 final appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
@@ -98,6 +98,12 @@ final appRouter = GoRouter(
           builder: (context, state) => AlbumScreen(characterId: state.pathParameters['id']!),
         ),
       ],
+    ),
+    // 자유대화 방 (스토리 방과 따로)
+    GoRoute(
+      path: '/free/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => ChatRoomPage(characterId: state.pathParameters['id']!, free: true),
     ),
   ],
 );

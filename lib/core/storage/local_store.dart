@@ -380,6 +380,7 @@ class LocalStore {
   /// 캐릭터를 지울 때 진행 기록과 앨범도 같이 지움
   Future<void> forgetCharacter(String characterId) async {
     await clearRun(characterId);
+    await clearRun('$characterId#free'); // 자유대화 방
     await _write(_albumKey(characterId), null);
     await _write('photos_$characterId', null);
     await _write('tempo_$characterId', null);
