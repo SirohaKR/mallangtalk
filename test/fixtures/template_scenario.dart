@@ -1,6 +1,6 @@
-import '../../shared/models/mallangtalk_models.dart';
+import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 
-/// [초보자 노트] 받아오기 갤러리와 만들기 화면의 '예시 불러오기'에 쓰는 예시 캐릭터입니다.
+/// [초보자 노트] 테스트에 쓰는 예시 캐릭터입니다 (앱의 '예시 불러오기'는 2026-10 개편 때 없앰).
 /// 이벤트·일상 대화·갈림길·컷씬·엔딩이 한 번씩 다 들어 있어서 보고 따라 쓰기 좋게 만들었어요.
 ScenarioBundle templateScenario() => ScenarioBundle.fromJson(const {
       'character': {

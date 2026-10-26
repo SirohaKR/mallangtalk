@@ -3,7 +3,7 @@
 /// 1. 괄호 지문 없이 실제 카톡처럼 짧게 여러 번 끊어 치는 대사(TypingPiece)와 타자 속도(typingSpeed) 지원
 /// 2. 유저와 캐릭터 모두 대화방 안에 직접 사진(카메라/컷씬 사진 말풍선)을 올릴 수 있도록 photoTag / photoCaption 지원
 /// 3. 호감도 점수는 화면에 노출하지 않고 내부에서만 계산
-/// 4. 모든 모델에 fromJson이 있어서 assets/scenarios/*.json 시나리오 파일(나중엔 서버 DB 응답)을 그대로 읽어옴
+/// 4. 모든 모델에 fromJson이 있어서 시나리오 파일(나중엔 서버 DB 응답)을 그대로 읽어옴
 
 import '../utils/korean.dart';
 
@@ -274,6 +274,7 @@ class CharacterModel {
 
   CharacterModel copyWith({
     String? id,
+    String? name,
     String? avatarUrl,
     String? tagline,
     List<String>? tags,
@@ -290,7 +291,7 @@ class CharacterModel {
     return CharacterModel(
       id: id ?? this.id,
       creatorId: creatorId,
-      name: name,
+      name: name ?? this.name,
       statusMessage: statusMessage,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       tagline: tagline ?? this.tagline,
@@ -736,7 +737,7 @@ class ScriptNodeModel {
 }
 
 /// 시나리오 묶음: 캐릭터 1명 + 이벤트 목록 + 대사 노드 목록
-/// assets/scenarios/*.json 파일 하나가 이 모양이고, 4단계에서는 서버 API가 같은 모양으로 내려줄 예정입니다.
+/// 캐릭터 파일(.json) 하나가 이 모양이고, 4단계에서는 서버 API가 같은 모양으로 내려줄 예정입니다.
 class ScenarioBundle {
   final CharacterModel character;
   final List<ScenarioEventModel> events; // chapterOrder 순으로 정렬됨

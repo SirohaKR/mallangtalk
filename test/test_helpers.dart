@@ -20,7 +20,7 @@ const fastTempo = {'tempo_$dohaId': '0.2', 'nickname_$dohaId': '쨋뀨'};
 const freeTalkOpen = {'freetalk_$dohaId': '1'};
 
 ScenarioBundle loadSampleBundle() => ScenarioBundle.fromJson(
-      jsonDecode(File('assets/scenarios/sample_character.json').readAsStringSync())
+      jsonDecode(File('test/fixtures/sample_character.json').readAsStringSync())
           as Map<String, dynamic>,
     );
 

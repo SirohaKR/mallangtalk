@@ -269,7 +269,7 @@ void main() {
   test('50개 대화 캐릭터: AI 생성 사용량·금액과 예상 플레이 시간', () async {
     ScenarioBundle load(String path) =>
         ScenarioBundle.fromJson(jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>);
-    final bundles = [load('assets/scenarios/sample_character.json'), load('assets/scenarios/example_seo_ijun.json')];
+    final bundles = [load('test/fixtures/sample_character.json'), load('test/fixtures/example_seo_ijun.json')];
 
     final samples = <String, List<(ScenarioBundle, ScenarioEventModel)>>{};
     for (final b in bundles) {

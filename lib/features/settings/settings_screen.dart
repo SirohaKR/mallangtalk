@@ -5,20 +5,234 @@ import '../../core/network/server_info.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../shared/utils/file_io.dart';
+import '../home/friends_screen.dart';
 import '../auth/auth_state.dart';
 import 'byok_settings.dart';
 import 'user_profile.dart';
 
-/// [초보자 노트] 쓸 AI 회사(Claude·ChatGPT·Gemini)를 드롭다운으로 고르고, 그 회사 키를 넣고 모델을 고르는 설정 화면입니다.
-class SettingsScreen extends ConsumerStatefulWidget {
+/// [초보자 노트] 설정 첫 화면: 맨 위 계정 카드, 그 아래 '계정 · 프로필'과 'AI 연결' 두 칸으로 나눠요.
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
-  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+    final user = ref.watch(authProvider).user;
+    final ai = ref.watch(byokSettingsProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('설정')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Material(
+                  color: AppColors.surfaceWhite,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                    side: const BorderSide(color: AppColors.borderLight),
+                  ),
+                  child: ListTile(
+                    key: const ValueKey('settings_account_card'),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                    leading: MyProfileAvatar(url: profile.avatarUrl, radius: 26),
+                    title: Text(
+                      profile.hasNickname ? profile.nickname : (user?.nickname ?? '내 프로필'),
+                      style: AppTextStyles.appBarTitle.copyWith(fontSize: 17),
+                    ),
+                    subtitle: Text(
+                      user != null ? '${user.username} 계정으로 로그인' : '이 기기에 저장된 프로필',
+                      style: AppTextStyles.systemNotice,
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => context.push('/settings/account'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              ListTile(
+                leading: const Icon(Icons.person_outline_rounded),
+                title: const Text('계정 · 프로필'),
+                subtitle: const Text('별명, 한줄 소개, 사진, 기본 페르소나', style: AppTextStyles.systemNotice),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => context.push('/settings/account'),
+              ),
+              ListTile(
+                key: const ValueKey('settings_ai'),
+                leading: const Icon(Icons.vpn_key_outlined),
+                title: const Text('AI 연결'),
+                subtitle: Text(
+                  ai.canUseAi ? '${ai.provider.label} 연결됨' : '키를 넣으면 자유대화와 AI로 만들기를 쓸 수 있어요',
+                  style: AppTextStyles.systemNotice,
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => context.push('/settings/ai'),
+              ),
+              const Divider(),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                child: Text(
+                  '대화 속도와 이 대화에서 쓸 별명은 캐릭터마다 대화방 오른쪽 위 메뉴에서 바꿔요.',
+                  style: AppTextStyles.messageTime,
+                ),
+              ),
+              // 새로 빌드한 앱이 떴는지 확인용 (나스 Docker 빌드 때 정해짐)
+              if (appBuild.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                  child: Text('앱 빌드: $appBuild', style: AppTextStyles.messageTime),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+/// [초보자 노트] 계정 · 프로필 (/settings/account): 내 사진·별명·한줄 소개·기본 페르소나, 로그아웃
+class AccountScreen extends ConsumerStatefulWidget {
+  const AccountScreen({super.key});
+
+  @override
+  ConsumerState<AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends ConsumerState<AccountScreen> {
+  late final _profile = ref.read(userProfileProvider);
+  late final _nickname = TextEditingController(text: _profile.nickname);
+  late final _intro = TextEditingController(text: _profile.intro);
+  late final _persona = TextEditingController(text: _profile.persona);
+  late String _avatar = _profile.avatarUrl;
+
+  @override
+  void dispose() {
+    _nickname.dispose();
+    _intro.dispose();
+    _persona.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = ref.watch(authProvider).user;
+    return Scaffold(
+      appBar: AppBar(title: const Text('계정 · 프로필')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          child: ListView(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            children: [
+              Center(
+                child: GestureDetector(
+                  onTap: () async {
+                    final image = await pickProfileImage(context);
+                    if (image != null) setState(() => _avatar = image);
+                  },
+                  child: Stack(
+                    children: [
+                      MyProfileAvatar(url: _avatar, radius: 44),
+                      const Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppColors.primaryPink,
+                          child: Icon(Icons.photo_camera_rounded, size: 16, color: AppColors.surfaceWhite),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              const Text(
+                '캐릭터와 대화를 처음 시작할 때 이 별명이 기본으로 들어가요. 말랑이를 공개하면 만든 사람 이름으로도 보여요.',
+                style: AppTextStyles.systemNotice,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _nickname,
+                maxLength: 12,
+                decoration: const InputDecoration(labelText: '기본 별명', hintText: '캐릭터가 나를 부를 이름'),
+              ),
+              TextField(
+                controller: _intro,
+                maxLength: 60,
+                decoration: const InputDecoration(
+                  labelText: '나에 대한 한줄 소개',
+                  hintText: '예: 디자인과 3학년, 고양이 좋아함 (AI 자유대화에서 참고해요)',
+                ),
+              ),
+              TextField(
+                controller: _persona,
+                minLines: 2,
+                maxLines: 5,
+                maxLength: 400,
+                decoration: const InputDecoration(
+                  labelText: '기본 페르소나',
+                  alignLabelWithHint: true,
+                  hintText: '대화 속 나의 설정 (나이·성격·외모·상황). 캐릭터와 대화를 시작할 때 기본으로 들어가요',
+                  hintMaxLines: 2,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              ElevatedButton(
+                onPressed: () async {
+                  await ref.read(userProfileProvider.notifier).save(
+                        nickname: _nickname.text,
+                        intro: _intro.text,
+                        avatarUrl: _avatar,
+                        persona: _persona.text,
+                      );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('내 프로필을 저장했어요')));
+                  }
+                },
+                child: const Text('프로필 저장'),
+              ),
+              if (user != null) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.account_circle_rounded, color: AppColors.primaryPink),
+                  title: Text('${user.nickname} (${user.username})'),
+                  subtitle: const Text('PC와 폰에서 같은 계정으로 이어서 대화해요', style: AppTextStyles.systemNotice),
+                ),
+                OutlinedButton(
+                  onPressed: () async {
+                    await ref.read(authProvider.notifier).logout();
+                    if (context.mounted && context.canPop()) context.pop();
+                  },
+                  child: const Text('로그아웃'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [초보자 노트] AI 연결 (/settings/ai): 쓸 AI 회사(Claude·ChatGPT·Gemini)를 고르고, 그 회사 키를 넣고 모델을 고르는 화면입니다.
+class AiConnectScreen extends ConsumerStatefulWidget {
+  const AiConnectScreen({super.key});
+
+  @override
+  ConsumerState<AiConnectScreen> createState() => _AiConnectScreenState();
+}
+
+class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
   static const _custom = '__custom__';
   final _keyController = TextEditingController();
   late AiProvider _provider = ref.read(byokSettingsProvider).provider;
@@ -39,6 +253,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _keyController.clear();
     });
   }
+
   final _accessCode = TextEditingController();
 
   @override
@@ -47,18 +262,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _accessCode.text = ref.read(byokSettingsProvider).accessCode ?? '';
   }
 
-  late final _nickname = TextEditingController(text: ref.read(userProfileProvider).nickname);
-  late final _intro = TextEditingController(text: ref.read(userProfileProvider).intro);
-  late final _persona = TextEditingController(text: ref.read(userProfileProvider).persona);
-
   @override
   void dispose() {
     _keyController.dispose();
     _customModel.dispose();
     _accessCode.dispose();
-    _nickname.dispose();
-    _intro.dispose();
-    _persona.dispose();
     super.dispose();
   }
 
@@ -84,110 +292,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final server = settings.server;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('설정')),
+      appBar: AppBar(title: const Text('AI 연결')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              if (ref.watch(authProvider).user case final user?) ...[
-                Row(
-                  children: [
-                    const Icon(Icons.account_circle_rounded, color: AppColors.primaryPink),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text('${user.nickname} (${user.username})로 로그인했어요',
-                          style: AppTextStyles.chatBubbleBody),
-                    ),
-                    TextButton(
-                      onPressed: () => ref.read(authProvider.notifier).logout(),
-                      child: const Text('로그아웃'),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              const Text('내 프로필', style: AppTextStyles.appBarTitle),
+              Text(server != null && server.providers.isNotEmpty ? 'AI 설정' : '내 AI 키',
+                  style: AppTextStyles.appBarTitle),
               const SizedBox(height: 6),
               const Text(
-                '캐릭터와 대화를 처음 시작할 때 이 별명이 기본으로 들어가요. 캐릭터마다 대화방 메뉴에서 따로 바꿀 수 있어요.',
-                style: AppTextStyles.systemNotice,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              const Text('기본 별명', style: AppTextStyles.speakerName),
-              const SizedBox(height: 4),
-              TextField(
-                controller: _nickname,
-                maxLength: 12,
-                decoration: const InputDecoration(hintText: '캐릭터가 나를 부를 이름'),
-              ),
-              const Text('나에 대한 한줄 소개', style: AppTextStyles.speakerName),
-              const SizedBox(height: 4),
-              TextField(
-                controller: _intro,
-                maxLength: 60,
-                decoration: const InputDecoration(hintText: '예: 디자인과 3학년, 고양이 좋아함 (AI 자유대화에서 참고해요)'),
-              ),
-              const Text('기본 페르소나', style: AppTextStyles.speakerName),
-              const SizedBox(height: 4),
-              TextField(
-                controller: _persona,
-                minLines: 2,
-                maxLines: 5,
-                maxLength: 400,
-                decoration: const InputDecoration(
-                  hintText: '대화 속 나의 설정 (나이·성격·외모·상황). 캐릭터와 대화를 시작할 때 기본으로 들어가요',
-                  hintMaxLines: 2,
-                ),
-              ),
-              OutlinedButton(
-                onPressed: () async {
-                  await ref.read(userProfileProvider.notifier)
-                      .save(nickname: _nickname.text, intro: _intro.text, persona: _persona.text);
-                  _toast('내 프로필을 저장했어요');
-                },
-                child: const Text('프로필 저장'),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const Divider(),
-              const SizedBox(height: AppSpacing.md),
-              Text(server != null && server.providers.isNotEmpty ? 'AI 설정' : '내 AI 키', style: AppTextStyles.appBarTitle),
-              const SizedBox(height: 6),
-              const Text(
-                '채팅방 자유대화와 캐릭터 추가 > 만들기 > AI로 만들기에서 여기서 고른 AI를 불러요. '
+                '대화방 자유대화와 말랑이 만들기의 AI로 만들기에서 여기서 고른 AI를 불러요. '
                 '요금은 그 키의 계정에 청구돼요. 내 키는 이 브라우저에만 저장돼요.',
                 style: AppTextStyles.systemNotice,
               ),
               if (server != null && server.providers.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.md),
                 _ServerCard(server: server),
-                if (server.needsAccessCode) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  const Text('서버 접속 코드', style: AppTextStyles.speakerName),
-                  const SizedBox(height: 4),
-                  Row(
+                if (server.needsAccessCode)
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: const Text('고급 · 서버 접속 코드', style: AppTextStyles.speakerName),
+                    childrenPadding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _accessCode,
-                          obscureText: true,
-                          autocorrect: false,
-                          decoration: const InputDecoration(hintText: '서버 .env의 ACCESS_CODE'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () async {
-                          await notifier.saveAccessCode(_accessCode.text);
-                          _toast('접속 코드를 저장했어요');
-                        },
-                        child: const Text('저장'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _accessCode,
+                              obscureText: true,
+                              autocorrect: false,
+                              decoration: const InputDecoration(hintText: '서버 .env의 ACCESS_CODE'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: () async {
+                              await notifier.saveAccessCode(_accessCode.text);
+                              _toast('접속 코드를 저장했어요');
+                            },
+                            child: const Text('저장'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
               ],
               const SizedBox(height: AppSpacing.lg),
               const Text('AI 회사', style: AppTextStyles.speakerName),
@@ -226,8 +376,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const Icon(Icons.vpn_key_rounded, size: 18, color: AppColors.aiActivePurple),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text('저장된 키: ${settings.maskedKey}',
-                          style: AppTextStyles.chatBubbleBody),
+                      child: Text('저장된 키: ${settings.maskedKey}', style: AppTextStyles.chatBubbleBody),
                     ),
                     TextButton(
                       onPressed: () async {
@@ -286,9 +435,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: AppSpacing.md),
               ElevatedButton(
                 onPressed: () async {
-                  final key = _keyController.text.trim().isNotEmpty
-                      ? _keyController.text.trim()
-                      : settings.apiKey;
+                  final key = _keyController.text.trim().isNotEmpty ? _keyController.text.trim() : settings.apiKey;
                   if ((key == null || key.isEmpty) && !settings.usesServer) {
                     _toast('API 키를 입력해 주세요');
                     return;
@@ -304,16 +451,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 },
                 child: const Text('저장'),
               ),
-              const SizedBox(height: AppSpacing.xl),
-              const Text(
-                '대화 속도와 이 대화에서 쓸 별명은 캐릭터마다 대화방 오른쪽 위 메뉴에서 바꿔요.',
-                style: AppTextStyles.messageTime,
-              ),
-              // 새로 빌드한 앱이 떴는지 확인용 (나스 Docker 빌드 때 정해짐)
-              if (appBuild.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text('앱 빌드: $appBuild', style: AppTextStyles.messageTime),
-              ],
             ],
           ),
         ),
@@ -330,7 +467,10 @@ class _ServerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final names = [for (final p in AiProvider.values) if (server.providers.contains(p)) p.label];
+    final names = [
+      for (final p in AiProvider.values)
+        if (server.providers.contains(p)) p.label
+    ];
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(

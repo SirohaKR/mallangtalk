@@ -8,7 +8,7 @@ import 'package:mallangtalk/core/network/claude_studio_client.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
 import 'package:mallangtalk/features/studio/scenario_draft.dart';
-import 'package:mallangtalk/features/studio/template_scenario.dart';
+import 'fixtures/template_scenario.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

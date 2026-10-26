@@ -7,7 +7,7 @@ import '../../shared/widgets/mallang_mark.dart';
 import '../chat/chat_notifier.dart';
 import '../library/character_library.dart';
 
-/// [초보자 노트] 앱 하단 탭 4개: 말랑(내 캐릭터) / 채팅 / 말랑이 찾기(캐릭터 추가) / 설정
+/// [초보자 노트] 앱 하단 탭 4개: 말랑이 찾기(첫 화면) / 채팅 / 내 말랑이(친구·내가 만든) / 설정
 /// 탭을 옮겨도 각 탭 화면 상태(스크롤, 입력 중인 내용)가 그대로 남도록 StatefulShellRoute를 씁니다.
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key, required this.shell});
@@ -43,8 +43,8 @@ class HomeShell extends ConsumerWidget {
           onDestinationSelected: (index) => shell.goBranch(index, initialLocation: index == shell.currentIndex),
           destinations: [
             const NavigationDestination(
-              icon: MallangMark(),
-              label: '말랑',
+              icon: MallangMark(plus: true),
+              label: '말랑이 찾기',
             ),
             NavigationDestination(
               icon: Badge(
@@ -60,12 +60,12 @@ class HomeShell extends ConsumerWidget {
               label: '채팅',
             ),
             const NavigationDestination(
-              icon: MallangMark(plus: true),
-              label: '말랑이 찾기',
+              icon: MallangMark(),
+              label: '내 말랑이',
             ),
             const NavigationDestination(
               icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings_rounded),
+              selectedIcon: Icon(Icons.settings),
               label: '설정',
             ),
           ],

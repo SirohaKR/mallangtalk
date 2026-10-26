@@ -324,3 +324,47 @@ class PhotoTag extends StatelessWidget {
     );
   }
 }
+
+/// 오류·주의 목록 카드
+class ProblemList extends StatelessWidget {
+  const ProblemList(
+      {super.key,
+      required this.title,
+      required this.items,
+      this.isError = false});
+
+  final String title;
+  final List<String> items;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isError ? AppColors.primaryPink : AppColors.affectionWarm;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.choiceRadius),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: AppTextStyles.speakerName
+                  .copyWith(color: AppColors.textPrimary)),
+          const SizedBox(height: 4),
+          for (final item in items.take(12))
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('• $item', style: AppTextStyles.systemNotice),
+            ),
+          if (items.length > 12)
+            Text('그 외 ${items.length - 12}개',
+                style: AppTextStyles.systemNotice),
+        ],
+      ),
+    );
+  }
+}

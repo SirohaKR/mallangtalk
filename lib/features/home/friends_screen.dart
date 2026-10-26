@@ -15,10 +15,10 @@ import '../library/character_library.dart';
 import '../settings/user_profile.dart';
 import '../../shared/utils/korean.dart';
 
-/// [초보자 노트] '내 캐릭터' 탭은 카톡 친구창처럼: 맨 위 내 프로필, 그 아래 즐겨찾기, 그 아래 캐릭터 목록.
+/// [초보자 노트] '내 말랑이 > 친구'는 카톡 친구창처럼: 맨 위 내 프로필, 그 아래 즐겨찾기, 그 아래 캐릭터 목록.
 /// 캐릭터를 누르면 프로필이 뜨고, 거기서 1:1 채팅·즐겨찾기를 해요.
-class FriendsScreen extends ConsumerWidget {
-  const FriendsScreen({super.key});
+class FriendsList extends ConsumerWidget {
+  const FriendsList({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,29 +32,21 @@ class FriendsScreen extends ConsumerWidget {
           child: Text(title, style: AppTextStyles.messageTime),
         );
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('말랑')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
-          child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            children: [
-              const _MyProfileTile(),
-              const Divider(height: 1),
-              if (entries.isEmpty) _EmptyFriends(onAdd: () => context.go('/add')),
-              if (starred.isNotEmpty) ...[
-                section('즐겨찾기 ${starred.length}'),
-                for (final e in starred) _FriendTile(entry: e),
-              ],
-              if (others.isNotEmpty) ...[
-                section('친구 ${entries.length}'),
-                for (final e in others) _FriendTile(entry: e),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      children: [
+        const _MyProfileTile(),
+        const Divider(height: 1),
+        if (entries.isEmpty) _EmptyFriends(onAdd: () => context.go('/discover')),
+        if (starred.isNotEmpty) ...[
+          section('즐겨찾기 ${starred.length}'),
+          for (final e in starred) _FriendTile(entry: e),
+        ],
+        if (others.isNotEmpty) ...[
+          section('친구 ${entries.length}'),
+          for (final e in others) _FriendTile(entry: e),
+        ],
+      ],
     );
   }
 }
@@ -243,7 +235,7 @@ class _EmptyFriends extends StatelessWidget {
           const Text('아직 캐릭터가 없어요', style: AppTextStyles.appBarTitle),
           const SizedBox(height: 6),
           const Text(
-            '캐릭터를 받아오거나 직접 만들어 보세요',
+            '말랑이 찾기에서 친구를 추가하거나 직접 만들어 보세요',
             style: AppTextStyles.systemNotice,
           ),
           const SizedBox(height: AppSpacing.lg),

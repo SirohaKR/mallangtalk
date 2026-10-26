@@ -29,12 +29,18 @@ class ServerCharacter {
   final ScenarioBundle bundle;
   final String creator;
   final bool mine;
-  const ServerCharacter({required this.bundle, required this.creator, required this.mine});
+  /// 처음 올린 때 (말랑이 찾기 '최신' 정렬)
+  final DateTime? createdAt;
+  /// 친구로 추가한 사람 수 ('인기' 정렬)
+  final int friends;
+  const ServerCharacter({required this.bundle, required this.creator, required this.mine, this.createdAt, this.friends = 0});
 
   factory ServerCharacter.fromJson(Map json) => ServerCharacter(
         bundle: ScenarioBundle.fromJson(json['bundle'] as Map<String, dynamic>),
         creator: json['creator'] as String? ?? '',
         mine: json['mine'] == true,
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
+        friends: json['friends'] as int? ?? 0,
       );
 }
 
@@ -106,6 +112,11 @@ class MallangtalkApi {
   }
 
   Future<void> deleteCharacter(String id) => _send('DELETE', '/api/characters/${Uri.encodeComponent(id)}');
+
+  /// 친구 추가·빼기 (말랑이 찾기 인기순에 쓰는 친구 수)
+  Future<void> addFriend(String id) => _send('POST', '/api/characters/${Uri.encodeComponent(id)}/friend');
+
+  Future<void> removeFriend(String id) => _send('DELETE', '/api/characters/${Uri.encodeComponent(id)}/friend');
 
   /// 기기 연동: 서버에 저장된 내 앱 저장값 전부 {키: (값, 바뀐 시각 ms)}. 값은 글자·글자 목록, 지운 값은 null
   Future<Map<String, SyncedValue>> myState() async {
