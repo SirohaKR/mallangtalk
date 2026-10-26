@@ -42,8 +42,19 @@ List<String> topTagsOf(List<GalleryItem> items, {int count = 10}) {
   return (counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).take(count).map((e) => e.key).toList();
 }
 
+/// 성별 필터: 'male'·'female'·'none'(미정). 성별을 안 고른 말랑이는 미정에 함께 보여요. null이면 전체
+List<GalleryItem> genderFiltered(List<GalleryItem> items, String? gender) {
+  if (gender == null) return items;
+  return items.where((g) {
+    final value = g.character.gender.isEmpty ? 'none' : g.character.gender;
+    return value == gender;
+  }).toList();
+}
+
+const _genders = [('male', '남성'), ('female', '여성'), ('none', '미정')];
+
 /// [초보자 노트] 앱을 켜면 처음 보이는 '말랑이 찾기' 탭입니다.
-/// 위에서부터 검색창 → 장르(태그) 칩 → 오늘의 추천(가로로 넘김) → 새로 올라온 말랑이(최신·인기 정렬) 순서예요.
+/// 위에서부터 검색창 → 장르(태그) 칩 → 성별 칩 → 오늘의 추천(가로로 넘김) → 새로 올라온 말랑이(최신·인기 정렬) 순서예요.
 /// 모든 카드에 만든 사람이 보이고, 누르면 상세 화면(/gallery/ID)으로 가요.
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -54,6 +65,7 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String? _tag;
+  String? _gender;
   GallerySort _sort = GallerySort.latest;
 
   @override
@@ -61,7 +73,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final gallery = ref.watch(galleryProvider);
     final all = gallery.valueOrNull ?? const <GalleryItem>[];
     final friends = ref.watch(characterLibraryProvider).map((e) => e.id).toSet();
-    final items = _tag == null ? all : all.where((g) => g.character.tags.contains(_tag)).toList();
+    final items = genderFiltered(_tag == null ? all : all.where((g) => g.character.tags.contains(_tag)).toList(), _gender);
     final tags = topTagsOf(all);
     final picks = recommendedOf(items);
     final sorted = [...items]..sort(_sort == GallerySort.latest ? _byLatest : _byPopular);
@@ -100,10 +112,38 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                       ),
                     ),
                   ),
+                if (all.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 44,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.fromLTRB(AppSpacing.lg, tags.isEmpty ? AppSpacing.md : 2, AppSpacing.lg, 4),
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: Center(child: Text('성별', style: AppTextStyles.systemNotice)),
+                          ),
+                          _TagChip(
+                              key: const ValueKey('gender_all'),
+                              label: '전체',
+                              selected: _gender == null,
+                              onTap: () => setState(() => _gender = null)),
+                          for (final (value, label) in _genders)
+                            _TagChip(
+                                key: ValueKey('gender_$value'),
+                                label: label,
+                                plain: true,
+                                selected: _gender == value,
+                                onTap: () => setState(() => _gender = _gender == value ? null : value)),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (gallery.isLoading && all.isEmpty)
                   const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
                 else if (items.isEmpty)
-                  SliverFillRemaining(hasScrollBody: false, child: _Empty(filtered: _tag != null))
+                  SliverFillRemaining(hasScrollBody: false, child: _Empty(filtered: _tag != null || _gender != null))
                 else ...[
                   const _SectionTitle('오늘의 추천'),
                   SliverToBoxAdapter(
@@ -198,9 +238,11 @@ class _SearchBox extends StatelessWidget {
 }
 
 class _TagChip extends StatelessWidget {
-  const _TagChip({required this.label, required this.selected, required this.onTap});
+  const _TagChip({super.key, required this.label, required this.selected, required this.onTap, this.plain = false});
 
   final String label;
+  /// 태그가 아닌 칩(성별)은 # 없이
+  final bool plain;
   final bool selected;
   final VoidCallback onTap;
 
@@ -209,7 +251,7 @@ class _TagChip extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: ChoiceChip(
-        label: Text(label == '전체' ? label : '#$label'),
+        label: Text(label == '전체' || plain ? label : '#$label'),
         selected: selected,
         showCheckmark: false,
         onSelected: (_) => onTap(),
@@ -345,7 +387,7 @@ class _Empty extends StatelessWidget {
         children: [
           const Icon(Icons.travel_explore_rounded, size: 48, color: AppColors.textMuted),
           const SizedBox(height: AppSpacing.md),
-          Text(filtered ? '이 태그의 말랑이가 없어요' : '아직 올라온 말랑이가 없어요', style: AppTextStyles.appBarTitle),
+          Text(filtered ? '조건에 맞는 말랑이가 없어요' : '아직 올라온 말랑이가 없어요', style: AppTextStyles.appBarTitle),
           const SizedBox(height: 6),
           const Text('내 말랑이를 만들어 첫 번째로 올려 보세요', style: AppTextStyles.systemNotice),
           const SizedBox(height: AppSpacing.lg),
