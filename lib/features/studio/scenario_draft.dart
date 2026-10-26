@@ -96,6 +96,8 @@ class EventDraft {
   String cutsceneImage;
   /// 이 이벤트에 올려 둔 사진들 (data: 주소). 컷씬과 사진 말풍선이 여기서 골라 씀
   final List<String> photos;
+  /// 사진함 사진별 '보낼 때' (사진 주소 → 감정·상황·키워드). 자유대화에서 AI가 맞을 때 골라 보냄
+  final Map<String, PhotoTrigger> photoTriggers;
   int fromHour;
   int toHour;
   String date;
@@ -124,8 +126,10 @@ class EventDraft {
     this.keptStage = '',
     List<SceneDraft>? scenes,
     List<String>? photos,
+    Map<String, PhotoTrigger>? photoTriggers,
   })  : scenes = scenes ?? [SceneDraft()],
-        photos = photos ?? [];
+        photos = photos ?? [],
+        photoTriggers = photoTriggers ?? {};
 
   /// 사진을 사진함에 넣음 (이미 있으면 그대로)
   void addPhoto(String image) {
@@ -135,6 +139,7 @@ class EventDraft {
   /// 사진함에서 빼고, 그 사진을 쓰던 컷씬·말풍선도 비움
   void removePhoto(String image) {
     photos.remove(image);
+    photoTriggers.remove(image);
     if (cutsceneImage == image) cutsceneImage = '';
     for (final s in scenes) {
       for (final l in s.lines) {
@@ -343,6 +348,10 @@ class ScenarioDraft {
       cutscene: e.cutscenePhotoTitle ?? '',
       cutsceneImage: cutsceneImage,
       photos: photos,
+      photoTriggers: {
+        for (final entry in e.photoTriggers.entries)
+          if (bundle.resolveImage(entry.key) case final image?) image: entry.value,
+      },
       fromHour: e.realTime?.fromHour ?? 22,
       toHour: e.realTime?.toHour ?? 2,
       date: e.realTime?.date ?? '',
@@ -440,6 +449,11 @@ class ScenarioDraft {
         for (final p in e.photos)
           if (imageRef(p) case final ref?) ref,
       ],
+      photoTriggers: {
+        for (final entry in e.photoTriggers.entries)
+          if (entry.value.isSet && e.photos.contains(entry.key))
+            if (imageRef(entry.key) case final ref?) ref: entry.value,
+      },
       realTime: e.kind == DraftKind.special
           ? RealTimeWindow(fromHour: e.fromHour, toHour: e.toHour, date: e.date.trim().isEmpty ? null : e.date.trim())
           : null,

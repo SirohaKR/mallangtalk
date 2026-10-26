@@ -1034,6 +1034,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               newUserMessages: combinedInput,
               pace: pace,
               memories: state.memories,
+              photos: _free ? _bundle.freeTalkPhotos : const [],
             );
         _awaitingAiReply = false;
         if (!stillValid()) return;
@@ -1043,7 +1044,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           _scheduleBurstReply();
           return;
         }
-        replyPieces = [for (final text in reply.bubbles) ScriptBubblePiece(text: text)];
+        // 자유대화 방에서 AI가 고른 사진은 말풍선 뒤에 사진으로 보냄 (앨범에도 들어감)
+        final photo = _free ? _bundle.freeTalkPhotos.where((p) => p.id == reply.photoId).firstOrNull : null;
+        replyPieces = [
+          for (final text in reply.bubbles) ScriptBubblePiece(text: text),
+          if (photo != null) ScriptBubblePiece(text: '', photoLabel: photo.label, photoImage: photo.ref),
+        ];
         affectionDelta = _free ? 0 : reply.affectionDelta; // 자유대화 방은 호감도 없음
         ends = limited && (reply.ends || pace.mustEnd);
         memory = reply.memory;

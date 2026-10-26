@@ -242,6 +242,24 @@ void main() {
       expect(back.events.firstWhere((e) => e.id == 'daily_rain').follows, 'evt_dubu_missing');
     });
 
+    test('사진함 사진의 자유대화 보낼 때(감정·상황·키워드)도 사진 번호로 저장되고 다시 열림', () {
+      const image = 'data:image/png;base64,iVBORw0KGgo=';
+      final draft = ScenarioDraft.fromBundle(loadSampleBundle());
+      final event = draft.events.first;
+      event.addPhoto(image);
+      event.photoTriggers[image] = const PhotoTrigger(mood: '설렘', situation: '보고 싶다고 할 때', keywords: ['셀카']);
+      final bundle = ScenarioBundle.fromJson(jsonDecode(jsonEncode(draft.toBundle().toJson())) as Map<String, dynamic>);
+      final saved = bundle.events.firstWhere((e) => e.id == event.id);
+      final ref = saved.photoTriggers.keys.single;
+      expect(ref, startsWith(ScenarioBundle.imagePrefix));
+      expect(saved.photoTriggers[ref]!.keywords, ['셀카']);
+      expect(bundle.freeTalkPhotos.single.trigger.mood, '설렘');
+      final back = ScenarioDraft.fromBundle(bundle).events.firstWhere((e) => e.id == event.id);
+      expect(back.photoTriggers[image]?.situation, '보고 싶다고 할 때');
+      back.removePhoto(image);
+      expect(back.photoTriggers, isEmpty);
+    });
+
     test('AI에게 넘기는 설정에는 세계관·비밀·유저 설정까지 들어감', () {
       final sheet = loadSampleBundle().character.aiCharacterSheet;
       expect(sheet, contains('새벽녘 라디오'));

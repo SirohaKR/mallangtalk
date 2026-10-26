@@ -14,8 +14,16 @@ class FreeChatReply {
   final bool ends;
   /// 마무리할 때 남기는 이 대화의 한 줄 기억 (다음 자유대화에서 씀)
   final String memory;
+  /// 답장과 함께 보내는 사진 ID (보낼 수 있는 사진 목록 중, 없으면 빈 글자)
+  final String photoId;
 
-  const FreeChatReply({required this.bubbles, required this.affectionDelta, this.ends = false, this.memory = ''});
+  const FreeChatReply({
+    required this.bubbles,
+    required this.affectionDelta,
+    this.ends = false,
+    this.memory = '',
+    this.photoId = '',
+  });
 }
 
 /// 자유대화 한 번이 얼마나 이어졌는지 (마무리할 때를 AI에게 알려 주려고)
@@ -66,8 +74,12 @@ class ClaudeChatClient {
         'type': 'string',
         'description': 'end_conversation이 true일 때만: 이번 대화를 캐릭터 입장에서 한 줄로 요약. 아니면 빈 글자',
       },
+      'photo': {
+        'type': 'string',
+        'description': '[보낼 수 있는 사진] 중 지금 대화의 감정·상황·키워드에 딱 맞는 사진이 있을 때만 그 ID(p1 등). 아니면 빈 글자',
+      },
     },
-    'required': ['replies', 'affection_delta', 'end_conversation', 'memory'],
+    'required': ['replies', 'affection_delta', 'end_conversation', 'memory', 'photo'],
     'additionalProperties': false,
   };
 
@@ -86,6 +98,7 @@ class ClaudeChatClient {
     String userPersona = '',
     FreeTalkPace pace = FreeTalkPace.open,
     List<String> memories = const [],
+    List<FreeTalkPhoto> photos = const [],
   }) async {
     final transcript = history
         .where((m) => !m.isSystem)
@@ -112,7 +125,7 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 [현재 관계]
 ${stageLabel != null ? '${character.name}에게 유저는 지금 "$stageLabel" 단계다.' : '정해진 이야기 없이 설정과 유저 페르소나대로 자유롭게 이어 가는 대화다. 관계는 설정에 맞춰 자연스럽게 정한다.'}${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
 
-${memories.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억]\n${memories.map((m) => '- $m').join('\n')}\n\n'}[답장 규칙]
+${memories.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억]\n${memories.map((m) => '- $m').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
 - 실제 카톡처럼 짧게 1~4개 말풍선으로 끊어서 보낸다. 괄호 지문, 행동 묘사, 이모지 남발은 쓰지 않는다.
 - 캐릭터의 말투와 습관을 유지하고, 관계 단계보다 앞서 나가는 고백이나 스킨십 얘기는 하지 않는다.
 - affection_delta는 유저 말에 대한 캐릭터의 속마음 반응이다. 평범한 대화는 0~1, 설레거나 감동하면 2~3, 무례하거나 서운하면 음수.
@@ -160,6 +173,7 @@ ${newUserMessages.join('\n')}''';
     final delta = (json['affection_delta'] as num? ?? 0).toInt().clamp(-3, 3);
     final ends = json['end_conversation'] == true;
     final memory = ends ? (json['memory'] as String? ?? '').trim() : '';
-    return FreeChatReply(bubbles: bubbles, affectionDelta: delta, ends: ends, memory: memory);
+    final photo = (json['photo'] as String? ?? '').trim();
+    return FreeChatReply(bubbles: bubbles, affectionDelta: delta, ends: ends, memory: memory, photoId: photo);
   }
 }
