@@ -136,9 +136,8 @@ void main() {
   });
 
   testWidgets('자유대화에서 엔터로 보내도 입력창에 커서가 남아 연달아 칠 수 있음', (tester) async {
-    SharedPreferences.setMockInitialValues({...fastTempo, ...freeTalkOpen});
-    final container = await openDohaChat(tester);
-    container.read(chatRoomProvider(dohaId).notifier).toggleDirectInputMode(true);
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    final container = await openDohaChat(tester, roomId: freeRoomId(dohaId));
     await tester.pump();
 
     await tester.enterText(find.byType(TextField), '첫 번째');
@@ -152,7 +151,7 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pump();
     final sent = container
-        .read(chatRoomProvider(dohaId))
+        .read(chatRoomProvider(freeRoomId(dohaId)))
         .messages
         .where((m) => m.isUser)
         .map((m) => m.text);
@@ -229,21 +228,36 @@ void main() {
     expect(state().currentEventId, 'daily_lunch_menu');
   });
 
-  testWidgets('자유대화는 처음엔 잠겨 있어서 켜려 해도 안 켜지고 안내만 나옴', (tester) async {
-    final container = await openChat(tester);
-    final notifier = container.read(chatRoomProvider(dohaId).notifier);
-    expect(container.read(chatRoomProvider(dohaId)).freeTalkUnlocked, isFalse);
-    notifier.toggleDirectInputMode(true);
-    expect(container.read(chatRoomProvider(dohaId)).isByokAiModeEnabled, isFalse);
+  testWidgets('스토리 방엔 자유대화 스위치가 없고, 자유대화 방은 따로 저장되며 호감도가 없음', (tester) async {
+    final story = await openChat(tester);
+    expect(find.byType(Switch), findsNothing);
+    final storyAffection = story.read(chatRoomProvider(dohaId)).internalAffection;
+    await settle(tester);
 
-    await tester.tap(find.byType(Switch));
-    await tester.pump();
-    expect(find.textContaining('스크립트를 전부 보면 자유대화가 열려요'), findsOneWidget);
-    expect(container.read(chatRoomProvider(dohaId)).isByokAiModeEnabled, isFalse);
+    final container = await openDohaChat(tester, roomId: freeRoomId(dohaId));
+    final room = freeRoomId(dohaId);
+    expect(find.byKey(const ValueKey('free_room_intro')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat_ai_pill')), findsOneWidget);
+    expect(container.read(chatRoomProvider(room)).currentChoices, isEmpty);
+
+    await tester.enterText(find.byType(TextField), '안녕 뭐해');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await settle(tester);
+    final free = container.read(chatRoomProvider(room));
+    expect(free.messages.where((m) => m.isUser).map((m) => m.text), contains('안녕 뭐해'));
+    expect(free.internalAffection, storyAffection, reason: '자유대화 방은 호감도가 변하지 않음');
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('run_$room'), contains('안녕 뭐해'));
+    expect(prefs.getString('run_$dohaId') ?? '', isNot(contains('안녕 뭐해')), reason: '스토리 방과 따로 저장');
+
+    // 새로 열어도 자유대화 방 대화는 그대로
+    await openDohaChat(tester, roomId: room);
+    expect(find.text('안녕 뭐해'), findsOneWidget);
     await settle(tester);
   });
 
-  testWidgets('공략 뒤 못 본 일상 대화가 이어서 나오고, 다 보면 팝업과 함께 자유대화가 열림', (tester) async {
+  testWidgets('공략 뒤 못 본 일상 대화가 이어서 나옴', (tester) async {
     final bundle = loadSampleBundle();
     final all = [
       for (final e in bundle.events)
@@ -261,23 +275,8 @@ void main() {
     ChatRoomState state() => container.read(chatRoomProvider(dohaId));
 
     expect(state().progress, StoryProgress.cleared);
-    expect(state().freeTalkUnlocked, isFalse);
     expect(state().currentEventId, 'daily_rain');
     expect(await skipDailyTalks(tester), ['daily_rain']);
-
-    expect(find.text('스크립트를 전부 봤어요'), findsOneWidget);
-    await tester.tap(find.text('좋아요'));
-    await settle(tester);
-    expect(find.text('스크립트를 전부 봤어요'), findsNothing);
-    expect(state().freeTalkUnlocked, isTrue);
-
-    container.read(chatRoomProvider(dohaId).notifier).toggleDirectInputMode(true);
-    expect(state().isByokAiModeEnabled, isTrue);
-
-    // 새로 열어도 열린 채로, 팝업은 다시 안 뜸
-    await openDohaChat(tester, bundle: bundle);
-    expect(dohaState(tester).freeTalkUnlocked, isTrue);
-    expect(find.text('스크립트를 전부 봤어요'), findsNothing);
     await settle(tester);
   });
 

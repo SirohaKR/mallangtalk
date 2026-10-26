@@ -20,6 +20,13 @@ enum StoryProgress {
   cleared, // 공략 완료 (모든 컷씬 수집 + 모든 호감도 이벤트 완료)
 }
 
+/// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
+const _freeSuffix = '#free';
+String freeRoomId(String characterId) => '$characterId$_freeSuffix';
+bool isFreeRoom(String roomId) => roomId.endsWith(_freeSuffix);
+String characterIdOfRoom(String roomId) =>
+    isFreeRoom(roomId) ? roomId.substring(0, roomId.length - _freeSuffix.length) : roomId;
+
 /// [초보자 노트] 채팅방의 실시간 상태를 담는 클래스입니다.
 /// 호감도 숫자(internalAffection)는 유저 화면에 절대 노출하지 않고 내부 분기 판정에만 사용합니다.
 class ChatRoomState {
@@ -186,8 +193,17 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 지금 이벤트를 시작할 때의 호감도·플래그 (자유대화로 미룬 이벤트를 다음에 처음부터 다시 하려고)
   ({int affection, List<String> flags})? _eventStart;
 
+  /// 이 대화방이 자유대화 방인지 (스토리 방과 따로, 호감도·이야기 없이 AI와만 대화)
+  late bool _free;
+  late String _characterId;
+
+  /// 진행 기록을 저장하는 이름 (스토리 방은 캐릭터 ID, 자유대화 방은 ID#free)
+  String get _roomId => _free ? freeRoomId(_characterId) : _characterId;
+
   @override
-  ChatRoomState build(String characterId) {
+  ChatRoomState build(String roomId) {
+    _free = isFreeRoom(roomId);
+    final characterId = _characterId = characterIdOfRoom(roomId);
     ref.onDispose(() {
       _userBurstReplyTimer?.cancel();
       _runId++; // 대화방이 닫히면(캐릭터 삭제 등) 돌던 연출을 멈춤
@@ -201,6 +217,16 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _bundle = bundle;
     _store = ref.watch(localStoreProvider);
     final album = _store.loadAlbum(characterId);
+    if (_free) {
+      // 자유대화 방: 이야기는 진행하지 않고, 지난 대화와 한 줄 기억만 이어서
+      final savedFree = _store.loadRun(roomId);
+      return _freshRunState(unlockedCutscenes: album).copyWith(
+        isByokAiModeEnabled: true,
+        messages: savedFree?.messages ?? const [],
+        seenMessageCount: savedFree?.messages.length ?? 0,
+        memories: savedFree?.memories ?? const [],
+      );
+    }
     final saved = _store.loadRun(characterId);
     _restoreReceivedPhotos(album, saved?.messages ?? const []);
     _seenScripts
@@ -305,7 +331,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 별명을 정하고 대화방에 처음 들어올 때 대화 시작 (이미 시작했으면 아무 일 없음)
   void begin() {
-    if (_started || state.messages.isNotEmpty) return;
+    if (_free || _started || state.messages.isNotEmpty) return;
     _started = true;
     _advance(_runId);
   }
@@ -316,6 +342,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _userBurstReplyTimer?.cancel();
     _pendingUserBurstTexts.clear();
     _freeTurns = 0;
+    if (_free) {
+      // 자유대화 방은 대화만 비움 (한 줄 기억은 남김)
+      state = state.copyWith(messages: const [], seenMessageCount: 0, isCharacterTyping: false, canRetryFreeTalk: false);
+      _saveRun();
+      return;
+    }
     state = _freshRunState(unlockedCutscenes: state.unlockedCutsceneEventIds)
         .copyWith(memories: state.memories);
     _store.clearRun(_bundle.character.id);
@@ -328,7 +360,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   void _saveRun({bool? cleared, ScriptNodeModel? node, int nextBubble = 0}) {
     cleared ??= state.progress == StoryProgress.cleared;
     _store.saveRun(
-      _bundle.character.id,
+      _roomId,
       SavedRun(
         affection: state.internalAffection,
         flags: state.acquiredFlags,
@@ -393,6 +425,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 대화방에 들어올 때: 이야기가 멈춰 있는 상태(공략 완료·막힘)면 특별 이벤트 시간인지 확인
   void checkSpecialEvents() {
+    if (_free) return;
     if (state.isCharacterTyping || state.currentChoices.isNotEmpty) return;
     if (state.progress == StoryProgress.playing) return;
     _playSpecialIfDue(_runId);
@@ -416,7 +449,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     if (event.timeNotice != null) {
       // '다음 날'처럼 시간이 지나는 장면: 앞 대화가 끝나고 조금 쉬었다가 시간 표시, 또 잠깐 뒤에 첫 톡
       // (대화 속도 설정을 따르고, 대화방에 막 들어왔을 때는 바로 시간 표시)
-      final tempo = ref.read(chatPrefsProvider(arg)).tempo;
+      final tempo = ref.read(chatPrefsProvider(_characterId)).tempo;
       if (_lastEventEndedAt case final ended?) {
         final wait = sceneGapBefore * tempo - DateTime.now().difference(ended);
         if (wait > Duration.zero) await Future.delayed(wait);
@@ -621,10 +654,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 캐릭터 타자 속도 × 설정의 대화 속도
   double get _pace =>
-      state.character.typingSpeedMultiplier * ref.read(chatPrefsProvider(arg)).tempo;
+      state.character.typingSpeedMultiplier * ref.read(chatPrefsProvider(_characterId)).tempo;
 
   /// 이 대화에서 불리는 내 별명
-  String get _nickname => ref.read(chatNicknameProvider(arg));
+  String get _nickname => ref.read(chatNicknameProvider(_characterId));
 
   /// ±15% 정도 들쭉날쭉하게 (매번 똑같은 박자면 기계 같아서)
   double _jitter() => 0.85 + _random.nextDouble() * 0.3;
@@ -638,7 +671,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final pace = _pace;
     if (bubble.delaySeconds > 0) {
       // 답장이 늦게 오는 연출: 그동안 내 톡의 '1'은 그대로 (대화 속도 설정을 따르고 최대 30초)
-      final tempo = ref.read(chatPrefsProvider(arg)).tempo;
+      final tempo = ref.read(chatPrefsProvider(_characterId)).tempo;
       await Future.delayed(Duration(milliseconds: (bubble.delaySeconds.clamp(1, 30) * 1000 * tempo).round()));
       if (!stillValid()) return false;
       _markAllUserMessagesRead();
@@ -704,7 +737,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 내 대사를 입력창에 사람이 치듯 한 글자씩 채움 (대화 속도 설정을 따름)
   /// 중간에 회차가 바뀌면 입력창을 비우고 false
   Future<bool> _typeUserDraft(String text, bool first, bool Function() stillValid) async {
-    final tempo = ref.read(chatPrefsProvider(arg)).tempo;
+    final tempo = ref.read(chatPrefsProvider(_characterId)).tempo;
     await Future.delayed(Duration(milliseconds: ((first ? 350 : 450) * tempo * _jitter()).round()));
     if (!stillValid()) return false;
     final chars = Characters(text).toList();
@@ -849,8 +882,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final runId = _runId;
     bool stillValid() => runId == _runId && state.isByokAiModeEnabled;
 
-    // 이야기 진행 중이면 정해진 만큼 주고받은 뒤 캐릭터가 마무리 (공략 뒤에는 끝없이)
-    final limited = _storyWaiting;
+    // 스토리 방에서 이야기 진행 중이면 정해진 만큼 주고받은 뒤 캐릭터가 마무리 (자유대화 방·공략 뒤에는 끝없이)
+    final limited = !_free && _storyWaiting;
     _freeTurns++;
     final pace = limited
         ? FreeTalkPace(
@@ -885,10 +918,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               relay: byok.relay,
               model: byok.model,
               character: state.character,
-              stageLabel: _currentStageLabel(),
+              stageLabel: _free ? null : _currentStageLabel(),
               userName: _nickname,
               userIntro: ref.read(userProfileProvider).intro,
-              userPersona: ref.read(chatPersonaProvider(arg)),
+              userPersona: ref.read(chatPersonaProvider(_characterId)),
               currentEventTitle: state.currentEventId != null
                   ? _eventById(state.currentEventId!)?.title
                   : null,
@@ -906,7 +939,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           return;
         }
         replyPieces = [for (final text in reply.bubbles) ScriptBubblePiece(text: text)];
-        affectionDelta = reply.affectionDelta;
+        affectionDelta = _free ? 0 : reply.affectionDelta; // 자유대화 방은 호감도 없음
         ends = limited && (reply.ends || pace.mustEnd);
         memory = reply.memory;
       } on ClaudeChatException catch (e) {
@@ -1089,7 +1122,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 자유대화 켜기·끄기. 이야기 도중에 켜면 하던 이벤트를 멈추고, 끄면 이야기로 돌아감
   void toggleDirectInputMode(bool enabled) {
-    if (enabled == state.isByokAiModeEnabled) return;
+    if (_free || enabled == state.isByokAiModeEnabled) return;
     if (enabled && !state.freeTalkUnlocked) return; // 공략을 끝내고 스크립트를 다 봐야 열림
     if (!enabled) {
       _endFreeTalk(byCharacter: false);

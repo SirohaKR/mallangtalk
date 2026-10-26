@@ -288,7 +288,7 @@ class _FakeClaude extends ClaudeChatClient {
     AiRelay? relay,
     required String model,
     required CharacterModel character,
-    required String stageLabel,
+    required String? stageLabel,
     required String? currentEventTitle,
     required List<ChatMessageLog> history,
     required List<String> newUserMessages,

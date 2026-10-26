@@ -7,6 +7,7 @@ import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../auth/auth_state.dart';
 import '../auth/state_sync.dart';
+import '../chat/chat_notifier.dart' show characterIdOfRoom;
 
 /// 앱에 기본으로 들어 있는 캐릭터 시나리오 파일 목록.
 /// 샘플 캐릭터(윤도하·서이준)는 2026-10 화면 개편 때 앱에서 뺐어요 (테스트용 파일은 test/fixtures에 있음)
@@ -217,18 +218,27 @@ class ChatRoomsNotifier extends Notifier<List<String>> {
     final entries = ref.watch(characterLibraryProvider);
     final ids = entries.map((e) => e.id).toSet();
     final rooms = ref.watch(localStoreProvider).loadChatRooms() ?? const <String>[];
-    return [for (final id in rooms) if (ids.contains(id)) id];
+    return [for (final id in rooms) if (ids.contains(characterIdOfRoom(id))) id];
   }
 
-  /// 대화방을 열면 맨 위로 올림
-  void open(String id) {
-    if (state.isNotEmpty && state.first == id) return;
-    state = [id, for (final r in state) if (r != id) r];
+  /// 대화방을 열면 맨 위로 올림 (스토리 방은 캐릭터 ID, 자유대화 방은 ID#free)
+  void open(String roomId) {
+    if (state.isNotEmpty && state.first == roomId) return;
+    state = [roomId, for (final r in state) if (r != roomId) r];
     ref.read(localStoreProvider).saveChatRooms(state);
   }
 
-  void leave(String id) {
-    state = [for (final r in state) if (r != id) r];
+  /// 이 캐릭터와 가장 최근에 연 대화방 (없으면 null)
+  String? latestOf(String characterId) {
+    for (final r in state) {
+      if (characterIdOfRoom(r) == characterId) return r;
+    }
+    return null;
+  }
+
+  /// 캐릭터와의 대화방을 모두 나감 (스토리·자유대화 둘 다)
+  void leave(String characterId) {
+    state = [for (final r in state) if (characterIdOfRoom(r) != characterId) r];
     ref.read(localStoreProvider).saveChatRooms(state);
   }
 }

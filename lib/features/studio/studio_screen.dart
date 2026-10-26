@@ -512,6 +512,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       existing?.source == CharacterSource.imported ? CharacterSource.imported : CharacterSource.created,
     );
     ref.invalidate(chatRoomProvider(bundle.character.id));
+    ref.invalidate(chatRoomProvider(freeRoomId(bundle.character.id)));
     if (!mounted) return;
     if (_editing) {
       Navigator.of(context).pop();

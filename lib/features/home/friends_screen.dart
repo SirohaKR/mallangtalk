@@ -465,6 +465,7 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 ref.read(chatRoomsProvider.notifier).leave(c.id);
                 await ref.read(characterLibraryProvider.notifier).remove(c.id);
                 ref.invalidate(chatRoomProvider(c.id));
+                ref.invalidate(chatRoomProvider(freeRoomId(c.id)));
                 messenger.showSnackBar(SnackBar(content: Text('${josa(c.name, '을', '를')} 지웠어요')));
               },
               child: const Text('캐릭터 삭제'),
