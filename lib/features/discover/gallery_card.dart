@@ -13,6 +13,7 @@ class GalleryCard extends StatelessWidget {
     super.key,
     required this.character,
     this.creator,
+    this.creatorAvatar = '',
     this.mine = false,
     required this.isFriend,
     required this.onTap,
@@ -22,6 +23,9 @@ class GalleryCard extends StatelessWidget {
 
   /// 만든 사람 (앱 기본 캐릭터면 null)
   final String? creator;
+
+  /// 만든 사람의 프로필 사진
+  final String creatorAvatar;
   final bool mine;
   final bool isFriend;
   final VoidCallback onTap;
@@ -86,7 +90,7 @@ class GalleryCard extends StatelessWidget {
                   ),
                   if (creator != null) ...[
                     const SizedBox(height: 6),
-                    CreatorLine(creator: creator!, mine: mine),
+                    CreatorLine(creator: creator!, avatarUrl: creatorAvatar, mine: mine),
                   ],
                   if (character.tags.isNotEmpty) ...[
                     const SizedBox(height: 4),
@@ -116,9 +120,12 @@ String taglineOf(CharacterModel c) => CharacterModel.fillUserName(
 
 /// 만든 사람 줄: 동그라미 첫 글자 + 이름. 누르면 제작자 프로필
 class CreatorLine extends StatelessWidget {
-  const CreatorLine({super.key, required this.creator, this.mine = false, this.size = 18});
+  const CreatorLine({super.key, required this.creator, this.avatarUrl = '', this.mine = false, this.size = 18});
 
   final String creator;
+
+  /// 만든 사람의 프로필 사진 (비우면 이름 첫 글자 동그라미)
+  final String avatarUrl;
   final bool mine;
   final double size;
 
@@ -129,7 +136,7 @@ class CreatorLine extends StatelessWidget {
       onTap: () => context.push('/creator/${Uri.encodeComponent(creator)}'),
       child: Row(
         children: [
-          CreatorAvatar(name: creator, size: size),
+          CreatorAvatar(name: creator, avatarUrl: avatarUrl, size: size),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -145,11 +152,13 @@ class CreatorLine extends StatelessWidget {
   }
 }
 
-/// 제작자 동그라미 (사진 대신 이름 첫 글자, 색은 이름으로 정해짐)
+/// 제작자 동그라미: 그 사람이 설정에서 정한 프로필 사진.
+/// 사진이 없으면 이름 첫 글자 (색은 이름으로 정해짐)
 class CreatorAvatar extends StatelessWidget {
-  const CreatorAvatar({super.key, required this.name, this.size = 18});
+  const CreatorAvatar({super.key, required this.name, this.avatarUrl = '', this.size = 18});
 
   final String name;
+  final String avatarUrl;
   final double size;
 
   static const _colors = [
@@ -164,6 +173,10 @@ class CreatorAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _colors[name.codeUnits.fold(0, (a, b) => a + b) % _colors.length];
+    final photo = CharacterImage.providerFor(avatarUrl);
+    if (photo != null) {
+      return CircleAvatar(radius: size / 2, backgroundColor: color, backgroundImage: photo);
+    }
     return Container(
       width: size,
       height: size,

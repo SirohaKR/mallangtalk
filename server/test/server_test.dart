@@ -225,6 +225,34 @@ USE_SERVER_AI_KEYS=true
       expect(((await call('GET', '/api/my/characters', token: a)).$2['characters'] as List), isEmpty);
     });
 
+    test('내 프로필 사진·소개를 바꾸면 사진은 DB로 옮겨지고, 내가 만든 말랑이의 제작자 프로필이 따라감', () async {
+      final a = (await call('POST', '/api/auth/signup', body: {'username': 'maker', 'password': 'mallang123'})).$2['token'] as String;
+      final b = (await call('POST', '/api/auth/signup', body: {'username': 'player', 'password': 'mallang123'})).$2['token'] as String;
+      await call('PUT', '/api/characters/char_1', body: {'bundle': bundle('char_1')}, token: a);
+
+      expect((await call('PUT', '/api/my/profile', body: {'intro': '안녕'})).$1, 401);
+      final photo = 'data:image/png;base64,${base64Encode([7, 7])}';
+      final (status, body) = await call('PUT', '/api/my/profile',
+          body: {'nickname': '쨋뀨', 'avatar_url': photo, 'intro': '말랑이 만드는 사람'}, token: a);
+      expect(status, 200);
+      final me = body['user'] as Map;
+      expect(me['nickname'], '쨋뀨');
+      expect(me['avatar_url'], startsWith('/api/images/'));
+      expect(me['intro'], '말랑이 만드는 사람');
+
+      // 다른 사람이 보는 목록에도 같은 사진·소개가 실려 옴
+      final item = ((await call('GET', '/api/characters', token: b)).$2['characters'] as List).single as Map;
+      expect(item['creator'], '쨋뀨');
+      expect(item['creator_avatar'], me['avatar_url']);
+      expect(item['creator_intro'], '말랑이 만드는 사람');
+
+      // 안 보낸 값은 그대로
+      final kept = (await call('PUT', '/api/my/profile', body: {'intro': '이사했어요'}, token: a)).$2['user'] as Map;
+      expect(kept['avatar_url'], me['avatar_url']);
+      expect(kept['nickname'], '쨋뀨');
+      expect(kept['intro'], '이사했어요');
+    });
+
     test('친구 추가 수: 한 사람은 한 번만 세고, 만든 사람 자신은 안 셈. 목록에 만든 날과 같이 나옴', () async {
       final a = (await call('POST', '/api/auth/signup', body: {'username': 'maker', 'password': 'mallang123'})).$2['token'] as String;
       final b = (await call('POST', '/api/auth/signup', body: {'username': 'player', 'password': 'mallang123'})).$2['token'] as String;

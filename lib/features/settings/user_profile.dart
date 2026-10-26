@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/storage/local_store.dart';
+import '../auth/auth_state.dart';
+import '../library/character_library.dart';
 
 /// 설정에서 정하는 내 기본 프로필
 class UserProfile {
@@ -41,6 +43,16 @@ class UserProfileNotifier extends Notifier<UserProfile> {
       if (state.avatarUrl.isNotEmpty) 'avatar_url': state.avatarUrl,
       if (state.persona.isNotEmpty) 'persona': state.persona,
     });
+    // 로그인했다면 다른 사람이 보는 제작자 프로필도 같은 사진·별명·소개로 맞춰요.
+    // (서버가 꺼져 있어도 이 기기 프로필은 저장된 채로 둬요)
+    try {
+      await ref.read(authProvider.notifier).pushProfile(
+            nickname: state.nickname.isEmpty ? null : state.nickname,
+            avatarUrl: state.avatarUrl,
+            intro: state.intro,
+          );
+      ref.invalidate(galleryProvider);
+    } catch (_) {}
   }
 
   /// 기본 페르소나만 바꾸기

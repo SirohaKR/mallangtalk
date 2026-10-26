@@ -62,6 +62,16 @@ class AuthNotifier extends Notifier<AuthState> {
     state = const AuthState();
   }
 
+  /// 내 프로필(별명·사진·소개)을 서버에도 올려서 다른 사람이 보는 제작자 프로필이 따라가게 해요.
+  /// 로그인 전이거나 서버가 없으면 아무것도 하지 않아요.
+  Future<void> pushProfile({String? nickname, String? avatarUrl, String? intro}) async {
+    final api = ref.read(accountApiProvider);
+    final token = state.token;
+    if (api == null || token == null) return;
+    final user = await api.updateProfile(nickname: nickname, avatarUrl: avatarUrl, intro: intro);
+    await _save(token, user);
+  }
+
   Future<void> _save(String token, AccountUser user) async {
     await ref.read(localStoreProvider).saveAuth(token, jsonEncode(user.toJson()));
     state = AuthState(token: token, user: user);

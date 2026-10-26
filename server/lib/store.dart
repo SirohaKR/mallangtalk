@@ -11,9 +11,19 @@ class UserRecord {
   final int id;
   final String username;
   final String nickname;
-  const UserRecord(this.id, this.username, this.nickname);
+  /// 제작자 프로필 사진 (/api/images/… 주소, 안 올렸으면 빈 글자)
+  final String avatarUrl;
+  /// 제작자 한줄 소개
+  final String intro;
+  const UserRecord(this.id, this.username, this.nickname, {this.avatarUrl = '', this.intro = ''});
 
-  Map<String, dynamic> toJson() => {'id': id, 'username': username, 'nickname': nickname};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'username': username,
+        'nickname': nickname,
+        'avatar_url': avatarUrl,
+        'intro': intro,
+      };
 }
 
 /// 서버에 저장된 캐릭터 하나 (bundle은 앱의 캐릭터 파일 JSON 그대로)
@@ -21,6 +31,9 @@ class CharacterRecord {
   final String id;
   final int ownerId;
   final String ownerNickname;
+  /// 제작자 프로필 사진·한줄 소개 (말랑이 찾기 카드와 제작자 프로필에 보임)
+  final String ownerAvatar;
+  final String ownerIntro;
   final bool published;
   final DateTime createdAt;
 
@@ -29,7 +42,7 @@ class CharacterRecord {
   final String bundleJson;
   final DateTime updatedAt;
   const CharacterRecord(this.id, this.ownerId, this.ownerNickname, this.published, this.bundleJson, this.updatedAt,
-      {DateTime? createdAt, this.friendCount = 0})
+      {DateTime? createdAt, this.friendCount = 0, this.ownerAvatar = '', this.ownerIntro = ''})
       : createdAt = createdAt ?? updatedAt;
 }
 
@@ -97,6 +110,14 @@ class Store {
       );
       CREATE INDEX IF NOT EXISTS character_friends_character ON character_friends(character_id);
     ''');
+    // 예전에 만든 DB에도 제작자 프로필 칸을 더해 둠
+    final userColumns = {for (final row in db.select('PRAGMA table_info(users)')) row['name'] as String};
+    if (!userColumns.contains('avatar_url')) {
+      db.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+    }
+    if (!userColumns.contains('intro')) {
+      db.execute("ALTER TABLE users ADD COLUMN intro TEXT NOT NULL DEFAULT ''");
+    }
     return Store._(db);
   }
 
@@ -117,7 +138,9 @@ class Store {
 
   /// 아이디·비밀번호가 맞으면 유저
   UserRecord? checkPassword(String username, String password) {
-    final rows = _db.select('SELECT id, username, nickname, password_hash, salt FROM users WHERE username = ?', [username]);
+    final rows = _db.select(
+        'SELECT id, username, nickname, avatar_url, intro, password_hash, salt FROM users WHERE username = ?',
+        [username]);
     if (rows.isEmpty) {
       _hashPassword(password, 'no-such-user'); // 없는 아이디도 같은 시간이 걸리게
       return null;
@@ -125,7 +148,7 @@ class Store {
     final row = rows.first;
     final expected = row['password_hash'] as String;
     if (!_constantTimeEquals(_hashPassword(password, row['salt'] as String), expected)) return null;
-    return UserRecord(row['id'] as int, row['username'] as String, row['nickname'] as String);
+    return _userFrom(row);
   }
 
   // ───────────── 로그인 표 ─────────────
@@ -140,7 +163,8 @@ class Store {
 
   UserRecord? userForToken(String token) {
     final rows = _db.select('''
-      SELECT u.id, u.username, u.nickname, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id
+      SELECT u.id, u.username, u.nickname, u.avatar_url, u.intro, s.expires_at
+      FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?''', [_sha(token)]);
     if (rows.isEmpty) return null;
     final row = rows.first;
@@ -148,7 +172,7 @@ class Store {
       deleteSession(token);
       return null;
     }
-    return UserRecord(row['id'] as int, row['username'] as String, row['nickname'] as String);
+    return _userFrom(row);
   }
 
   void deleteSession(String token) => _db.execute('DELETE FROM sessions WHERE token_hash = ?', [_sha(token)]);
@@ -157,21 +181,21 @@ class Store {
 
   CharacterRecord? character(String id) {
     final rows = _db.select('''
-      SELECT c.*, u.nickname, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id WHERE c.id = ?''', [id]);
+      SELECT c.*, u.nickname, u.avatar_url, u.intro, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id WHERE c.id = ?''', [id]);
     return rows.isEmpty ? null : _characterFrom(rows.first);
   }
 
   /// 공개된 캐릭터 (최근에 고친 순)
   List<CharacterRecord> publishedCharacters() => [
         for (final row in _db.select('''
-          SELECT c.*, u.nickname, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id
+          SELECT c.*, u.nickname, u.avatar_url, u.intro, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id
           WHERE c.published = 1 ORDER BY c.updated_at DESC'''))
           _characterFrom(row),
       ];
 
   List<CharacterRecord> charactersOf(int ownerId) => [
         for (final row in _db.select('''
-          SELECT c.*, u.nickname, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id
+          SELECT c.*, u.nickname, u.avatar_url, u.intro, (SELECT COUNT(*) FROM character_friends f WHERE f.character_id = c.id) AS friends FROM characters c JOIN users u ON u.id = c.owner_id
           WHERE c.owner_id = ? ORDER BY c.updated_at DESC''', [ownerId]))
           _characterFrom(row),
       ];
@@ -223,7 +247,26 @@ class Store {
         DateTime.parse(row['updated_at'] as String),
         createdAt: DateTime.parse(row['created_at'] as String),
         friendCount: row['friends'] as int? ?? 0,
+        ownerAvatar: row['avatar_url'] as String? ?? '',
+        ownerIntro: row['intro'] as String? ?? '',
       );
+
+  UserRecord _userFrom(Row row) => UserRecord(
+        row['id'] as int,
+        row['username'] as String,
+        row['nickname'] as String,
+        avatarUrl: row['avatar_url'] as String? ?? '',
+        intro: row['intro'] as String? ?? '',
+      );
+
+  /// 제작자 프로필 바꾸기 (준 값만). 사진은 이미 /api/images/… 주소로 바꿔 둔 것
+  UserRecord? updateProfile(int userId, {String? nickname, String? avatarUrl, String? intro}) {
+    if (nickname != null) _db.execute('UPDATE users SET nickname = ? WHERE id = ?', [nickname, userId]);
+    if (avatarUrl != null) _db.execute('UPDATE users SET avatar_url = ? WHERE id = ?', [avatarUrl, userId]);
+    if (intro != null) _db.execute('UPDATE users SET intro = ? WHERE id = ?', [intro, userId]);
+    final rows = _db.select('SELECT id, username, nickname, avatar_url, intro FROM users WHERE id = ?', [userId]);
+    return rows.isEmpty ? null : _userFrom(rows.first);
+  }
 
   // ───────────── 사진 ─────────────
 
