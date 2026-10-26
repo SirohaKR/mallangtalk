@@ -223,6 +223,25 @@ void main() {
       expect(c.copyWith(gender: '').aiCharacterSheet, isNot(contains('성별')));
     });
 
+    test('공략 후 이야기·이어지는 대화도 초안을 거쳐 그대로 저장됨', () {
+      final draft = ScenarioDraft.fromBundle(loadSampleBundle());
+      final rain = draft.events.firstWhere((e) => e.id == 'daily_rain');
+      rain.follows = 'evt_dubu_missing';
+      final dream = draft.events.firstWhere((e) => e.id == 'daily_weird_dream');
+      dream.kind = DraftKind.afterEnding;
+      dream.follows = 'evt_dubu_missing'; // 공략 후 이야기도 이어 붙일 수 있음
+      expect(draft.problems(), isEmpty);
+      final bundle = ScenarioBundle.fromJson(jsonDecode(jsonEncode(draft.toBundle().toJson())) as Map<String, dynamic>);
+      final events = {for (final e in bundle.events) e.id: e};
+      expect(events['daily_rain']!.followsEventId, 'evt_dubu_missing');
+      expect(events['daily_weird_dream']!.isAfterEnding, isTrue);
+      expect(events['daily_weird_dream']!.stageLabel, isNull);
+      expect(events['daily_weird_dream']!.chapterOrder, greaterThan(events['evt_ending_confession']!.chapterOrder));
+      final back = ScenarioDraft.fromBundle(bundle);
+      expect(back.events.firstWhere((e) => e.id == 'daily_weird_dream').kind, DraftKind.afterEnding);
+      expect(back.events.firstWhere((e) => e.id == 'daily_rain').follows, 'evt_dubu_missing');
+    });
+
     test('AI에게 넘기는 설정에는 세계관·비밀·유저 설정까지 들어감', () {
       final sheet = loadSampleBundle().character.aiCharacterSheet;
       expect(sheet, contains('새벽녘 라디오'));

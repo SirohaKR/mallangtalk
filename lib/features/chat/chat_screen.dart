@@ -366,11 +366,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (!free && chatState.progress != StoryProgress.playing)
+                    if (!free &&
+                        chatState.progress != StoryProgress.playing &&
+                        !chatState.isReplaying &&
+                        chatState.currentChoices.isEmpty &&
+                        !chatState.isCharacterTyping)
                       _RunEndPanel(
                         progress: chatState.progress,
-                        collected: chatState.unlockedCutsceneEventIds.length,
-                        missed: notifier.missedCutsceneCount,
+                        endingTitle: bundle?.events.where((e) => e.isEnding).firstOrNull?.title,
+                        received: (bundle?.albumPhotos.length ?? 0) - notifier.missedPhotoCount,
+                        totalPhotos: bundle?.albumPhotos.length ?? 0,
+                        replayable: notifier.replayableEvents,
+                        accent: theme.accent,
+                        onReplay: notifier.replayEvent,
                         onRestart: notifier.restart,
                       ),
                     if (chatState.currentChoices.isNotEmpty) ...[
@@ -388,6 +396,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
+                                // 예전 회차에 한 번도 안 고른 선택지 (공략을 끝낸 뒤부터 보임)
+                                if (chatState.sparkleChoiceIds.contains(choice.id)) ...[
+                                  Icon(Icons.auto_awesome_rounded,
+                                      key: ValueKey('choice_new_${choice.id}'), size: 16, color: const Color(0xFFF2B13C)),
+                                  const SizedBox(width: 6),
+                                ],
                                 if (choice.userBubbles
                                     .any((b) => b.hasPhoto)) ...[
                                   const Icon(Icons.photo_camera_outlined,
@@ -723,22 +737,71 @@ class _SystemNoticeRow extends StatelessWidget {
 /// 한 회차가 끝났을 때 하단에 뜨는 결과 패널 (공략 완료 / 놓친 컷씬 / 진행 막힘)
 class _RunEndPanel extends StatelessWidget {
   final StoryProgress progress;
-  final int collected;
-  final int missed;
+  final String? endingTitle;
+  final int received;
+  final int totalPhotos;
+  final List<ReplayableEvent> replayable;
+  final Color accent;
+  final ValueChanged<String> onReplay;
   final VoidCallback onRestart;
 
   const _RunEndPanel({
     required this.progress,
-    required this.collected,
-    required this.missed,
+    required this.endingTitle,
+    required this.received,
+    required this.totalPhotos,
+    required this.replayable,
+    required this.accent,
+    required this.onReplay,
     required this.onRestart,
   });
 
+  /// 안 본 갈래가 남은 대화 고르기
+  void _pickReplay(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.surfaceWhite,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            children: [
+              const Text('안 본 갈래 다시 보기', style: AppTextStyles.appBarTitle),
+              const SizedBox(height: 4),
+              const Text('고른 대화를 처음부터 다시 봐요. 안 고른 선택지는 ✨로 보이고, 끝나면 진행은 그대로예요.',
+                  style: AppTextStyles.systemNotice),
+              const SizedBox(height: 10),
+              for (final r in replayable)
+                ListTile(
+                  key: ValueKey('replay_${r.event.id}'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.auto_awesome_rounded, color: accent),
+                  title: Text(r.event.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('안 고른 선택지 ${r.unseenChoices}개', style: AppTextStyles.messageTime),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    onReplay(r.event.id);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cleared = progress == StoryProgress.cleared;
     final message = switch (progress) {
-      StoryProgress.cleared => '공략 완료! 모은 장면 $collected개',
-      StoryProgress.missedCutscenes => '다른 선택을 하면 남은 장면 $missed개를 볼 수 있어요',
+      StoryProgress.cleared =>
+        '${endingTitle == null || endingTitle!.isEmpty ? '공략 완료' : '공략 완료 · $endingTitle'}'
+            '${totalPhotos > 0 ? '\n받은 사진 $received / $totalPhotos장' : ''}',
       StoryProgress.stuck => '다른 선택을 해 보면 이야기가 이어질지도 몰라요',
       StoryProgress.playing => '',
     };
@@ -753,10 +816,20 @@ class _RunEndPanel extends StatelessWidget {
             style: AppTextStyles.systemNotice,
           ),
           const SizedBox(height: 8),
+          if (cleared && replayable.isNotEmpty) ...[
+            OutlinedButton.icon(
+              key: const ValueKey('replay_button'),
+              style: OutlinedButton.styleFrom(foregroundColor: accent, side: BorderSide(color: accent)),
+              onPressed: () => _pickReplay(context),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: Text(received < totalPhotos ? '못 받은 사진 모으기 (안 본 갈래 다시 보기)' : '안 본 갈래 다시 보기'),
+            ),
+            const SizedBox(height: 6),
+          ],
           ElevatedButton.icon(
             onPressed: onRestart,
             icon: const Icon(Icons.replay_rounded, size: 18),
-            label: const Text('처음부터 다시 하기'),
+            label: Text(cleared ? '처음부터 다시 하기 (안 본 선택지는 ✨)' : '처음부터 다시 하기'),
           ),
         ],
       ),
