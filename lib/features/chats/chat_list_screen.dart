@@ -27,7 +27,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   Widget build(BuildContext context) {
     final rooms = ref.watch(chatRoomsProvider);
     final isSplitDesktop = MediaQuery.sizeOf(context).width >= 860 && rooms.isNotEmpty;
-    final activeRoomId = rooms.contains(_selectedRoomId) ? _selectedRoomId : rooms.firstOrNull;
+    // 사용자가 직접 누른 방만 우측에 열어, 채팅 탭에 들어온 것만으로 안 읽음 배지가 사라지지 않게 함
+    final activeRoomId = rooms.contains(_selectedRoomId) ? _selectedRoomId : null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('채팅')),
@@ -54,7 +55,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                     ],
                   ),
                 )
-              : isSplitDesktop && activeRoomId != null
+              : isSplitDesktop
                   ? Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       child: Row(
@@ -104,12 +105,24 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                                 border: Border.all(color: AppColors.borderLight),
                               ),
                               clipBehavior: Clip.antiAlias,
-                              child: ChatScreen(
-                                key: ValueKey('split_$activeRoomId'),
-                                roomId: activeRoomId,
-                                embedded: true,
-                                onSwitchRoom: (nextRoom) => setState(() => _selectedRoomId = nextRoom),
-                              ),
+                              child: activeRoomId != null
+                                  ? ChatScreen(
+                                      key: ValueKey('split_$activeRoomId'),
+                                      roomId: activeRoomId,
+                                      embedded: true,
+                                      onSwitchRoom: (nextRoom) => setState(() => _selectedRoomId = nextRoom),
+                                    )
+                                  : const Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.chat_bubble_outline_rounded, size: 44, color: AppColors.textMuted),
+                                          SizedBox(height: AppSpacing.sm),
+                                          Text('왼쪽 목록에서 대화방을 선택해 대화를 이어가 보세요',
+                                              style: AppTextStyles.systemNotice),
+                                        ],
+                                      ),
+                                    ),
                             ),
                           ),
                         ],

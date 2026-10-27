@@ -118,7 +118,119 @@ class Store {
     if (!userColumns.contains('intro')) {
       db.execute("ALTER TABLE users ADD COLUMN intro TEXT NOT NULL DEFAULT ''");
     }
+    _cleanupLeakedAccountStates(db);
     return Store._(db);
+  }
+
+  /// 같은 브라우저에서 계정을 바꿔 로그인했을 때 이전 계정의 진행 기록(run_*)이나
+  /// 캐릭터 목록(library_v1)이 다른 계정 user_state로 섞여 들어간 기록을 정리합니다.
+  static void _cleanupLeakedAccountStates(Database db) {
+    try {
+      final owners = <String, int>{
+        for (final r in db.select('SELECT id, owner_id FROM characters'))
+          r['id'] as String: r['owner_id'] as int,
+      };
+      final friends = <String>{
+        for (final r in db.select('SELECT user_id, character_id FROM character_friends'))
+          '${r['user_id']}:${r['character_id']}',
+      };
+
+      // 1. 첫 말풍선 ID가 다른 계정과 똑같은 진행 기록(run_*)은 이전 계정에서 복사된 것이므로 정리
+      final seenRunSignatures = <String, int>{}; // "$key|$firstMsgId" -> first user_id
+      final leakedCharsByUser = <int, Set<String>>{};
+      final runRows = db.select(
+        "SELECT user_id, key, value FROM user_state WHERE key LIKE 'run_%' AND value IS NOT NULL ORDER BY user_id ASC",
+      );
+      for (final row in runRows) {
+        final userId = row['user_id'] as int;
+        final key = row['key'] as String;
+        final rawValue = row['value'] as String?;
+        if (rawValue == null) continue;
+        try {
+          final decoded = jsonDecode(rawValue);
+          final runMap = decoded is String ? jsonDecode(decoded) as Map : decoded as Map;
+          final msgs = runMap['messages'] as List? ?? const [];
+          final firstId = msgs.isNotEmpty ? (msgs.first as Map?)?['id'] as String? : null;
+          final rawCharId = key.substring(4);
+          final charId = rawCharId.endsWith('#free')
+              ? rawCharId.substring(0, rawCharId.length - 5)
+              : rawCharId;
+          final ownerId = owners[charId];
+
+          if (firstId != null && firstId.isNotEmpty) {
+            final sig = '$key|$firstId';
+            final prevOwner = seenRunSignatures[sig];
+            if (prevOwner != null && prevOwner != userId) {
+              (leakedCharsByUser[userId] ??= {}).add(charId);
+              continue;
+            }
+            seenRunSignatures[sig] = userId;
+          }
+          // 제작자도 아니고 친구 추가한 적도 없는 캐릭터의 진행 기록이면 정리
+          if (ownerId != null && ownerId != userId && !friends.contains('$userId:$charId')) {
+            (leakedCharsByUser[userId] ??= {}).add(charId);
+          }
+        } catch (_) {}
+      }
+
+      for (final MapEntry(key: userId, value: charIds) in leakedCharsByUser.entries) {
+        for (final charId in charIds) {
+          for (final prefix in [
+            'run_',
+            'album_',
+            'photos_',
+            'chosen_',
+            'svc_',
+            'specials_',
+            'nickname_',
+            'persona_',
+            'seen_',
+            'freetalk_',
+          ]) {
+            db.execute('DELETE FROM user_state WHERE user_id = ? AND key = ?', [userId, '$prefix$charId']);
+          }
+          db.execute('DELETE FROM user_state WHERE user_id = ? AND key = ?', [userId, 'run_$charId#free']);
+        }
+      }
+
+      // 2. library_v1에서 남이 만든 캐릭터가 created로 잘못 들어갔거나 친구 추가 없이 섞여 들어간 항목 정리
+      final libRows = db.select("SELECT user_id, value FROM user_state WHERE key = 'library_v1' AND value IS NOT NULL");
+      for (final row in libRows) {
+        final userId = row['user_id'] as int;
+        final rawValue = row['value'] as String?;
+        if (rawValue == null) continue;
+        try {
+          final decoded = jsonDecode(rawValue);
+          if (decoded is! String) continue;
+          final list = jsonDecode(decoded) as List;
+          var modified = false;
+          final cleaned = <Map<String, dynamic>>[];
+          for (final item in list) {
+            if (item is! Map) continue;
+            final entry = Map<String, dynamic>.of(item);
+            final charId = entry['id'] as String? ?? '';
+            final ownerId = owners[charId];
+            if (ownerId != null && ownerId != userId) {
+              if (!friends.contains('$userId:$charId')) {
+                modified = true;
+                continue;
+              }
+              if (entry['source'] == 'created') {
+                entry['source'] = 'imported';
+                modified = true;
+              }
+            }
+            cleaned.add(entry);
+          }
+          if (modified) {
+            db.execute(
+              "UPDATE user_state SET value = ? WHERE user_id = ? AND key = 'library_v1'",
+              [jsonEncode(jsonEncode(cleaned)), userId],
+            );
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   void close() => _db.dispose();

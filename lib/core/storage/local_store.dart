@@ -16,12 +16,14 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences?>((ref) async
   }
 });
 
-final localStoreProvider = Provider<LocalStore>(
-  (ref) => LocalStore(
+final localStoreProvider = Provider<LocalStore>((ref) {
+  final store = LocalStore(
     ref.watch(sharedPreferencesProvider).requireValue,
     onSyncedWrite: ref.watch(syncOutboxProvider).mark,
-  ),
-);
+  );
+  ref.onDispose(store.dispose);
+  return store;
+});
 
 /// [초보자 노트] 기기 연동할 저장값이 바뀌면 여기에 모였다가, 잠깐 뒤 한꺼번에 서버로 올라가요.
 /// (로그인하기 전이나 서버 없이 열면 sender가 없어서 그냥 모으기만 함)
@@ -64,9 +66,17 @@ class SyncOutbox {
     if (_dirty.isNotEmpty) _schedule(delay);
   }
 
+  /// 다른 계정으로 바꿀 때 이전 계정의 대기 중이던 변경분을 비움
+  void clear() {
+    _timer?.cancel();
+    _timer = null;
+    _dirty.clear();
+  }
+
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _dirty.clear();
     sender = null;
   }
 }
@@ -97,6 +107,9 @@ class SavedRun {
   /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
   final int? resetAt;
 
+  /// 내가 대화방에서 마지막으로 읽은 메시지 개수 (새로고침·재실행 뒤에도 안 읽은 배지 수를 유지)
+  final int? seenMessageCount;
+
   const SavedRun({
     required this.affection,
     required this.flags,
@@ -108,6 +121,7 @@ class SavedRun {
     this.nextBubble = 0,
     this.memories = const [],
     this.resetAt,
+    this.seenMessageCount,
   });
 
   Map<String, dynamic> toJson() => {
@@ -119,6 +133,7 @@ class SavedRun {
         if (memories.isNotEmpty) 'memories': memories,
         if (nodeId != null) ...{'event_id': eventId, 'node_id': nodeId, 'next_bubble': nextBubble},
         if (resetAt != null) 'reset_at': resetAt,
+        if (seenMessageCount != null) 'seen_message_count': seenMessageCount,
       };
 
   factory SavedRun.fromJson(Map<String, dynamic> json) {
@@ -138,6 +153,7 @@ class SavedRun {
       nextBubble: json['next_bubble'] as int? ?? 0,
       memories: [for (final m in json['memories'] as List? ?? const []) '$m'],
       resetAt: (json['reset_at'] as num?)?.toInt(),
+      seenMessageCount: (json['seen_message_count'] as num?)?.toInt(),
     );
   }
 }
@@ -150,6 +166,10 @@ class LocalStore {
 
   final SharedPreferences? _prefs;
   final Map<String, Object> _memory = {};
+  bool _disposed = false;
+
+  /// 이전 계정의 Notifier가 뒤늦게 저장소에 쓰지 못하게 막음
+  void dispose() => _disposed = true;
 
   /// 기기 연동할 값이 바뀌었을 때 알림 (서버로 올리려고)
   final void Function(String key)? onSyncedWrite;
@@ -171,13 +191,14 @@ class LocalStore {
   }
 
   Future<void> _write(String key, Object? value) async {
+    if (_disposed && isSyncedKey(key)) return;
     final synced = isSyncedKey(key);
     final prev = synced ? rawValue(key) : null;
     final unchanged = synced &&
         syncedAt(key) != null &&
         (prev == value || (prev != null && value != null && jsonEncode(prev) == jsonEncode(value)));
     await _put(key, value);
-    if (!synced || unchanged) return;
+    if (!synced || unchanged || _disposed) return;
     final times = _syncTimes;
     final now = DateTime.now().millisecondsSinceEpoch;
     final before = times[key] ?? 0;
@@ -268,11 +289,14 @@ class LocalStore {
 
   /// 이 기기가 마지막으로 연동한 계정 (다른 계정으로 바꿔 로그인하면 이전 계정 값을 지우려고)
   String? get syncUser => _getString('sync_user');
-  Future<void> saveSyncUser(String username) => _put('sync_user', username);
+  Future<void> saveSyncUser(String? username) => _put('sync_user', username);
 
-  /// 연동 대상 값을 이 기기에서 모두 지움 (다른 계정으로 로그인했을 때)
+  /// 연동 대상 값을 이 기기에서 모두 지움 (로그아웃하거나 다른 계정으로 로그인했을 때)
   Future<void> clearSynced() async {
-    for (final key in syncedKeys()) {
+    final keys = syncedKeys().toList();
+    _memory.removeWhere((k, _) => isSyncedKey(k));
+    _memory.remove(_syncTimesKey);
+    for (final key in keys) {
       await _put(key, null);
     }
     await _saveSyncTimes({});
@@ -423,6 +447,21 @@ class LocalStore {
     await _write('chosen_$characterId', null);
     await _write('svc_$characterId', null);
     await _write('tempo_$characterId', null);
+    await _write('nickname_$characterId', null);
+    await _write('persona_$characterId', null);
+    await _write('seen_$characterId', null);
+    await _write('freetalk_$characterId', null);
+    await _write('specials_$characterId', null);
+  }
+
+  /// 말랑이 찾기에서 새 친구로 추가할 때 혹시 남아 있던 이전 기록·별명을 깨끗이 비움 (대화 속도 설정만 유지)
+  Future<void> resetCharacterOnAdd(String characterId) async {
+    await clearRun(characterId);
+    await clearRun('$characterId#free');
+    await _write(_albumKey(characterId), null);
+    await _write('photos_$characterId', null);
+    await _write('chosen_$characterId', null);
+    await _write('svc_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
     await _write('seen_$characterId', null);

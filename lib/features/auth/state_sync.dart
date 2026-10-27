@@ -17,19 +17,25 @@ final stateSyncProvider = FutureProvider<void>((ref) async {
   final outbox = ref.watch(syncOutboxProvider);
   if (server == null || !server.accounts || token == null || username == null) return;
 
+  final store = ref.read(localStoreProvider);
+  if (store.syncUser != null && store.syncUser != username) {
+    // 다른 계정으로 바뀐 경우 이전 계정의 미전송 대기열을 먼저 비움
+    outbox.clear();
+  }
+
   final api = ref.read(apiFactoryProvider)(server.baseUrl, token);
-  // 먼저 아직 안 올라간 이 기기의 변경분을 보낸 뒤 서버와 비교
+  final changed = await syncState(api, store, username);
+
   Future<void> sender(Set<String> keys) => pushState(api, ref.read(localStoreProvider), keys);
   outbox.sender = sender;
   ref.onDispose(() {
     if (outbox.sender == sender) outbox.stop();
   });
-  await outbox.flush();
-
-  final changed = await syncState(api, ref.read(localStoreProvider), username);
-
   // 서버 값으로 바뀐 게 있으면 저장소를 읽는 화면·상태를 새로 읽게
-  if (changed) ref.invalidate(localStoreProvider);
+  if (changed) {
+    ref.invalidate(localStoreProvider);
+    invalidateUserStateProviders(ref);
+  }
   await outbox.flush();
 });
 

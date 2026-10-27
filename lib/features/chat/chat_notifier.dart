@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/claude_chat_client.dart';
 import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
+import '../auth/auth_state.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
@@ -217,6 +218,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
   int? _resetAt;
+  bool _disposed = false;
+  ScriptNodeModel? _currentNode;
+  int _currentNextBubble = 0;
 
   /// 이 대화방이 자유대화 방인지 (스토리 방과 따로, 호감도·이야기 없이 AI와만 대화)
   late bool _free;
@@ -235,44 +239,62 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   @override
   ChatRoomState build(String roomId) {
+    _disposed = false;
+    _currentNode = null;
+    _currentNextBubble = 0;
+    // 로그인 계정이 바뀌거나 로그아웃하면 대화방 상태도 즉시 폐기·초기화되어 이전 계정 데이터가 남지 않게 함
+    ref.watch(authProvider.select((a) => a.user?.username));
+    _store = ref.watch(localStoreProvider);
     _free = isFreeRoom(roomId);
     final characterId = _characterId = characterIdOfRoom(roomId);
     ref.onDispose(() {
+      _disposed = true;
       _userBurstReplyTimer?.cancel();
       _serviceTimer?.cancel();
-      _runId++; // 대화방이 닫히면(캐릭터 삭제 등) 돌던 연출을 멈춤
+      _runId++; // 대화방이 닫히면(캐릭터 삭제·로그아웃 등) 돌던 연출을 멈춤
     });
 
-    // 캐릭터 목록이 바뀔 때마다 대화가 처음부터 다시 시작되지 않도록 watch 대신 read
+    // 캐릭터 존재 여부만 감시하여, 로그아웃 중이거나 아직 목록이 안 불러와졌을 때 오류 없이 대기하다가 생기면 다시 그림
+    ref.watch(characterLibraryProvider.select((list) => list.any((e) => e.id == characterId)));
     final bundle = ref.read(characterBundleProvider(characterId));
     if (bundle == null) {
-      throw StateError('캐릭터를 찾을 수 없어요: $characterId');
+      _disposed = true;
+      return ChatRoomState(
+        character: CharacterModel(id: characterId, name: ''),
+        internalAffection: 0,
+        currentStepOrder: 0,
+        messages: const [],
+        currentChoices: const [],
+      );
     }
     _bundle = bundle;
-    _store = ref.watch(localStoreProvider);
     _service = !_free && bundle.character.isService;
     final album = _store.loadAlbum(characterId);
     if (_service) {
       // 서비스 말랑이: 정해진 때가 지났으면 그동안 온 톡을 쌓아 두고, 방이 살아 있는 동안 30초마다 확인
       final savedService = _store.loadRun(roomId);
+      final svcMsgs = savedService?.messages ?? const [];
+      final svcSeen = (savedService?.seenMessageCount ?? svcMsgs.length).clamp(0, svcMsgs.length);
       _serviceTimer?.cancel();
       _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) => _deliverService());
       Future.microtask(_deliverService);
       return _freshRunState(unlockedCutscenes: album).copyWith(
         isByokAiModeEnabled: true,
         internalAffection: 100,
-        messages: savedService?.messages ?? const [],
-        seenMessageCount: savedService?.messages.length ?? 0,
+        messages: svcMsgs,
+        seenMessageCount: svcSeen,
         memories: savedService?.memories ?? const [],
       );
     }
     if (_free) {
       // 자유대화 방: 이야기는 진행하지 않고, 지난 대화와 한 줄 기억만 이어서
       final savedFree = _store.loadRun(roomId);
+      final freeMsgs = savedFree?.messages ?? const [];
+      final freeSeen = (savedFree?.seenMessageCount ?? freeMsgs.length).clamp(0, freeMsgs.length);
       return _freshRunState(unlockedCutscenes: album).copyWith(
         isByokAiModeEnabled: true,
-        messages: savedFree?.messages ?? const [],
-        seenMessageCount: savedFree?.messages.length ?? 0,
+        messages: freeMsgs,
+        seenMessageCount: freeSeen,
         memories: savedFree?.memories ?? const [],
       );
     }
@@ -296,18 +318,21 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _resetAt = saved?.resetAt;
     // 저장된 진행 기록이 있으면 마지막으로 끝낸 이벤트 다음부터 이어서 진행
     if (saved != null) {
+      final savedSeen = (saved.seenMessageCount ?? saved.messages.length).clamp(0, saved.messages.length);
       final restored = _freshRunState(unlockedCutscenes: album).copyWith(
         internalAffection: saved.affection,
         acquiredFlags: saved.flags,
         completedEventIds: saved.completedEventIds,
         messages: saved.messages,
         progress: saved.cleared ? StoryProgress.cleared : null,
-        seenMessageCount: saved.messages.length,
+        seenMessageCount: savedSeen,
         memories: saved.memories,
       );
       final runId = _runId;
       final node = saved.nodeId != null ? _bundle.nodes[saved.nodeId] : null;
       if (node != null && _eventById(node.eventId) != null) {
+        _currentNode = node;
+        _currentNextBubble = saved.nextBubble;
         // 이벤트 중간에 나갔으면 나가기 전 그 자리부터 (치던 말풍선 다음, 또는 선택지)
         Future.microtask(() => _playNode(node, runId, from: saved.nextBubble, resuming: true));
         return restored.copyWith(currentEventId: node.eventId, currentStepOrder: node.stepOrder);
@@ -354,6 +379,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       ];
 
   void _markSeen(ScenarioEventModel event) {
+    if (_disposed) return;
     if (!(event.isAffectionEvent || event.isDaily || event.isEnding || event.isAfterEnding)) return;
     if (!_seenScripts.add(event.id)) return;
     _store.saveSeenEvents(_bundle.character.id, _seenScripts.toList());
@@ -414,11 +440,20 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 진행 기록을 브라우저에 저장. 이벤트 경계마다, 그리고 이벤트 중간에는 말풍선마다
   /// [node]·[nextBubble]로 돌아올 자리를 함께 저장해서 나갔다 와도 그 자리부터 이어짐
-  void _saveRun({bool? cleared, ScriptNodeModel? node, int nextBubble = 0}) {
+  void _saveRun({bool? cleared, ScriptNodeModel? node, int nextBubble = 0, bool keepCurrentNode = false}) {
+    if (_disposed) return;
     cleared ??= state.progress == StoryProgress.cleared;
     // 다시 보기 중에는 원래 진행 상태로 저장 (나갔다 오면 다시 보기는 접힘)
     final snap = _replaySnapshot;
-    if (snap != null) node = null;
+    if (snap != null) {
+      node = null;
+    } else if (keepCurrentNode) {
+      node = _currentNode;
+      nextBubble = _currentNextBubble;
+    } else {
+      _currentNode = node;
+      _currentNextBubble = nextBubble;
+    }
     _store.saveRun(
       _roomId,
       SavedRun(
@@ -432,6 +467,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         nextBubble: nextBubble,
         memories: state.memories,
         resetAt: _resetAt,
+        seenMessageCount: state.seenMessageCount.clamp(0, state.messages.length),
       ),
     );
   }
@@ -583,6 +619,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   void _collectCutscene(ScenarioEventModel event) {
+    if (_disposed) return;
     if (state.unlockedCutsceneEventIds.contains(event.id)) return;
     state = state.copyWith(
       unlockedCutsceneEventIds: [...state.unlockedCutsceneEventIds, event.id],
@@ -593,6 +630,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 사진 말풍선·컷씬을 받으면 앨범에 넣음
   void _receivePhoto(String? label) {
+    if (_disposed) return;
     final key = label?.trim() ?? '';
     if (key.isEmpty || state.receivedPhotos.contains(key)) return;
     state = state.copyWith(receivedPhotos: [...state.receivedPhotos, key]);
@@ -942,10 +980,11 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     return true;
   }
 
-  /// 대화방을 보고 있을 때 호출 → 안 읽은 숫자 0
+  /// 대화방을 보고 있을 때 호출 → 안 읽은 숫자 0 (저장소에도 기록해 새로고침해도 유지)
   void markSeen() {
     if (state.seenMessageCount == state.messages.length) return;
     state = state.copyWith(seenMessageCount: state.messages.length);
+    _saveRun(keepCurrentNode: true);
   }
 
   /// 모든 내 안 읽음('1') 말풍선을 일괄 '읽음' 처리합니다.

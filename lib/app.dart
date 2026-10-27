@@ -89,7 +89,7 @@ class _BootGate extends ConsumerStatefulWidget {
 }
 
 class _BootGateState extends ConsumerState<_BootGate> with WidgetsBindingObserver {
-  bool _initialSynced = false;
+  String? _syncedUsername;
 
   @override
   void initState() {
@@ -113,7 +113,7 @@ class _BootGateState extends ConsumerState<_BootGate> with WidgetsBindingObserve
         state == AppLifecycleState.hidden) {
       // 화면을 벗어나거나 탭을 옮길 때 아직 안 보낸 변경분을 즉시 서버로 전송
       ref.read(syncOutboxProvider).flush();
-    } else if (state == AppLifecycleState.resumed && _initialSynced) {
+    } else if (state == AppLifecycleState.resumed && _syncedUsername == auth.user?.username) {
       // 다른 기기(폰 ↔ PC)에서 진행한 뒤 이 화면으로 돌아오면 서버와 다시 동기화
       ref.invalidate(stateSyncProvider);
     }
@@ -148,26 +148,35 @@ class _BootGateState extends ConsumerState<_BootGate> with WidgetsBindingObserve
         body: Center(child: CircularProgressIndicator()),
       );
     }
+    final auth = ref.watch(authProvider);
     if (server.valueOrNull?.accounts ?? false) {
-      if (!ref.watch(authProvider).isLoggedIn) {
-        _initialSynced = false;
+      if (!auth.isLoggedIn) {
+        _syncedUsername = null;
         // 로그인 화면의 입력칸이 쓸 Navigator(오버레이)를 따로 둠
         return Navigator(
           pages: const [MaterialPage(child: LoginScreen())],
           onDidRemovePage: (_) {},
         );
       }
+      final username = auth.user?.username;
       // 로그인하면 내 프로필·진행도·앨범을 서버와 맞춘 뒤에 화면을 띄움 (PC·폰 연동)
-      final bootSync = ref.watch(bootSyncProvider);
-      if (bootSync.isLoading && !_initialSynced) {
-        return const Scaffold(
-          backgroundColor: AppColors.chatRoomBackground,
-          body: Center(child: CircularProgressIndicator()),
-        );
+      final sync = ref.watch(stateSyncProvider);
+      ref.watch(bootSyncProvider);
+      if (sync.isLoading || sync.isRefreshing) {
+        if (_syncedUsername != username) {
+          return const Scaffold(
+            backgroundColor: AppColors.chatRoomBackground,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+      } else {
+        _syncedUsername = username;
       }
-      _initialSynced = true;
       ref.watch(librarySyncProvider); // 내 캐릭터를 서버와 맞춤
     }
-    return widget.child;
+    return KeyedSubtree(
+      key: ValueKey(auth.user?.username ?? '_guest_'),
+      child: widget.child,
+    );
   }
 }
