@@ -38,11 +38,19 @@ class EditCharacterPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bundle = ref.read(characterBundleProvider(characterId));
-    if (bundle == null) {
+    final entry = ref.watch(characterLibraryProvider.select((list) => list.where((e) => e.id == characterId).firstOrNull));
+    if (entry == null) {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text('캐릭터를 찾을 수 없어요')));
     }
-    return StudioScreen(initial: bundle);
+    final galleryItem = ref.watch(galleryProvider).valueOrNull?.where((g) => g.character.id == characterId).firstOrNull;
+    final isCreator = entry.source == CharacterSource.created && (galleryItem == null || galleryItem.mine);
+    if (!isCreator) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: Text('내가 만든 캐릭터만 고칠 수 있어요', style: AppTextStyles.systemNotice)),
+      );
+    }
+    return StudioScreen(initial: entry.bundle);
   }
 }
 
@@ -573,7 +581,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     final fill = _fillFields[_stepIds[_step]];
     final body = Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+        constraints: AppSpacing.pageConstraints(context, maxDesktop: 760),
         child: Column(
           children: [
             // 단계 이름 + 빈 칸 채우기 + 몇 번째 단계 + 8칸 막대

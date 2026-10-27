@@ -6,22 +6,34 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../chat/chat_notifier.dart';
+import '../chat/chat_screen.dart';
 import '../chat/start_chat.dart';
 import '../library/character_library.dart';
+import '../settings/user_profile.dart';
 
 /// [초보자 노트] '채팅' 탭: 대화 중인 캐릭터 목록. 마지막 말풍선과 안 읽은 톡 숫자를 카톡처럼 보여줍니다.
-class ChatListScreen extends ConsumerWidget {
+/// PC 넓은 화면(>=860px)에서는 좌측에 채팅방 목록, 우측에 선택한 대화방을 나란히 띄워 여백 없이 한눈에 보여줍니다.
+class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChatListScreen> createState() => _ChatListScreenState();
+}
+
+class _ChatListScreenState extends ConsumerState<ChatListScreen> {
+  String? _selectedRoomId;
+
+  @override
+  Widget build(BuildContext context) {
     final rooms = ref.watch(chatRoomsProvider);
+    final isSplitDesktop = MediaQuery.sizeOf(context).width >= 860 && rooms.isNotEmpty;
+    final activeRoomId = rooms.contains(_selectedRoomId) ? _selectedRoomId : rooms.firstOrNull;
 
     return Scaffold(
       appBar: AppBar(title: const Text('채팅')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context),
           child: rooms.isEmpty
               ? Padding(
                   padding: AppSpacing.screenPadding,
@@ -42,11 +54,72 @@ class ChatListScreen extends ConsumerWidget {
                     ],
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                  itemCount: rooms.length,
-                  itemBuilder: (context, index) => _ChatRoomTile(roomId: rooms[index]),
-                ),
+              : isSplitDesktop && activeRoomId != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: 360,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceWhite,
+                                borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                                border: Border.all(color: AppColors.borderLight),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                                itemCount: rooms.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
+                                itemBuilder: (context, index) {
+                                  final rId = rooms[index];
+                                  return _ChatRoomTile(
+                                    roomId: rId,
+                                    selected: rId == activeRoomId,
+                                    onSelectInSplit: () {
+                                      final charId = characterIdOfRoom(rId);
+                                      final room = ref.read(chatRoomProvider(rId));
+                                      if (ref.read(chatPrefsProvider(charId)).nickname == null) {
+                                        openChat(context, room.character, roomId: rId);
+                                        return;
+                                      }
+                                      if (!isFreeRoom(rId)) {
+                                        ref.read(chatRoomProvider(rId).notifier).begin();
+                                      }
+                                      setState(() => _selectedRoomId = rId);
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceWhite,
+                                borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                                border: Border.all(color: AppColors.borderLight),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: ChatScreen(
+                                key: ValueKey('split_$activeRoomId'),
+                                roomId: activeRoomId,
+                                embedded: true,
+                                onSwitchRoom: (nextRoom) => setState(() => _selectedRoomId = nextRoom),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                      itemCount: rooms.length,
+                      itemBuilder: (context, index) => _ChatRoomTile(roomId: rooms[index]),
+                    ),
         ),
       ),
     );
@@ -54,10 +127,16 @@ class ChatListScreen extends ConsumerWidget {
 }
 
 class _ChatRoomTile extends ConsumerWidget {
-  const _ChatRoomTile({required this.roomId});
+  const _ChatRoomTile({
+    required this.roomId,
+    this.selected = false,
+    this.onSelectInSplit,
+  });
 
   /// 스토리 방은 캐릭터 ID, 자유대화 방은 ID#free
   final String roomId;
+  final bool selected;
+  final VoidCallback? onSelectInSplit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -75,6 +154,8 @@ class _ChatRoomTile extends ConsumerWidget {
                 : last.text;
 
     return ListTile(
+      selected: selected,
+      selectedTileColor: AppColors.myBubble.withValues(alpha: 0.45),
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
       leading: CharacterAvatar(character: room.character, radius: 24),
       title: Row(
@@ -145,7 +226,7 @@ class _ChatRoomTile extends ConsumerWidget {
             ),
         ],
       ),
-      onTap: () => openChat(context, room.character, roomId: roomId),
+      onTap: onSelectInSplit ?? () => openChat(context, room.character, roomId: roomId),
     );
   }
 

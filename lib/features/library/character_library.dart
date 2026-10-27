@@ -27,7 +27,7 @@ final builtinBundlesProvider = FutureProvider<List<ScenarioBundle>>((ref) async 
 /// 캐릭터를 어디서 가져왔는지
 enum CharacterSource {
   builtin, // 앱 기본 캐릭터
-  imported, // 파일로 받아온 캐릭터
+  imported, // 파일로 받아온 캐릭터 / 말랑이 찾기에서 추가한 다른 사람 캐릭터
   created, // 내가 만든 캐릭터 (엑셀 대본 또는 AI 생성)
 }
 
@@ -143,6 +143,13 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
       final saved = await api.saveCharacter(bundle, published: !bundle.character.unlisted);
       // 서버가 사진을 주소로 바꾼 파일로 교체 → 브라우저 저장소에는 사진이 안 남음
       if (byId(saved.character.id) != null) await _putLocal(saved, CharacterSource.created);
+    } on ApiException catch (e) {
+      // 다른 사람이 만든 캐릭터면 받아온 캐릭터(imported)로 바로잡음
+      if (e.message.contains('다른 사람이 만든')) {
+        if (byId(bundle.character.id) != null) await _putLocal(bundle, CharacterSource.imported);
+      } else {
+        debugPrint('캐릭터 서버 저장 실패 (다음 로그인 때 다시 올림): $e');
+      }
     } catch (e) {
       debugPrint('캐릭터 서버 저장 실패 (다음 로그인 때 다시 올림): $e');
     }
@@ -162,6 +169,11 @@ class CharacterLibraryNotifier extends Notifier<List<LibraryEntry>> {
 
   Future<void> _putLocal(ScenarioBundle bundle, CharacterSource source) async {
     final existing = byId(bundle.character.id);
+    if (existing != null &&
+        existing.source == source &&
+        jsonEncode(existing.bundle.toJson()) == jsonEncode(bundle.toJson())) {
+      return;
+    }
     final entry = LibraryEntry(
       bundle: bundle,
       source: source,

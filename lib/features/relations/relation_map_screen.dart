@@ -58,7 +58,7 @@ class RelationMapScreen extends ConsumerWidget {
             ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context, maxDesktop: 760),
           child: mine.length < 2
               ? const Padding(
                   padding: AppSpacing.screenPadding,

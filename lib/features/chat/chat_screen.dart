@@ -47,10 +47,21 @@ class ChatRoomPage extends ConsumerWidget {
 }
 
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.roomId});
+  const ChatScreen({
+    super.key,
+    required this.roomId,
+    this.embedded = false,
+    this.onSwitchRoom,
+  });
 
   /// 스토리 방은 캐릭터 ID, 자유대화 방은 캐릭터 ID#free
   final String roomId;
+
+  /// PC 채팅 탭 우측 분할 화면에 내장되어 열렸는지 여부
+  final bool embedded;
+
+  /// 내장 모드에서 스토리 ↔ 자유대화 방 전환 시 호출
+  final ValueChanged<String>? onSwitchRoom;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -62,6 +73,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// 엔터로 보낸 뒤에도 입력창에 커서를 그대로 둬서 연달아 칠 수 있게 함
   final FocusNode _inputFocus = FocusNode();
+  double _lastBottomInset = 0;
 
   @override
   void initState() {
@@ -69,7 +81,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // 대화방에 들어오면 채팅방 목록 맨 위로 + 지금까지 온 톡은 읽음
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(chatRoomsProvider.notifier).open(widget.roomId);
+      if (!widget.embedded) {
+        ref.read(chatRoomsProvider.notifier).open(widget.roomId);
+      }
       final notifier = ref.read(chatRoomProvider(widget.roomId).notifier);
       notifier.markSeen();
       notifier.checkSpecialEvents(); // 이야기가 멈춰 있어도 특별한 시간이면 톡이 옴
@@ -115,6 +129,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surfaceWhite,
+      constraints: const BoxConstraints(maxWidth: 560),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -196,6 +211,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.canUseAi));
     final bundle = ref.watch(characterBundleProvider(id));
     final theme = ChatTheme.of(chatState.character);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    if (bottomInset > _lastBottomInset) {
+      _scrollToBottom();
+    }
+    _lastBottomInset = bottomInset;
 
     ref.listen<ChatRoomState>(chatRoomProvider(roomId), (prev, next) {
       if (prev?.messages.length != next.messages.length ||
@@ -211,21 +233,181 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     });
 
+    final chatColumn = Column(
+      children: [
+        // 1. 대화창 메시지 리스트
+        Expanded(
+          child: free && chatState.messages.isEmpty && !chatState.isCharacterTyping
+              ? _FreeRoomIntro(name: chatState.character.name, accent: theme.accent)
+              : ListView.builder(
+                  controller: _scrollController,
+                  reverse: true,
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+                  padding: AppSpacing.screenPadding,
+                  itemCount: chatState.messages.length +
+                      (chatState.isCharacterTyping ? 1 : 0),
+                  itemBuilder: (context, reversedIndex) {
+                    final typing = chatState.isCharacterTyping ? 1 : 0;
+                    if (reversedIndex == 0 && typing == 1) {
+                      return const _TypingIndicatorBubble();
+                    }
+                    final index = chatState.messages.length - 1 - (reversedIndex - typing);
+                    final msg = chatState.messages[index];
+                    if (msg.isSystem) {
+                      return _SystemNoticeRow(text: msg.text);
+                    }
+                    final image = bundle?.photoFor(msg.photoImage, msg.photoLabel);
+                    return _MessageBubbleRow(
+                      message: msg,
+                      theme: theme,
+                      photoUrl: image,
+                      maxBubbleWidth: screenWidth >= 720 ? 420 : 290,
+                      onPhotoTap: msg.hasPhoto
+                          ? () => _openPhotoViewer(msg, chatState, bundle, theme, notifier)
+                          : null,
+                    );
+                  },
+                ),
+        ),
+
+        // 2. 하단 선택지 패널 & 연속 전송 가능한 직접 입력바 + 카메라 버튼
+        Container(
+          padding: AppSpacing.screenPadding,
+          decoration: const BoxDecoration(
+            color: AppColors.surfaceWhite,
+            border: Border(top: BorderSide(color: AppColors.borderLight)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!free &&
+                  !service &&
+                  chatState.progress != StoryProgress.playing &&
+                  !chatState.isReplaying &&
+                  chatState.currentChoices.isEmpty &&
+                  !chatState.isCharacterTyping)
+                _RunEndPanel(
+                  progress: chatState.progress,
+                  endingTitle: bundle?.events.where((e) => e.isEnding).firstOrNull?.title,
+                  received: (bundle?.albumPhotos.length ?? 0) - notifier.missedPhotoCount,
+                  totalPhotos: bundle?.albumPhotos.length ?? 0,
+                  replayable: notifier.replayableEvents,
+                  accent: theme.accent,
+                  onReplay: notifier.replayEvent,
+                  onRestart: notifier.restart,
+                ),
+              if (chatState.currentChoices.isNotEmpty) ...[
+                for (final choice in chatState.currentChoices)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppSpacing.choiceRadius),
+                          side: BorderSide(color: theme.choiceBorder, width: 1.2),
+                        ),
+                      ),
+                      onPressed: () => notifier.selectChoice(choice),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // 예전 회차에 한 번도 안 고른 선택지 (공략을 끝낸 뒤부터 보임)
+                          if (chatState.sparkleChoiceIds.contains(choice.id)) ...[
+                            Icon(Icons.auto_awesome_rounded,
+                                key: ValueKey('choice_new_${choice.id}'), size: 16, color: const Color(0xFFF2B13C)),
+                            const SizedBox(width: 6),
+                          ],
+                          if (choice.userBubbles
+                              .any((b) => b.hasPhoto)) ...[
+                            const Icon(Icons.photo_camera_outlined,
+                                size: 17),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(child: Text(choice.buttonLabel)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+              if (chatState.isByokAiModeEnabled && chatState.canRetryFreeTalk)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: OutlinedButton.icon(
+                    onPressed: notifier.retryFreeTalk,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('다시 보내기'),
+                  ),
+                ),
+              if (chatState.isByokAiModeEnabled && !hasApiKey)
+                GestureDetector(
+                  onTap: () => showChatAiSheet(context, accent: theme.accent),
+                  child: const Padding(
+                    padding: EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      'AI 키를 넣으면 진짜 AI가 답해요. 눌러서 연결하기 →',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.systemNotice,
+                    ),
+                  ),
+                ),
+              // 서비스 말랑이: 지금 바로 새 문구 한 통
+              if (service && (chatState.character.service?.reroll ?? false))
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('service_reroll'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Color.lerp(theme.accent, AppColors.textPrimary, 0.3),
+                        side: BorderSide(color: theme.accent, width: 1.5),
+                        shape: const StadiumBorder(),
+                      ),
+                      onPressed: chatState.isCharacterTyping ? null : notifier.rerollService,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('한 번 더 뽑기'),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 4),
+              _InputBar(
+                // 스토리 방이거나 선택지 대사가 쳐지는 중이면 보이기만 하고 못 누름
+                enabled: chatState.isByokAiModeEnabled &&
+                    chatState.userDraft.isEmpty,
+                draft: chatState.userDraft,
+                controller: _inputController,
+                focusNode: _inputFocus,
+                autofocus: screenWidth >= AppSpacing.studioSplitBreakpoint,
+                onChanged: notifier.onUserTypingChanged,
+                onCamera: () => _showUserPhotoSenderSheet(notifier),
+                onSend: () => _send(notifier),
+                accent: theme.accent,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: theme.background,
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         // 대표색 윗줄
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
           child: Container(height: 3, color: theme.accent),
         ),
-        leading: IconButton(
-          tooltip: '채팅방 목록',
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/chats'),
-        ),
-        titleSpacing: 0,
+        leading: widget.embedded
+            ? null
+            : IconButton(
+                tooltip: '채팅방 목록',
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () =>
+                    context.canPop() ? context.pop() : context.go('/chats'),
+              ),
+        titleSpacing: widget.embedded ? AppSpacing.lg : 0,
         title: Row(
           children: [
             // 사진을 누르면 캐릭터 프로필
@@ -308,8 +490,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 case 'ai':
                   showChatAiSheet(context, accent: theme.accent);
                 case 'switch':
-                  // 스토리 방 ↔ 자유대화 방 (지금 방은 닫고 다른 방으로)
-                  context.pushReplacement(free ? '/chat/$id' : '/free/$id');
+                  final nextRoom = free ? id : freeRoomId(id);
+                  ref.read(chatRoomsProvider.notifier).open(nextRoom);
+                  if (widget.embedded && widget.onSwitchRoom != null) {
+                    widget.onSwitchRoom!(nextRoom);
+                  } else {
+                    // 스토리 방 ↔ 자유대화 방 (지금 방은 닫고 다른 방으로)
+                    context.pushReplacement(free ? '/chat/$id' : '/free/$id');
+                  }
                 case 'restart':
                   notifier.restart();
               }
@@ -329,164 +517,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              // 1. 대화창 메시지 리스트
-              Expanded(
-                child: free && chatState.messages.isEmpty && !chatState.isCharacterTyping
-                    ? _FreeRoomIntro(name: chatState.character.name, accent: theme.accent)
-                    : ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: AppSpacing.screenPadding,
-                  itemCount: chatState.messages.length +
-                      (chatState.isCharacterTyping ? 1 : 0),
-                  itemBuilder: (context, reversedIndex) {
-                    final typing = chatState.isCharacterTyping ? 1 : 0;
-                    if (reversedIndex == 0 && typing == 1) {
-                      return const _TypingIndicatorBubble();
-                    }
-                    final index = chatState.messages.length - 1 - (reversedIndex - typing);
-                    final msg = chatState.messages[index];
-                    if (msg.isSystem) {
-                      return _SystemNoticeRow(text: msg.text);
-                    }
-                    final image = bundle?.photoFor(msg.photoImage, msg.photoLabel);
-                    return _MessageBubbleRow(
-                      message: msg,
-                      theme: theme,
-                      photoUrl: image,
-                      onPhotoTap: msg.hasPhoto
-                          ? () => _openPhotoViewer(msg, chatState, bundle, theme, notifier)
-                          : null,
-                    );
-                  },
-                ),
-              ),
-
-              // 2. 하단 선택지 패널 & 연속 전송 가능한 직접 입력바 + 카메라 버튼
-              Container(
-                padding: AppSpacing.screenPadding,
-                decoration: const BoxDecoration(
-                  color: AppColors.surfaceWhite,
-                  border: Border(top: BorderSide(color: AppColors.borderLight)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!free &&
-                        !service &&
-                        chatState.progress != StoryProgress.playing &&
-                        !chatState.isReplaying &&
-                        chatState.currentChoices.isEmpty &&
-                        !chatState.isCharacterTyping)
-                      _RunEndPanel(
-                        progress: chatState.progress,
-                        endingTitle: bundle?.events.where((e) => e.isEnding).firstOrNull?.title,
-                        received: (bundle?.albumPhotos.length ?? 0) - notifier.missedPhotoCount,
-                        totalPhotos: bundle?.albumPhotos.length ?? 0,
-                        replayable: notifier.replayableEvents,
-                        accent: theme.accent,
-                        onReplay: notifier.replayEvent,
-                        onRestart: notifier.restart,
-                      ),
-                    if (chatState.currentChoices.isNotEmpty) ...[
-                      for (final choice in chatState.currentChoices)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppSpacing.choiceRadius),
-                                side: BorderSide(color: theme.choiceBorder, width: 1.2),
-                              ),
-                            ),
-                            onPressed: () => notifier.selectChoice(choice),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                // 예전 회차에 한 번도 안 고른 선택지 (공략을 끝낸 뒤부터 보임)
-                                if (chatState.sparkleChoiceIds.contains(choice.id)) ...[
-                                  Icon(Icons.auto_awesome_rounded,
-                                      key: ValueKey('choice_new_${choice.id}'), size: 16, color: const Color(0xFFF2B13C)),
-                                  const SizedBox(width: 6),
-                                ],
-                                if (choice.userBubbles
-                                    .any((b) => b.hasPhoto)) ...[
-                                  const Icon(Icons.photo_camera_outlined,
-                                      size: 17),
-                                  const SizedBox(width: 6),
-                                ],
-                                Flexible(child: Text(choice.buttonLabel)),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                    if (chatState.isByokAiModeEnabled && chatState.canRetryFreeTalk)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: OutlinedButton.icon(
-                          onPressed: notifier.retryFreeTalk,
-                          icon: const Icon(Icons.refresh_rounded, size: 18),
-                          label: const Text('다시 보내기'),
-                        ),
-                      ),
-                    if (chatState.isByokAiModeEnabled && !hasApiKey)
-                      GestureDetector(
-                        onTap: () => showChatAiSheet(context, accent: theme.accent),
-                        child: const Padding(
-                          padding: EdgeInsets.only(bottom: 6),
-                          child: Text(
-                            'AI 키를 넣으면 진짜 AI가 답해요. 눌러서 연결하기 →',
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.systemNotice,
-                          ),
-                        ),
-                      ),
-                    // 서비스 말랑이: 지금 바로 새 문구 한 통
-                    if (service && (chatState.character.service?.reroll ?? false))
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: OutlinedButton.icon(
-                            key: const ValueKey('service_reroll'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Color.lerp(theme.accent, AppColors.textPrimary, 0.3),
-                              side: BorderSide(color: theme.accent, width: 1.5),
-                              shape: const StadiumBorder(),
-                            ),
-                            onPressed: chatState.isCharacterTyping ? null : notifier.rerollService,
-                            icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text('한 번 더 뽑기'),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 4),
-                    _InputBar(
-                      // 스토리 방이거나 선택지 대사가 쳐지는 중이면 보이기만 하고 못 누름
-                      enabled: chatState.isByokAiModeEnabled &&
-                          chatState.userDraft.isEmpty,
-                      draft: chatState.userDraft,
-                      controller: _inputController,
-                      focusNode: _inputFocus,
-                      onChanged: notifier.onUserTypingChanged,
-                      onCamera: () => _showUserPhotoSenderSheet(notifier),
-                      onSend: () => _send(notifier),
-                      accent: theme.accent,
+      body: widget.embedded || screenWidth < 720
+          ? chatColumn
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 840),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    border: Border.symmetric(
+                      vertical: BorderSide(color: AppColors.borderLight),
                     ),
-                  ],
+                  ),
+                  child: chatColumn,
                 ),
               ),
-            ],
-          ),
-
-        ],
-      ),
+            ),
     );
   }
 }
@@ -499,6 +544,7 @@ class _InputBar extends StatelessWidget {
     required this.draft,
     required this.controller,
     required this.focusNode,
+    required this.autofocus,
     required this.onChanged,
     required this.onCamera,
     required this.onSend,
@@ -510,6 +556,7 @@ class _InputBar extends StatelessWidget {
   final String draft;
   final TextEditingController controller;
   final FocusNode focusNode;
+  final bool autofocus;
   final ValueChanged<String> onChanged;
   final VoidCallback onCamera;
   final VoidCallback onSend;
@@ -532,7 +579,8 @@ class _InputBar extends StatelessWidget {
               ? TextField(
                   controller: controller,
                   focusNode: focusNode,
-                  autofocus: true,
+                  autofocus: autofocus,
+                  scrollPadding: EdgeInsets.zero,
                   onChanged: onChanged,
                   textInputAction: TextInputAction.send,
                   decoration: const InputDecoration(
@@ -570,12 +618,14 @@ class _MessageBubbleRow extends StatelessWidget {
 
   /// 진짜 사진 주소 (없으면 설명 카드)
   final String? photoUrl;
+  final double maxBubbleWidth;
   final VoidCallback? onPhotoTap;
 
   const _MessageBubbleRow({
     required this.message,
     required this.theme,
     this.photoUrl,
+    this.maxBubbleWidth = 290,
     this.onPhotoTap,
   });
 
@@ -597,7 +647,7 @@ class _MessageBubbleRow extends StatelessWidget {
             ),
           Flexible(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 290),
+              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
               padding: AppSpacing.bubblePadding,
               decoration: BoxDecoration(
                 color: isUser ? theme.myBubble : AppColors.partnerBubble,
@@ -793,6 +843,7 @@ class _RunEndPanel extends StatelessWidget {
       context: context,
       showDragHandle: true,
       backgroundColor: AppColors.surfaceWhite,
+      constraints: const BoxConstraints(maxWidth: 560),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (sheetContext) => SafeArea(
         child: ConstrainedBox(
