@@ -260,7 +260,15 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     if (bundle == null) {
       _disposed = true;
       return ChatRoomState(
-        character: CharacterModel(id: characterId, name: ''),
+        character: CharacterModel(
+          id: characterId,
+          creatorId: '',
+          name: '',
+          statusMessage: '',
+          avatarUrl: '',
+          worldviewPrompt: '',
+          affectionStages: const [],
+        ),
         internalAffection: 0,
         currentStepOrder: 0,
         messages: const [],
