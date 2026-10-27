@@ -30,19 +30,39 @@
     }
   </style>
   <script>
-    // 모바일 브라우저에서 한글 입력(IME) 중 키보드가 문서 스크롤을 위로 밀어 올리는 현상 방지
-    window.addEventListener('scroll', function () {
-      if (window.scrollX !== 0 || window.scrollY !== 0) {
-        window.scrollTo(0, 0);
+    // 키보드가 닫혀도 입력칸에 포커스가 남을 수 있어 focusout뿐 아니라
+    // visualViewport.resize도 감시한다. Flutter 내부 채팅 스크롤은 건드리지 않는다.
+    (function () {
+      var frame = null;
+      var settleTimers = [];
+      function restoreDocumentPosition() {
+        if (frame !== null) return;
+        frame = window.requestAnimationFrame(function () {
+          frame = null;
+          var viewport = window.visualViewport;
+          if (window.scrollX !== 0 || window.scrollY !== 0 ||
+              (viewport && (viewport.offsetTop !== 0 || viewport.offsetLeft !== 0))) {
+            window.scrollTo(0, 0);
+          }
+        });
       }
-    }, { passive: true });
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('scroll', function () {
-        if (window.scrollX !== 0 || window.scrollY !== 0) {
-          window.scrollTo(0, 0);
-        }
-      }, { passive: true });
-    }
+      function restoreAfterKeyboardAnimation() {
+        restoreDocumentPosition();
+        settleTimers.forEach(window.clearTimeout);
+        // Safari 등에서 키보드 애니메이션 뒤에 남는 뷰포트 이동도 복구한다.
+        settleTimers = [100, 300, 600].map(function (delay) {
+          return window.setTimeout(restoreDocumentPosition, delay);
+        });
+      }
+      window.addEventListener('scroll', restoreDocumentPosition, { passive: true });
+      window.addEventListener('resize', restoreAfterKeyboardAnimation, { passive: true });
+      document.addEventListener('focusout', restoreAfterKeyboardAnimation);
+      window.addEventListener('pageshow', restoreAfterKeyboardAnimation);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('scroll', restoreDocumentPosition, { passive: true });
+        window.visualViewport.addEventListener('resize', restoreAfterKeyboardAnimation, { passive: true });
+      }
+    })();
   </script>
 </head>
 <body>
