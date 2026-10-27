@@ -150,7 +150,13 @@ class Store {
           final decoded = jsonDecode(rawValue);
           final runMap = decoded is String ? jsonDecode(decoded) as Map : decoded as Map;
           final msgs = runMap['messages'] as List? ?? const [];
-          final firstId = msgs.isNotEmpty ? (msgs.first as Map?)?['id'] as String? : null;
+          String? firstId;
+          if (msgs.isNotEmpty) {
+            final first = msgs.first;
+            if (first is Map && first['id'] is String) {
+              firstId = first['id'] as String;
+            }
+          }
           final rawCharId = key.substring(4);
           final charId = rawCharId.endsWith('#free')
               ? rawCharId.substring(0, rawCharId.length - 5)
@@ -207,7 +213,7 @@ class Store {
           final cleaned = <Map<String, dynamic>>[];
           for (final item in list) {
             if (item is! Map) continue;
-            final entry = Map<String, dynamic>.of(item);
+            final entry = Map<String, dynamic>.from(item);
             final charId = entry['id'] as String? ?? '';
             final ownerId = owners[charId];
             if (ownerId != null && ownerId != userId) {
