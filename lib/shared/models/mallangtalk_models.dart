@@ -1130,6 +1130,8 @@ class ChatMessageLog {
   final bool isUser;
   /// 말풍선이 아니라 대화방 가운데 뜨는 안내 문구 (시간 경과, 공략 완료 등)
   final bool isSystem;
+  /// 10분 이상 쉬었다가 시작한 새 대화. 기록·기억을 지우지 않는 장면 경계.
+  final bool isConversationBreak;
   final String speakerCharacterId;
   final String speakerName;
   final String text;
@@ -1142,6 +1144,7 @@ class ChatMessageLog {
     required this.id,
     required this.isUser,
     this.isSystem = false,
+    this.isConversationBreak = false,
     required this.speakerCharacterId,
     required this.speakerName,
     required this.text,
@@ -1158,6 +1161,7 @@ class ChatMessageLog {
         'id': id,
         'is_user': isUser,
         'is_system': isSystem,
+        if (isConversationBreak) 'is_conversation_break': true,
         'speaker_character_id': speakerCharacterId,
         'speaker_name': speakerName,
         'text': text,
@@ -1172,6 +1176,7 @@ class ChatMessageLog {
       id: json['id'] as String,
       isUser: json['is_user'] as bool? ?? false,
       isSystem: json['is_system'] as bool? ?? false,
+      isConversationBreak: json['is_conversation_break'] as bool? ?? false,
       speakerCharacterId: json['speaker_character_id'] as String? ?? '',
       speakerName: json['speaker_name'] as String? ?? '',
       text: json['text'] as String? ?? '',
@@ -1187,6 +1192,7 @@ class ChatMessageLog {
       id: id,
       isUser: isUser,
       isSystem: isSystem,
+      isConversationBreak: isConversationBreak,
       speakerCharacterId: speakerCharacterId,
       speakerName: speakerName,
       text: text,

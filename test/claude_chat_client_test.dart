@@ -23,6 +23,8 @@ void main() {
     String model = 'claude-opus-5-5',
     AiProvider provider = AiProvider.claude,
     AiRelay? relay,
+    String? stageLabel = '편한 친구',
+    List<ChatMessageLog>? history,
   }) {
     final dio = Dio()..httpClientAdapter = adapter;
     return ClaudeChatClient(dio: dio).reply(
@@ -31,9 +33,9 @@ void main() {
       relay: relay,
       model: model,
       character: character,
-      stageLabel: '편한 친구',
+      stageLabel: stageLabel,
       currentEventTitle: '새벽 러닝',
-      history: [
+      history: history ?? [
         ChatMessageLog(
           id: '1', isUser: false, speakerCharacterId: 'c', speakerName: '윤도하',
           text: '6km 완주', timestamp: DateTime(2026),
@@ -69,6 +71,29 @@ void main() {
     expect(body['system'], contains('편한 친구'));
     expect(body['messages'][0]['content'], contains('윤도하: 6km 완주'));
     expect(body['messages'][0]['content'], contains('나도 뛸래'));
+  });
+
+  test('자유대화 관계 제한을 제거하고 구분선 전 기록은 지난 장면으로 전달함', () async {
+    final adapter = _FakeAdapter(200, {
+      'content': [{'type': 'text', 'text': jsonEncode({'replies': ['아까 얘기했잖아'], 'affection_delta': 0})}],
+    });
+    await call(adapter, stageLabel: null, history: [
+      ChatMessageLog(id: 'old', isUser: false, speakerCharacterId: 'c',
+        speakerName: '윤도하', text: '지금 산책 중이야', timestamp: DateTime(2026)),
+      ChatMessageLog(id: 'break', isUser: false, isSystem: true,
+        isConversationBreak: true, speakerCharacterId: 'system', speakerName: '',
+        text: '새로운 대화', timestamp: DateTime(2026, 1, 1, 0, 10)),
+      ChatMessageLog(id: 'error', isUser: false, isSystem: true,
+        speakerCharacterId: 'system', speakerName: '', text: '통신 오류', timestamp: DateTime(2026)),
+    ]);
+    final body = adapter.lastBody!;
+    expect(body['system'], isNot(contains('관계 단계보다 앞서 나가는')));
+    expect(body['system'], contains('스토리 호감도 단계로 관계의 진전을 제한하지'));
+    expect(body['system'], contains('마무리된 과거'));
+    final transcript = body['messages'][0]['content'] as String;
+    expect(transcript, contains('지금 산책 중이야'));
+    expect(transcript, contains('[대화 구분:'));
+    expect(transcript, isNot(contains('통신 오류')));
   });
 
   test('Haiku는 fallback 없이 호출', () async {

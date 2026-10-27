@@ -978,7 +978,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       text: CharacterModel.fillUserName(bubble.text, _nickname, charName: state.character.name),
       photoLabel: bubble.photoLabel,
       photoImage: bubble.photoImage,
-      timestamp: DateTime.now(),
+      timestamp: _free ? ref.read(clockProvider)() : DateTime.now(),
     );
     state = state.copyWith(
       isCharacterTyping: false,
@@ -1107,6 +1107,26 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final trimmed = text.trim();
     if (trimmed.isEmpty && (photoLabel == null || photoLabel.isEmpty)) return;
 
+    final now = ref.read(clockProvider)();
+    final lastMessage = state.messages.where((m) => !m.isSystem).lastOrNull;
+    // 실패한 요청의 재시도나 아직 생성 중인 답장을 새 장면으로 나누지 않는다.
+    if (_free && lastMessage != null &&
+        _pendingUserBurstTexts.isEmpty && !_awaitingAiReply &&
+        !state.isCharacterTyping &&
+        now.difference(lastMessage.timestamp) >= const Duration(minutes: 10)) {
+      final divider = ChatMessageLog(
+        id: 'conversation_break_${now.microsecondsSinceEpoch}',
+        isUser: false,
+        isSystem: true,
+        isConversationBreak: true,
+        speakerCharacterId: 'system',
+        speakerName: '',
+        text: '새로운 대화',
+        timestamp: now,
+      );
+      state = state.copyWith(messages: [...state.messages, divider]);
+    }
+
     final myMsg = ChatMessageLog(
       id: 'user_burst_${DateTime.now().millisecondsSinceEpoch}',
       isUser: true,
@@ -1115,7 +1135,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       text: trimmed.isEmpty ? '사진을 보냈습니다.' : trimmed,
       photoLabel: photoLabel,
       isUnread: true, // 내가 연속으로 보내는 동안에는 계속 '1'이 유지됨!
-      timestamp: DateTime.now(),
+      timestamp: now,
     );
 
     _pendingUserBurstTexts.add(
@@ -1124,6 +1144,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _isUserCurrentlyTypingText = false;
 
     state = state.copyWith(messages: [...state.messages, myMsg]);
+    _saveRun(keepCurrentNode: true);
 
     // 내가 추가로 더 칠 수 있으므로 대기 타이머를 새로고침합니다.
     _scheduleBurstReply();

@@ -101,13 +101,16 @@ class ClaudeChatClient {
     List<FreeTalkPhoto> photos = const [],
   }) async {
     final transcript = history
-        .where((m) => !m.isSystem)
+        .where((m) => !m.isSystem || m.isConversationBreak)
         .toList()
         .reversed
         .take(30)
         .toList()
         .reversed
         .map((m) {
+      if (m.isConversationBreak) {
+        return '[대화 구분: 10분 이상 쉬고 새 대화를 시작함. 이전 장면은 종료됨]';
+      }
       final who = m.isUser ? userName : character.name;
       final photo = m.hasPhoto ? ' [사진: ${m.photoLabel}]' : '';
       return '$who: ${m.text}$photo';
@@ -127,7 +130,8 @@ ${stageLabel != null ? '${character.name}에게 유저는 지금 "$stageLabel" �
 
 ${memories.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억]\n${memories.map((m) => '- $m').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
 - 실제 카톡처럼 짧게 1~4개 말풍선으로 끊어서 보낸다. 괄호 지문, 행동 묘사, 이모지 남발은 쓰지 않는다.
-- 캐릭터의 말투와 습관을 유지하고, 관계 단계보다 앞서 나가는 고백이나 스킨십 얘기는 하지 않는다.
+- ${stageLabel == null ? '캐릭터의 말투와 습관을 유지한다. 스토리 호감도 단계로 관계의 진전을 제한하지 말고, 캐릭터 설정과 유저 페르소나, 서로 나눈 대화에 따라 관계를 자연스럽게 이어 간다.' : '캐릭터의 말투와 습관을 유지하고, 관계 단계보다 앞서 나가는 고백이나 스킨십 얘기는 하지 않는다.'}
+- 기록의 [대화 구분] 앞에서 진행하던 화제·행동·장면은 마무리된 과거다. 새 대화에서 이전 행동을 계속하는 것으로 가정하지 않는다. 이전 대화와 기억은 유지하며, 유저가 원하면 "아까 얘기했던 것"처럼 다시 언급하거나 이어 갈 수 있다.
 - affection_delta는 유저 말에 대한 캐릭터의 속마음 반응이다. 평범한 대화는 0~1, 설레거나 감동하면 2~3, 무례하거나 서운하면 음수.
 - 작별 인사가 오가거나 화제가 자연스럽게 끝나면 캐릭터답게 마무리하고 end_conversation을 true로, memory에 이번 대화를 한 줄로 남긴다.${_paceRule(pace)}''';
 

@@ -255,6 +255,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     final index = chatState.messages.length - 1 - (reversedIndex - typing);
                     final msg = chatState.messages[index];
                     if (msg.isSystem) {
+                      if (msg.isConversationBreak) {
+                        final time = TimeOfDay.fromDateTime(msg.timestamp).format(context);
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Row(
+                            children: [
+                              const Expanded(child: Divider()),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                child: Text('${msg.text} · $time', style: AppTextStyles.systemNotice),
+                              ),
+                              const Expanded(child: Divider()),
+                            ],
+                          ),
+                        );
+                      }
                       return _SystemNoticeRow(text: msg.text);
                     }
                     final image = bundle?.photoFor(msg.photoImage, msg.photoLabel);
