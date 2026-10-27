@@ -27,7 +27,7 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('설정')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context, maxDesktop: 760),
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
             children: [
@@ -127,7 +127,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       appBar: AppBar(title: const Text('계정 · 프로필')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context, maxDesktop: 760),
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
@@ -289,7 +289,7 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
       appBar: AppBar(title: const Text('AI 연결')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context, maxDesktop: 760),
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [

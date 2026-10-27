@@ -28,11 +28,42 @@ class FriendsList extends ConsumerWidget {
     final favorites = ref.watch(favoritesProvider);
     final starred = entries.where((e) => favorites.contains(e.id)).toList();
     final others = entries.where((e) => !favorites.contains(e.id)).toList();
+    final wide = AppSpacing.isWide(context, 760);
 
     Widget section(String title) => Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 4),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 6),
           child: Text(title, style: AppTextStyles.messageTime),
         );
+
+    Widget buildItems(List<LibraryEntry> list) {
+      if (!wide) {
+        return Column(
+          children: [for (final e in list) _FriendTile(entry: e)],
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 520,
+            mainAxisExtent: 74,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 12,
+          ),
+          itemCount: list.length,
+          itemBuilder: (context, i) => Material(
+            color: AppColors.surfaceWhite,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: AppColors.borderLight),
+            ),
+            child: _FriendTile(entry: list[i]),
+          ),
+        ),
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -42,11 +73,11 @@ class FriendsList extends ConsumerWidget {
         if (entries.isEmpty) _EmptyFriends(onAdd: () => context.go('/discover')),
         if (starred.isNotEmpty) ...[
           section('즐겨찾기 ${starred.length}'),
-          for (final e in starred) _FriendTile(entry: e),
+          buildItems(starred),
         ],
         if (others.isNotEmpty) ...[
           section('친구 ${entries.length}'),
-          for (final e in others) _FriendTile(entry: e),
+          buildItems(others),
         ],
       ],
     );
@@ -62,6 +93,7 @@ class _FriendTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = entry.bundle.character;
     return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 2),
       leading: CharacterAvatar(character: c, radius: 24),
       title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
@@ -100,6 +132,7 @@ class _MyProfileTile extends ConsumerWidget {
       onTap: () => showModalBottomSheet(
         context: context,
         isScrollControlled: true,
+        constraints: const BoxConstraints(maxWidth: 560),
         backgroundColor: AppColors.surfaceWhite,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
         builder: (_) => const _MyProfileEditor(),
@@ -257,6 +290,7 @@ Future<void> showCharacterProfile(BuildContext context, LibraryEntry entry, {boo
     isScrollControlled: true,
     showDragHandle: true,
     useSafeArea: true,
+    constraints: const BoxConstraints(maxWidth: 560),
     backgroundColor: AppColors.surfaceWhite,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -302,6 +336,11 @@ class _CharacterProfileSheet extends ConsumerWidget {
     final received = inChat
         ? ref.watch(chatRoomProvider(c.id).select((s) => s.receivedPhotos)).toSet()
         : const <String>{};
+
+    // 내가 직접 만든 캐릭터일 때만 '고치기'와 '캐릭터 파일' 다운로드 버튼을 노출
+    // (말랑이 찾기에서 추가한 캐릭터나 다른 제작자의 캐릭터는 숨김)
+    final galleryItem = ref.watch(galleryProvider).valueOrNull?.where((g) => g.character.id == c.id).firstOrNull;
+    final isCreator = entry.source == CharacterSource.created && (galleryItem == null || galleryItem.mine);
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -407,10 +446,10 @@ class _CharacterProfileSheet extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                if (entry.source != CharacterSource.builtin) ...[
+            if (isCreator) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       icon: const Icon(Icons.edit_outlined, size: 18),
@@ -422,22 +461,22 @@ class _CharacterProfileSheet extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                ],
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.ios_share_rounded, size: 18),
-                    label: const Text('캐릭터 파일'),
-                    onPressed: () async {
-                      await FileIO.save(
-                        fileName: '${FileIO.safeName(c.name)}.json',
-                        bytes: utf8.encode(const JsonEncoder.withIndent('  ').convert(bundle.toJson())),
-                        mimeType: FileIO.jsonMime,
-                      );
-                    },
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.ios_share_rounded, size: 18),
+                      label: const Text('캐릭터 파일'),
+                      onPressed: () async {
+                        await FileIO.save(
+                          fileName: '${FileIO.safeName(c.name)}.json',
+                          bytes: utf8.encode(const JsonEncoder.withIndent('  ').convert(bundle.toJson())),
+                          mimeType: FileIO.jsonMime,
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
             CharacterSheetView(character: c, nickname: ref.watch(chatNicknameProvider(c.id))),
             TextButton(

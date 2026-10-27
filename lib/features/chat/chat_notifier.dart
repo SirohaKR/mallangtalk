@@ -215,6 +215,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 다시 보기 전 진행 상태 (끝나면 그대로 돌려놓음)
   ({int affection, List<String> flags, List<String> completed})? _replaySnapshot;
 
+  /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
+  int? _resetAt;
+
   /// 이 대화방이 자유대화 방인지 (스토리 방과 따로, 호감도·이야기 없이 AI와만 대화)
   late bool _free;
   late String _characterId;
@@ -290,6 +293,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
             if (e.isEnding) e.id,
       ]);
 
+    _resetAt = saved?.resetAt;
     // 저장된 진행 기록이 있으면 마지막으로 끝낸 이벤트 다음부터 이어서 진행
     if (saved != null) {
       final restored = _freshRunState(unlockedCutscenes: album).copyWith(
@@ -305,7 +309,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       final node = saved.nodeId != null ? _bundle.nodes[saved.nodeId] : null;
       if (node != null && _eventById(node.eventId) != null) {
         // 이벤트 중간에 나갔으면 나가기 전 그 자리부터 (치던 말풍선 다음, 또는 선택지)
-        Future.microtask(() => _playNode(node, runId, from: saved.nextBubble));
+        Future.microtask(() => _playNode(node, runId, from: saved.nextBubble, resuming: true));
         return restored.copyWith(currentEventId: node.eventId, currentStepOrder: node.stepOrder);
       }
       if (!saved.cleared) {
@@ -400,9 +404,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
     _replaySnapshot = null;
+    _resetAt = DateTime.now().millisecondsSinceEpoch;
     state = _freshRunState(unlockedCutscenes: state.unlockedCutsceneEventIds)
         .copyWith(memories: state.memories);
-    _store.clearRun(_bundle.character.id);
+    _saveRun(cleared: false);
     _started = true;
     _advance(_runId);
   }
@@ -426,6 +431,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         nodeId: node?.id,
         nextBubble: nextBubble,
         memories: state.memories,
+        resetAt: _resetAt,
       ),
     );
   }
@@ -529,11 +535,13 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 노드 하나의 캐릭터 대사를 재생하고, 선택지를 띄우거나(선택지가 없으면) 이벤트를 끝냅니다.
   /// [from]: 나갔다 들어왔을 때 이미 친 말풍선은 건너뜀
-  Future<void> _playNode(ScriptNodeModel node, int runId, {int from = 0}) async {
+  Future<void> _playNode(ScriptNodeModel node, int runId, {int from = 0, bool resuming = false}) async {
+    var typedAny = false;
     if (from == 0 && node.userFirst.isNotEmpty) {
       // 선톡: 내가 먼저 입력칸에 쳐서 보냄
       for (var i = 0; i < node.userFirst.length; i++) {
         if (!await _sendUserBubble(node.userFirst[i], i, () => runId == _runId)) return;
+        typedAny = true;
       }
       if (node.characterBubbles.firstOrNull?.delaySeconds == 0) {
         await Future.delayed(const Duration(milliseconds: 700));
@@ -543,6 +551,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     }
     for (var i = from; i < node.characterBubbles.length; i++) {
       if (!await _typeOut(node.characterBubbles[i], () => runId == _runId)) return;
+      typedAny = true;
       if (i < node.characterBubbles.length - 1) _saveRun(node: node, nextBubble: i + 1);
     }
 
@@ -568,7 +577,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
             if (!_chosen.contains(c.id)) c.id,
       ],
     );
-    _saveRun(node: node, nextBubble: node.characterBubbles.length);
+    if (!resuming || typedAny) {
+      _saveRun(node: node, nextBubble: node.characterBubbles.length);
+    }
   }
 
   void _collectCutscene(ScenarioEventModel event) {

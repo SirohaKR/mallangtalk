@@ -52,7 +52,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
         children: [
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+              constraints: AppSpacing.pageConstraints(context, maxDesktop: 920),
               child: all.isEmpty
                   ? const Center(child: Text('이 말랑이는 아직 보내는 사진이 없어요', style: AppTextStyles.systemNotice))
                   : ListView(
@@ -91,7 +91,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                           GridView.count(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 3,
+                            crossAxisCount: MediaQuery.sizeOf(context).width >= 860 ? 5 : MediaQuery.sizeOf(context).width >= 640 ? 4 : 3,
                             mainAxisSpacing: 6,
                             crossAxisSpacing: 6,
                             childAspectRatio: 3 / 4,

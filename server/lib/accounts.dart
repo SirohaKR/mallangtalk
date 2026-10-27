@@ -11,9 +11,9 @@ const maxCharacterBytes = 24 * 1024 * 1024;
 /// 사진 한 장 최대 크기
 const _maxImageBytes = 4 * 1024 * 1024;
 
-/// 기기 연동 저장값: 한 번에 보내는 최대 크기와 이름 규칙
+/// 기기 연동 저장값: 한 번에 보내는 최대 크기와 이름 규칙 (#free 자유대화 방 키 포함)
 const maxStateBytes = 32 * 1024 * 1024;
-final _stateKey = RegExp(r'^[A-Za-z0-9_.:-]{1,120}$');
+final _stateKey = RegExp(r'^[A-Za-z0-9_.:#-]{1,120}$');
 
 final _username = RegExp(r'^[A-Za-z0-9_]{3,20}$');
 

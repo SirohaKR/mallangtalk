@@ -71,7 +71,9 @@ void main() {
 
     await tester.tap(find.byTooltip('프로필 보기'));
     await tester.pumpAndSettle();
-    expect(find.text('캐릭터 파일'), findsOneWidget);
+    expect(find.text('캐릭터 삭제'), findsOneWidget);
+    expect(find.text('고치기'), findsNothing);
+    expect(find.text('캐릭터 파일'), findsNothing);
     // 프로필 사진을 누르면 크게, 누르면 다시 닫힘
     await tester.tap(find.byKey(const ValueKey('profile_photo')));
     await tester.pumpAndSettle();
@@ -81,7 +83,7 @@ void main() {
     expect(find.byKey(const ValueKey('photo_viewer')), findsNothing);
     await tester.tap(find.text('1:1 채팅'));
     await tester.pumpAndSettle();
-    expect(find.text('캐릭터 파일'), findsNothing);
+    expect(find.text('캐릭터 삭제'), findsNothing);
     expect(find.byType(ChatScreen), findsOneWidget);
     appRouter.go('/friends');
     await settle(tester);

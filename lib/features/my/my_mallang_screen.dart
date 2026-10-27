@@ -45,7 +45,7 @@ class MyMallangScreen extends StatelessWidget {
         ),
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+            constraints: AppSpacing.pageConstraints(context),
             child: const TabBarView(children: [FriendsList(), MyCreationsList()]),
           ),
         ),
@@ -64,6 +64,7 @@ class MyCreationsList extends ConsumerWidget {
       ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
     // 로그인해서 서버에 올렸으면 말랑이 찾기에 보이고, 아니면 이 기기에만 있어요
     final online = ref.watch(accountApiProvider) != null;
+    final wide = AppSpacing.isWide(context, 760);
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -71,10 +72,34 @@ class MyCreationsList extends ConsumerWidget {
         _NewTile(onTap: () => context.push('/create')),
         if (mine.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 4),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 6),
             child: Text('내가 만든 ${mine.length}', style: AppTextStyles.messageTime),
           ),
-        for (final entry in mine) _CreationTile(entry: entry, online: online),
+        if (mine.isNotEmpty && wide)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 520,
+                mainAxisExtent: 74,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 12,
+              ),
+              itemCount: mine.length,
+              itemBuilder: (context, i) => Material(
+                color: AppColors.surfaceWhite,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.borderLight),
+                ),
+                child: _CreationTile(entry: mine[i], online: online),
+              ),
+            ),
+          )
+        else
+          for (final entry in mine) _CreationTile(entry: entry, online: online),
         if (mine.isEmpty)
           const Padding(
             padding: EdgeInsets.all(AppSpacing.xl),
@@ -137,6 +162,7 @@ class _CreationTile extends StatelessWidget {
     final c = entry.bundle.character;
     final events = entry.bundle.events.length;
     return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 2),
       leading: CharacterAvatar(character: c, radius: 24),
       title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),

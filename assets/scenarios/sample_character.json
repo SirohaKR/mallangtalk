@@ -1,0 +1,871 @@
+{
+  "character": {
+    "id": "char_yoon_doha",
+    "creator_id": "creator_01",
+    "name": "윤도하",
+    "status_message": "두부 집사 / 토요일 홍대",
+    "avatar_url": "assets/avatars/doha.png",
+    "worldview_prompt": "윤도하, 24살, 경영학과 3학년. 1년 전 교양 수업 팀플에서 처음 만나 매일 연락하는 남사친. 장난기 많고 수다스럽지만 진지해지면 말이 짧아지고 띄어쓰기가 정확해진다. ㅋㅋ를 많이 쓰고 짧게 끊어 친다. 취미: 주말 새벽 한강 러닝, 인디밴드 공연 보러 다니기(최애 밴드 '새벽녘 라디오'), 통기타(독학 2년). 관심사: 동네 카페 주말 알바에서 배운 라떼아트, 회색 고양이 '두부'(3살) 자랑. 유저에게 마음이 있지만 1년 된 친구 사이가 깨질까 봐 티를 덜 내려고 한다.",
+    "typing_speed_multiplier": 0.85,
+    "affection_stages": [
+      {
+        "min": 0,
+        "max": 19,
+        "label": "편한 친구"
+      },
+      {
+        "min": 20,
+        "max": 39,
+        "label": "신경 쓰이는 친구"
+      },
+      {
+        "min": 40,
+        "max": 100,
+        "label": "친구 이상"
+      }
+    ],
+    "is_published": true
+  },
+  "events": [
+    {
+      "id": "evt_dubu_missing",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 1,
+      "event_type": "custom",
+      "title": "두부 실종 사건",
+      "time_notice": "토요일 오전 10:24",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "cutscene_title": "빨래 바구니에서 꺼낸 두부를 안고 안도의 한숨을 쉬는 도하",
+      "cutscene_trigger_step": 2,
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "evt_dawn_run",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 2,
+      "event_type": "custom",
+      "title": "새벽 러닝",
+      "time_notice": "화요일 오전 6:40",
+      "unlock_condition": {
+        "min_affection": 3
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "evt_gig_tickets",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 3,
+      "event_type": "custom",
+      "title": "공연 티켓 두 장",
+      "time_notice": "목요일 밤 9:15",
+      "unlock_condition": {
+        "min_affection": 8
+      },
+      "cutscene_title": "홍대 공연장 앞, 티켓 두 장을 흔들며 웃는 도하",
+      "cutscene_trigger_step": 2,
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "evt_latte_art",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 4,
+      "event_type": "custom",
+      "title": "라떼아트 연습",
+      "time_notice": "일요일 오후 3:02",
+      "unlock_condition": {
+        "min_affection": 11
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "evt_birthday_song",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 5,
+      "event_type": "custom",
+      "title": "생일 전날 밤",
+      "time_notice": "금요일 밤 11:58",
+      "unlock_condition": {
+        "min_affection": 15
+      },
+      "cutscene_title": "스탠드 불빛 아래 통기타를 안고 노래를 녹음하는 도하",
+      "cutscene_trigger_step": 2,
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "evt_first_year",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 6,
+      "event_type": "custom",
+      "title": "1년 전 그날",
+      "time_notice": "일요일 저녁 7:30",
+      "unlock_condition": {
+        "min_affection": 20
+      },
+      "cutscene_title": "노을 진 한강 벤치, 캔커피 두 개를 들고 기다리는 도하",
+      "cutscene_trigger_step": 3,
+      "participants": [
+        "char_yoon_doha"
+      ]
+    },
+    {
+      "id": "evt_ending_confession",
+      "character_id": "char_yoon_doha",
+      "chapter_order": 99,
+      "event_type": "ending",
+      "title": "친구 말고",
+      "time_notice": "그날 밤 8:10",
+      "unlock_condition": {
+        "min_affection": 0
+      },
+      "participants": [
+        "char_yoon_doha"
+      ]
+    }
+  ],
+  "script_nodes": [
+    {
+      "id": "dubu_1",
+      "event_id": "evt_dubu_missing",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "야야야",
+          "speed": 0.4
+        },
+        {
+          "text": "큰일났어",
+          "speed": 0.5
+        },
+        {
+          "text": "두부가 없어졌어",
+          "speed": 0.7
+        },
+        {
+          "text": "문 다 닫혀있었는데 진짜 어디 갔지"
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "a1",
+          "label": "침대 밑이랑 좁은 곳부터 찾아보라고 하기",
+          "user_messages": [
+            {
+              "text": "진정해 진정"
+            },
+            {
+              "text": "고양이는 좁은 데 숨는대 침대 밑 봤어?"
+            }
+          ],
+          "affection_delta": 4,
+          "next_node_id": "dubu_2"
+        },
+        {
+          "choice_id": "a2",
+          "label": "지금 바로 같이 찾으러 가겠다고 하기",
+          "user_messages": [
+            {
+              "text": "기다려 나 지금 나갈게"
+            },
+            {
+              "text": "20분이면 가"
+            }
+          ],
+          "affection_delta": 5,
+          "add_flag": "두부_구조대",
+          "next_node_id": "dubu_2"
+        },
+        {
+          "choice_id": "a3",
+          "label": "츄르 봉지를 흔들어 보라고 하기",
+          "user_messages": [
+            {
+              "text": "츄르 봉지 흔들어봐ㅋㅋ"
+            },
+            {
+              "text": "그럼 무조건 나와"
+            }
+          ],
+          "affection_delta": 3,
+          "next_node_id": "dubu_2"
+        }
+      ]
+    },
+    {
+      "id": "dubu_2",
+      "event_id": "evt_dubu_missing",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "...찾았다",
+          "speed": 1.2
+        },
+        {
+          "text": "빨래 바구니 안에서 자고 있었음",
+          "speed": 0.9
+        },
+        {
+          "text": "얘 봐 반성의 기미가 없어",
+          "photo": "빨래 더미 속에서 눈만 내놓고 있는 회색 고양이 두부 사진"
+        },
+        {
+          "text": "놀라게 해서 미안ㅋㅋ 너밖에 생각 안 나더라",
+          "speed": 1.3
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "a4",
+          "label": "두부 사진 더 보내달라고 조르기",
+          "user_messages": [
+            {
+              "text": "아 너무 귀여워"
+            },
+            {
+              "text": "사진 더 줘 더"
+            }
+          ],
+          "affection_delta": 4
+        },
+        {
+          "choice_id": "a5",
+          "label": "다음엔 직접 두부 보러 가겠다고 하기",
+          "user_messages": [
+            {
+              "text": "다행이다 진짜"
+            },
+            {
+              "text": "다음에 나 두부 보러 가도 돼?"
+            }
+          ],
+          "affection_delta": 6,
+          "add_flag": "두부_만남약속"
+        }
+      ]
+    },
+    {
+      "id": "run_1",
+      "event_id": "evt_dawn_run",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "6km 완주",
+          "speed": 0.6,
+          "photo": "해 뜨는 새벽 한강 위로 러닝 기록이 찍힌 스마트워치 사진"
+        },
+        {
+          "text": "너 아직 자지",
+          "speed": 0.6
+        },
+        {
+          "text": "일어나면 이거 봐 하늘 미쳤음",
+          "speed": 0.9
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "b1",
+          "label": "방금 일어났다고, 사진 예쁘다고 답하기",
+          "user_messages": [
+            {
+              "text": "방금 깼는데 이거 보고 잠 다 깼어"
+            },
+            {
+              "text": "너 진짜 부지런하다"
+            }
+          ],
+          "affection_delta": 3
+        },
+        {
+          "choice_id": "b2",
+          "label": "다음엔 나도 같이 뛰자고 하기",
+          "user_messages": [
+            {
+              "text": "나도 데려가"
+            },
+            {
+              "text": "근데 6km는 무리고 3km만"
+            }
+          ],
+          "affection_delta": 5,
+          "add_flag": "러닝_약속"
+        },
+        {
+          "choice_id": "b3",
+          "label": "새벽부터 왜 깨우냐고 투정 부리기",
+          "user_messages": [
+            {
+              "text": "야ㅋㅋㅋ 지금 6시 40분이야"
+            },
+            {
+              "text": "알림 소리에 깼잖아"
+            }
+          ],
+          "affection_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "gig_1",
+      "event_id": "evt_gig_tickets",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "너 이번 주 토요일 뭐해",
+          "speed": 0.6
+        },
+        {
+          "text": "내가 좋아하는 밴드 홍대에서 공연하는데"
+        },
+        {
+          "text": "같이 가기로 한 애가 펑크냄",
+          "speed": 0.9
+        },
+        {
+          "text": "...아니 그냥 너 생각나서",
+          "speed": 1.5
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "g1",
+          "label": "좋다고, 무슨 밴드냐고 묻기",
+          "user_messages": [
+            {
+              "text": "좋아!!"
+            },
+            {
+              "text": "무슨 밴드야? 미리 들어볼래"
+            }
+          ],
+          "affection_delta": 5,
+          "next_node_id": "gig_2_yes"
+        },
+        {
+          "choice_id": "g2",
+          "label": "토요일엔 선약이 있다고 거절하기",
+          "user_messages": [
+            {
+              "text": "아 토요일 선약 있어ㅠ"
+            },
+            {
+              "text": "다음에 꼭 같이 가자"
+            }
+          ],
+          "affection_delta": 0,
+          "next_node_id": "gig_3_no"
+        }
+      ]
+    },
+    {
+      "id": "gig_2_yes",
+      "event_id": "evt_gig_tickets",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "'새벽녘 라디오'라고",
+          "speed": 0.9
+        },
+        {
+          "text": "보컬 목소리 들으면 너도 반할걸"
+        },
+        {
+          "text": "티켓 인증",
+          "speed": 0.6,
+          "photo": "책상 위에 나란히 놓인 공연 티켓 두 장 사진"
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "g3",
+          "label": "벌써 기대된다고 하기",
+          "user_messages": [
+            {
+              "text": "벌써 설렌다"
+            },
+            {
+              "text": "토요일에 봐!"
+            }
+          ],
+          "affection_delta": 4,
+          "next_node_id": "gig_3_ok"
+        },
+        {
+          "choice_id": "g4",
+          "label": "근데 왜 하필 내 생각이 났냐고 묻기",
+          "user_messages": [
+            {
+              "text": "근데"
+            },
+            {
+              "text": "왜 하필 나 생각났어?"
+            }
+          ],
+          "affection_delta": 6,
+          "add_flag": "공연_질문",
+          "next_node_id": "gig_3_tease"
+        }
+      ]
+    },
+    {
+      "id": "gig_3_no",
+      "event_id": "evt_gig_tickets",
+      "step_order": 3,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "아 그래?",
+          "speed": 0.6
+        },
+        {
+          "text": "ㅇㅇ 알겠어",
+          "speed": 0.7
+        },
+        {
+          "text": "다음엔 미리 말할게"
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "gig_3_ok",
+      "event_id": "evt_gig_tickets",
+      "step_order": 3,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅇㅇ 토요일 6시 합정역 7번 출구",
+          "speed": 0.9
+        },
+        {
+          "text": "늦으면 두고 감ㅋㅋ",
+          "speed": 0.6
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "gig_3_tease",
+      "event_id": "evt_gig_tickets",
+      "step_order": 3,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "......",
+          "speed": 1.6
+        },
+        {
+          "text": "그냥",
+          "speed": 0.8
+        },
+        {
+          "text": "너랑 가면 재밌을 거 같아서",
+          "speed": 1.4
+        },
+        {
+          "text": "됐고 6시 합정역 7번 출구",
+          "speed": 0.7
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "latte_1",
+      "event_id": "evt_latte_art",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "오늘 알바 중 최고작",
+          "speed": 0.8,
+          "photo": "하트인지 감자인지 모를 라떼아트 사진"
+        },
+        {
+          "text": "솔직하게 말해봐",
+          "speed": 0.6
+        },
+        {
+          "text": "하트로 보여?",
+          "speed": 0.7
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "l1",
+          "label": "누가 봐도 하트라고 해주기",
+          "user_messages": [
+            {
+              "text": "완벽한 하트네"
+            },
+            {
+              "text": "카페 사장님 꿈나무"
+            }
+          ],
+          "affection_delta": 3
+        },
+        {
+          "choice_id": "l2",
+          "label": "감자 같다고 놀리기",
+          "user_messages": [
+            {
+              "text": "음..."
+            },
+            {
+              "text": "감자 아니야?ㅋㅋㅋ"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "latte_2"
+        },
+        {
+          "choice_id": "l3",
+          "label": "다음에 나한테도 하나 만들어 달라고 하기",
+          "user_messages": [
+            {
+              "text": "나도 마셔보고 싶다"
+            },
+            {
+              "text": "다음에 하나 만들어줘"
+            }
+          ],
+          "affection_delta": 5,
+          "add_flag": "라떼_약속"
+        }
+      ]
+    },
+    {
+      "id": "latte_2",
+      "event_id": "evt_latte_art",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "ㅋㅋㅋㅋ아 너무해",
+          "speed": 0.6
+        },
+        {
+          "text": "다음엔 진짜 하트 만들어서 너한테 제일 먼저 보여줄 거임",
+          "speed": 1.1
+        }
+      ],
+      "choices": []
+    },
+    {
+      "id": "bday_1",
+      "event_id": "evt_birthday_song",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "자?",
+          "speed": 0.5
+        },
+        {
+          "text": "2분 남았다",
+          "speed": 0.7
+        },
+        {
+          "text": "아 아무것도 아님",
+          "speed": 0.8
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "d1",
+          "label": "2분 뒤에 뭐가 있냐고 묻기",
+          "user_messages": [
+            {
+              "text": "뭐가 2분 남았는데?"
+            }
+          ],
+          "affection_delta": 2,
+          "next_node_id": "bday_2"
+        },
+        {
+          "choice_id": "d2",
+          "label": "내 생일 기억한 거냐고 묻기",
+          "user_messages": [
+            {
+              "text": "설마"
+            },
+            {
+              "text": "내 생일 기억한 거야?"
+            }
+          ],
+          "affection_delta": 4,
+          "next_node_id": "bday_2"
+        }
+      ]
+    },
+    {
+      "id": "bday_2",
+      "event_id": "evt_birthday_song",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "12:00"
+        },
+        {
+          "text": "생일 축하해",
+          "speed": 1.2
+        },
+        {
+          "text": "선물은 이거",
+          "speed": 0.8,
+          "photo": "기타를 무릎에 올리고 녹음 버튼을 누르기 직전의 도하 셀카"
+        },
+        {
+          "text": "노래 하나 녹음했는데 듣고 비웃기 없기",
+          "speed": 1.3
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "d3",
+          "label": "들어보고 울컥했다고 말하기",
+          "user_messages": [
+            {
+              "text": "방금 들었는데"
+            },
+            {
+              "text": "왜 눈물 나지"
+            }
+          ],
+          "affection_delta": 7
+        },
+        {
+          "choice_id": "d4",
+          "label": "1년 동안 받은 선물 중에 제일 좋다고 하기",
+          "user_messages": [
+            {
+              "text": "알게 된 지 1년 동안 받은 것 중에"
+            },
+            {
+              "text": "이게 제일 좋아"
+            }
+          ],
+          "affection_delta": 6,
+          "add_flag": "생일_노래"
+        }
+      ]
+    },
+    {
+      "id": "year_1",
+      "event_id": "evt_first_year",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "너 오늘 무슨 날인지 알아?",
+          "speed": 0.9
+        },
+        {
+          "text": "모르면 서운함",
+          "speed": 0.7
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "y1",
+          "label": "우리 처음 만난 날이라고 답하기",
+          "user_messages": [
+            {
+              "text": "교양 수업 팀플 첫날!"
+            },
+            {
+              "text": "벌써 1년 됐네"
+            }
+          ],
+          "affection_delta": 6,
+          "next_node_id": "year_2_remember"
+        },
+        {
+          "choice_id": "y2",
+          "label": "모르는 척하기",
+          "user_messages": [
+            {
+              "text": "음... 무슨 날이지?"
+            }
+          ],
+          "affection_delta": 1,
+          "next_node_id": "year_2_sulk"
+        }
+      ]
+    },
+    {
+      "id": "year_2_remember",
+      "event_id": "evt_first_year",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "헐 기억하네",
+          "speed": 0.6
+        },
+        {
+          "text": "그때 너 발표 자료 날려서 울상이었던 거 생각난다ㅋㅋ",
+          "speed": 1.2
+        },
+        {
+          "text": "그날부터였나",
+          "speed": 1.4
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "y3",
+          "label": "뭐가 그날부터냐고 묻기",
+          "user_messages": [
+            {
+              "text": "뭐가?"
+            }
+          ],
+          "affection_delta": 3,
+          "next_node_id": "year_3"
+        },
+        {
+          "choice_id": "y4",
+          "label": "나도 그날 기억난다고, USB 얘기 꺼내기",
+          "user_messages": [
+            {
+              "text": "나도 기억나"
+            },
+            {
+              "text": "네가 USB 빌려줬잖아"
+            }
+          ],
+          "affection_delta": 5,
+          "next_node_id": "year_3"
+        }
+      ]
+    },
+    {
+      "id": "year_2_sulk",
+      "event_id": "evt_first_year",
+      "step_order": 2,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "아 진짜 서운하다",
+          "speed": 0.8
+        },
+        {
+          "text": "우리 처음 만난 날이잖아"
+        },
+        {
+          "text": "1년 됐다고"
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "y5",
+          "label": "장난이었다고 사과하기",
+          "user_messages": [
+            {
+              "text": "장난이야ㅋㅋ 당연히 알지"
+            },
+            {
+              "text": "1년 축하해"
+            }
+          ],
+          "affection_delta": 4,
+          "next_node_id": "year_3"
+        }
+      ]
+    },
+    {
+      "id": "year_3",
+      "event_id": "evt_first_year",
+      "step_order": 3,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "그러니까",
+          "speed": 0.8
+        },
+        {
+          "text": "내 말은"
+        },
+        {
+          "text": "1년 동안 너랑 연락 안 한 날이 없더라",
+          "speed": 1.5
+        },
+        {
+          "text": "지금 여기 나와줄 수 있어?",
+          "speed": 1.2,
+          "photo": "노을 진 한강 벤치 위에 놓인 캔커피 두 개 사진"
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "y6",
+          "label": "지금 간다고 하기",
+          "user_messages": [
+            {
+              "text": "기다려"
+            },
+            {
+              "text": "지금 나갈게"
+            }
+          ],
+          "affection_delta": 6
+        }
+      ]
+    },
+    {
+      "id": "ending_1",
+      "event_id": "evt_ending_confession",
+      "step_order": 1,
+      "speaker_character_id": "char_yoon_doha",
+      "messages": [
+        {
+          "text": "와줘서 고마워"
+        },
+        {
+          "text": "아까 못 한 말 마저 하면",
+          "speed": 1.2
+        },
+        {
+          "text": "1년 동안 친구였으니까",
+          "speed": 1.3
+        },
+        {
+          "text": "이제 다른 거 해보자",
+          "speed": 1.5
+        }
+      ],
+      "choices": [
+        {
+          "choice_id": "e1",
+          "label": "좋다고 대답하기",
+          "user_messages": [
+            {
+              "text": "응"
+            },
+            {
+              "text": "좋아"
+            }
+          ],
+          "affection_delta": 5
+        }
+      ]
+    }
+  ]
+}

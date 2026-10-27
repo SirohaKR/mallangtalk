@@ -77,12 +77,18 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final tags = topTagsOf(all);
     final picks = recommendedOf(items);
     final sorted = [...items]..sort(_sort == GallerySort.latest ? _byLatest : _byPopular);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final gridColumns = screenWidth >= 980
+        ? 4
+        : screenWidth >= 680
+            ? 3
+            : 2;
 
     return Scaffold(
       appBar: AppBar(title: const Text('말랑이 찾기')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context),
           child: RefreshIndicator(
             onRefresh: () => ref.refresh(galleryProvider.future),
             child: CustomScrollView(
@@ -176,11 +182,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
                     sliver: SliverGrid.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: gridColumns,
                         mainAxisSpacing: AppSpacing.md,
                         crossAxisSpacing: AppSpacing.md,
-                        childAspectRatio: 0.58,
+                        childAspectRatio: screenWidth >= 680 ? 0.63 : 0.58,
                       ),
                       itemCount: sorted.length,
                       itemBuilder: (context, i) {
@@ -445,7 +451,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context, maxDesktop: 840),
           child: q.isEmpty
               ? ListView(
                   padding: const EdgeInsets.all(AppSpacing.lg),
@@ -546,7 +552,7 @@ class CreatorScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('제작자')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSpacing.mobileMaxWidth),
+          constraints: AppSpacing.pageConstraints(context, maxDesktop: 840),
           child: ListView(
             children: [
               Padding(

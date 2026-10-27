@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/mallang_mark.dart';
 import '../chat/chat_notifier.dart';
@@ -25,50 +26,64 @@ class HomeShell extends ConsumerWidget {
     return Scaffold(
       body: shell,
       // 모든 탭 아이콘이 말랑 탭과 같은 색: 기본은 진한 갈색, 선택하면 분홍
-      bottomNavigationBar: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          iconTheme: WidgetStateProperty.resolveWith(
-            (states) => IconThemeData(
-              color: states.contains(WidgetState.selected) ? AppColors.primaryPink : AppColors.navIcon,
-            ),
-          ),
+      // PC 넓은 화면에서는 하단 탭 아이콘들이 화면 양끝으로 너무 멀리 퍼지지 않게 본문 폭에 맞춰 가운데 정렬
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceWhite,
+          border: Border(top: BorderSide(color: AppColors.borderLight)),
         ),
-        child: NavigationBar(
-          selectedIndex: shell.currentIndex,
-          backgroundColor: AppColors.surfaceWhite,
-          indicatorColor: AppColors.myBubble,
-          labelTextStyle: WidgetStateProperty.all(
-            AppTextStyles.messageTime.copyWith(color: AppColors.textPrimary, fontSize: 12),
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: AppSpacing.pageConstraints(context),
+            child: NavigationBarTheme(
+              data: NavigationBarThemeData(
+                iconTheme: WidgetStateProperty.resolveWith(
+                  (states) => IconThemeData(
+                    color: states.contains(WidgetState.selected) ? AppColors.primaryPink : AppColors.navIcon,
+                  ),
+                ),
+              ),
+              child: NavigationBar(
+                elevation: 0,
+                selectedIndex: shell.currentIndex,
+                backgroundColor: AppColors.surfaceWhite,
+                indicatorColor: AppColors.myBubble,
+                labelTextStyle: WidgetStateProperty.all(
+                  AppTextStyles.messageTime.copyWith(color: AppColors.textPrimary, fontSize: 12),
+                ),
+                onDestinationSelected: (index) => shell.goBranch(index, initialLocation: index == shell.currentIndex),
+                destinations: [
+                  const NavigationDestination(
+                    icon: MallangMark(plus: true),
+                    label: '말랑이 찾기',
+                  ),
+                  NavigationDestination(
+                    icon: Badge(
+                      isLabelVisible: unread > 0,
+                      label: Text('$unread'),
+                      child: const Icon(Icons.chat_bubble_outline_rounded),
+                    ),
+                    selectedIcon: Badge(
+                      isLabelVisible: unread > 0,
+                      label: Text('$unread'),
+                      child: const Icon(Icons.chat_bubble_rounded),
+                    ),
+                    label: '채팅',
+                  ),
+                  const NavigationDestination(
+                    icon: MallangMark(),
+                    label: '내 말랑이',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: '설정',
+                  ),
+                ],
+              ),
+            ),
           ),
-          onDestinationSelected: (index) => shell.goBranch(index, initialLocation: index == shell.currentIndex),
-          destinations: [
-            const NavigationDestination(
-              icon: MallangMark(plus: true),
-              label: '말랑이 찾기',
-            ),
-            NavigationDestination(
-              icon: Badge(
-                isLabelVisible: unread > 0,
-                label: Text('$unread'),
-                child: const Icon(Icons.chat_bubble_outline_rounded),
-              ),
-              selectedIcon: Badge(
-                isLabelVisible: unread > 0,
-                label: Text('$unread'),
-                child: const Icon(Icons.chat_bubble_rounded),
-              ),
-              label: '채팅',
-            ),
-            const NavigationDestination(
-              icon: MallangMark(),
-              label: '내 말랑이',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: '설정',
-            ),
-          ],
         ),
       ),
     );

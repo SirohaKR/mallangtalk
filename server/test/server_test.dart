@@ -281,6 +281,7 @@ USE_SERVER_AI_KEYS=true
       var (status, _) = await call('PUT', '/api/my/state', token: a, body: {
         'items': [
           {'key': 'run_doha', 'value': '{"affection":3}', 'updated_at': 200},
+          {'key': 'run_doha#free', 'value': '{"affection":0}', 'updated_at': 200},
           {'key': 'album_doha', 'value': ['e1', 'e2'], 'updated_at': 200},
         ],
       });

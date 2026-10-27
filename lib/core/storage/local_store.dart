@@ -33,7 +33,7 @@ class SyncOutbox {
   /// 모인 키를 서버로 보내는 함수 (로그인하면 연동 쪽에서 끼움)
   Future<void> Function(Set<String> keys)? sender;
 
-  static const delay = Duration(milliseconds: 1500);
+  static const delay = Duration(milliseconds: 300);
 
   void mark(String key) {
     _dirty.add(key);
@@ -57,7 +57,7 @@ class SyncOutbox {
       await send(keys);
     } catch (_) {
       _dirty.addAll(keys);
-      _schedule(const Duration(seconds: 15));
+      _schedule(const Duration(seconds: 5));
     } finally {
       _sending = false;
     }
@@ -94,6 +94,9 @@ class SavedRun {
   /// 자유대화가 끝날 때마다 남긴 한 줄 기억 (최근 것 몇 개만)
   final List<String> memories;
 
+  /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
+  final int? resetAt;
+
   const SavedRun({
     required this.affection,
     required this.flags,
@@ -104,6 +107,7 @@ class SavedRun {
     this.nodeId,
     this.nextBubble = 0,
     this.memories = const [],
+    this.resetAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -114,6 +118,7 @@ class SavedRun {
         'cleared': cleared,
         if (memories.isNotEmpty) 'memories': memories,
         if (nodeId != null) ...{'event_id': eventId, 'node_id': nodeId, 'next_bubble': nextBubble},
+        if (resetAt != null) 'reset_at': resetAt,
       };
 
   factory SavedRun.fromJson(Map<String, dynamic> json) {
@@ -132,6 +137,7 @@ class SavedRun {
       nodeId: json['node_id'] as String?,
       nextBubble: json['next_bubble'] as int? ?? 0,
       memories: [for (final m in json['memories'] as List? ?? const []) '$m'],
+      resetAt: (json['reset_at'] as num?)?.toInt(),
     );
   }
 }
@@ -165,8 +171,13 @@ class LocalStore {
   }
 
   Future<void> _write(String key, Object? value) async {
+    final synced = isSyncedKey(key);
+    final prev = synced ? rawValue(key) : null;
+    final unchanged = synced &&
+        syncedAt(key) != null &&
+        (prev == value || (prev != null && value != null && jsonEncode(prev) == jsonEncode(value)));
     await _put(key, value);
-    if (!isSyncedKey(key)) return;
+    if (!synced || unchanged) return;
     final times = _syncTimes;
     final now = DateTime.now().millisecondsSinceEpoch;
     final before = times[key] ?? 0;
