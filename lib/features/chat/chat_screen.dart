@@ -102,7 +102,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     notifier.sendUserMessage(text: _inputController.text);
     _inputController.clear();
     notifier.onUserTypingChanged('');
-    _inputFocus.requestFocus();
+    // 전송할 때 웹 입력 요소를 다시 focus하면 모바일 브라우저가 화면을
+    // 입력칸 쪽으로 밀 수 있다. 기존 포커스는 TextFieldTapRegion으로 유지한다.
   }
 
   /// 목록을 거꾸로(reverse) 그려서 맨 아래(최근 톡)가 0 위치. 다시 들어와도 최근 톡부터 보임
@@ -601,10 +602,12 @@ class _InputBar extends StatelessWidget {
                 ),
         ),
         const SizedBox(width: 8),
-        IconButton.filled(
-          style: IconButton.styleFrom(backgroundColor: accent),
-          onPressed: enabled ? onSend : null,
-          icon: const Icon(Icons.send_rounded),
+        TextFieldTapRegion(
+          child: IconButton.filled(
+            style: IconButton.styleFrom(backgroundColor: accent),
+            onPressed: enabled ? onSend : null,
+            icon: const Icon(Icons.send_rounded),
+          ),
         ),
       ],
     );

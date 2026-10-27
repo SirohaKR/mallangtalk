@@ -23,56 +23,8 @@ class MallangTalkApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       routerConfig: appRouter,
-      builder: (context, child) => _ViewportInsetGuard(
-        child: _BootGate(child: child!),
-      ),
+      builder: (context, child) => _BootGate(child: child!),
     );
-  }
-}
-
-/// [초보자 노트] 모바일 웹 브라우저에서 가상 키보드가 올라올 때,
-/// 브라우저가 화면 높이(size.height)도 줄이고 동시에 Flutter의 viewInsets.bottom도 잡아서
-/// 키보드 높이가 두 번 빠져 화면이 맨 위로 밀리는 현상을 막아 주는 보호막입니다.
-class _ViewportInsetGuard extends StatefulWidget {
-  const _ViewportInsetGuard({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_ViewportInsetGuard> createState() => _ViewportInsetGuardState();
-}
-
-class _ViewportInsetGuardState extends State<_ViewportInsetGuard> {
-  double _lastWidth = 0;
-  double _maxHeightForWidth = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final size = mq.size;
-    final insets = mq.viewInsets;
-
-    if ((size.width - _lastWidth).abs() > 20) {
-      _lastWidth = size.width;
-      _maxHeightForWidth = size.height;
-    } else if (size.height > _maxHeightForWidth || insets.bottom == 0) {
-      if (size.height > _maxHeightForWidth || (_maxHeightForWidth - size.height) < 80) {
-        _maxHeightForWidth = size.height;
-      }
-    }
-
-    if (kIsWeb && insets.bottom > 0 && _maxHeightForWidth > size.height) {
-      // 브라우저가 이미 뷰포트 높이를 줄인 만큼은 viewInsets.bottom에서 빼서 이중 차감을 방지
-      final shrunk = (_maxHeightForWidth - size.height).clamp(0.0, insets.bottom);
-      final effectiveBottom = (insets.bottom - shrunk).clamp(0.0, insets.bottom);
-      return MediaQuery(
-        data: mq.copyWith(
-          viewInsets: insets.copyWith(bottom: effectiveBottom),
-        ),
-        child: widget.child,
-      );
-    }
-    return widget.child;
   }
 }
 
