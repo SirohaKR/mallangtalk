@@ -1,14 +1,51 @@
-# [초보자 노트] 같은 폴더의 .env(키·접속 코드·포트)를 읽어서 말랑톡 서버를 켜요.
-# 켜기: docker compose up -d --build   →   http://localhost:5200 (NAS면 http://NAS주소:5200)
-# 포트를 바꾸려면 .env의 PORT만 고치면 돼요 (안 적으면 5200)
+name: mallangtalk
 services:
-  mallangtalk:
-    build: .
-    container_name: mallangtalk_server
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        API_BASE_URL: ${API_BASE_URL:-}
     restart: unless-stopped
     ports:
-      - "${PORT:-5200}:${PORT:-5200}"
+      - "${PORT:-5200}:80"
+    depends_on:
+      - api
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "5200"
+      WEB_DIR: ""
+      DATABASE_URL: "postgresql://mallangtalk:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/mallangtalk?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mallangtalk
+      POSTGRES_DB: mallangtalk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
-      - ./data:/app/data # 다음 단계(DB 저장)에서 캐릭터·진행 상황을 여기에 저장
-    env_file:
-      - .env
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mallangtalk -d mallangtalk"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  import:
+    profiles: [tools]
+    build: .
+    environment:
+      DATABASE_URL: "postgresql://mallangtalk:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/mallangtalk?sslmode=disable"
+    volumes:
+      - ./data/import:/backup:ro
+    entrypoint: ["/app/import_sqlite", "/backup/mallangtalk.db"]
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  postgres_data:

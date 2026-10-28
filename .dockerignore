@@ -4,3 +4,10 @@ build
 .dart_tool
 **/.dart_tool
 data
+**/data
+mallangtalk-trial
+**/build
+**/.flutter-plugins-dependencies
+**/.env
+**/.env.*
+!**/.env.example

@@ -20,3 +20,15 @@ packages/mallangtalk_ai/pubspec.lock
 
 # 서버 DB (유저·캐릭터·사진). NAS에서는 이 폴더를 백업해 주세요
 data/
+mallangtalk-trial/
+**/.dart_tool/
+**/build/
+**/.flutter-plugins-dependencies
+**/.env
+**/.env.*
+!**/.env.example
+*.dump
+
+# NAS data backups (real user data)
+*.tar.gz
+nas-data-*

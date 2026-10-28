@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <!-- 모바일 가상 키보드 오픈 시 브라우저와 Flutter가 높이를 중복 차감해 화면이 위로 밀리는 현상 방지 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="말랑톡">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>말랑톡 (MallangTalk)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: fixed;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      user-select: none;
+      -webkit-user-select: none;
+      background-color: #FDF8FA;
+    }
+  </style>
+  <script>
+    // 키보드가 닫혀도 입력칸에 포커스가 남을 수 있어 focusout뿐 아니라
+    // visualViewport.resize도 감시한다. Flutter 내부 채팅 스크롤은 건드리지 않는다.
+    (function () {
+      var frame = null;
+      var settleTimers = [];
+      function restoreDocumentPosition() {
+        if (frame !== null) return;
+        frame = window.requestAnimationFrame(function () {
+          frame = null;
+          var viewport = window.visualViewport;
+          if (window.scrollX !== 0 || window.scrollY !== 0 ||
+              (viewport && (viewport.offsetTop !== 0 || viewport.offsetLeft !== 0))) {
+            window.scrollTo(0, 0);
+          }
+        });
+      }
+      function restoreAfterKeyboardAnimation() {
+        restoreDocumentPosition();
+        settleTimers.forEach(window.clearTimeout);
+        // Safari 등에서 키보드 애니메이션 뒤에 남는 뷰포트 이동도 복구한다.
+        settleTimers = [100, 300, 600].map(function (delay) {
+          return window.setTimeout(restoreDocumentPosition, delay);
+        });
+      }
+      window.addEventListener('scroll', restoreDocumentPosition, { passive: true });
+      window.addEventListener('resize', restoreAfterKeyboardAnimation, { passive: true });
+      document.addEventListener('focusout', restoreAfterKeyboardAnimation);
+      window.addEventListener('pageshow', restoreAfterKeyboardAnimation);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('scroll', restoreDocumentPosition, { passive: true });
+        window.visualViewport.addEventListener('resize', restoreAfterKeyboardAnimation, { passive: true });
+      }
+    })();
+  </script>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

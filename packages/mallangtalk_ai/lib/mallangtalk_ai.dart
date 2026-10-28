@@ -117,22 +117,24 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
   required Map<String, dynamic> schema,
   required int maxTokens,
   String effort = 'medium',
+  List<String> images = const [],
   String refusalMessage = 'AI가 이 내용에는 답하지 않았어요.',
   String truncatedMessage = 'AI 답이 너무 길어서 중간에 끊겼어요.',
   String unreadableMessage = 'AI 응답을 읽지 못했어요. 다시 시도해 주세요.',
 }) async {
   try {
+    validateImages(images);
     if (relay != null) {
       return await _relay(dio, relay, provider, model, system, user, schema, maxTokens, effort,
-          refusalMessage, truncatedMessage, unreadableMessage);
+          refusalMessage, truncatedMessage, unreadableMessage, images);
     }
     Future<(String, AiUsage)> once() async => switch (provider) {
           AiProvider.claude => await _claude(dio, apiKey, model, system, user, schema, maxTokens, effort,
-              refusalMessage, truncatedMessage, fromBrowser),
+              refusalMessage, truncatedMessage, fromBrowser, images),
           AiProvider.openai => await _openai(dio, apiKey, model, system, user, schema, maxTokens,
-              refusalMessage, truncatedMessage),
+              refusalMessage, truncatedMessage, images),
           AiProvider.gemini => await _gemini(dio, apiKey, model, system, user, schema, maxTokens,
-              refusalMessage, truncatedMessage),
+              refusalMessage, truncatedMessage, images),
         };
     // 분당 한도(429)나 잠깐 붐빔(503)이면 회사가 알려 준 시간만큼 기다렸다가 몇 번 더 해 봄
     (String, AiUsage)? result;
@@ -254,7 +256,7 @@ bool _isDailyQuota(Object? body) {
 /// 서버에 대신 불러 달라고 요청. 서버도 callJsonModel로 같은 검사를 하니 여기서는 결과만 받음
 Future<(Map<String, dynamic>, AiUsage)> _relay(Dio dio, AiRelay relay, AiProvider provider, String model,
     String system, String user, Map<String, dynamic> schema, int maxTokens, String effort,
-    String refusal, String truncated, String unreadable) async {
+    String refusal, String truncated, String unreadable, List<String> images) async {
   final response = await dio.post<Map<String, dynamic>>(
     '${relay.baseUrl}${AiRelay.path}',
     options: Options(headers: {
@@ -268,6 +270,7 @@ Future<(Map<String, dynamic>, AiUsage)> _relay(Dio dio, AiRelay relay, AiProvide
       'schema': schema,
       'maxTokens': maxTokens,
       'effort': effort,
+      if (images.isNotEmpty) 'images': images,
       'messages': {'refusal': refusal, 'truncated': truncated, 'unreadable': unreadable},
     },
   );
@@ -279,7 +282,7 @@ Future<(Map<String, dynamic>, AiUsage)> _relay(Dio dio, AiRelay relay, AiProvide
 
 Future<(String, AiUsage)> _claude(Dio dio, String apiKey, String model, String system, String user,
     Map<String, dynamic> schema, int maxTokens, String effort, String refusal, String truncated,
-    bool fromBrowser) async {
+    bool fromBrowser, List<String> images) async {
   final fallback = claudeSupportsFallback(model);
   final response = await dio.post<Map<String, dynamic>>(
     'https://api.anthropic.com/v1/messages',
@@ -296,7 +299,10 @@ Future<(String, AiUsage)> _claude(Dio dio, String apiKey, String model, String s
       if (fallback) 'fallbacks': 'default',
       'system': system,
       'messages': [
-        {'role': 'user', 'content': user},
+        {'role': 'user', 'content': images.isEmpty ? user : [
+          for (final image in images) {'type': 'image', 'source': {'type': 'base64', 'media_type': image.substring(5,image.indexOf(';')), 'data': image.substring(image.indexOf(',')+1)}},
+          {'type':'text','text':user},
+        ]},
       ],
       'output_config': {
         'effort': effort,
@@ -319,7 +325,7 @@ Future<(String, AiUsage)> _claude(Dio dio, String apiKey, String model, String s
 }
 
 Future<(String, AiUsage)> _openai(Dio dio, String apiKey, String model, String system, String user,
-    Map<String, dynamic> schema, int maxTokens, String refusal, String truncated) async {
+    Map<String, dynamic> schema, int maxTokens, String refusal, String truncated, List<String> images) async {
   final response = await dio.post<Map<String, dynamic>>(
     'https://api.openai.com/v1/chat/completions',
     options: Options(headers: {'Authorization': 'Bearer $apiKey'}),
@@ -328,7 +334,10 @@ Future<(String, AiUsage)> _openai(Dio dio, String apiKey, String model, String s
       'max_completion_tokens': maxTokens,
       'messages': [
         {'role': 'system', 'content': system},
-        {'role': 'user', 'content': user},
+        {'role': 'user', 'content': images.isEmpty ? user : [
+          {'type':'text','text':user},
+          for (final image in images) {'type':'image_url','image_url':{'url':image}},
+        ]},
       ],
       'response_format': {
         'type': 'json_schema',
@@ -349,7 +358,7 @@ Future<(String, AiUsage)> _openai(Dio dio, String apiKey, String model, String s
 }
 
 Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String system, String user,
-    Map<String, dynamic> schema, int maxTokens, String refusal, String truncated) async {
+    Map<String, dynamic> schema, int maxTokens, String refusal, String truncated, List<String> images) async {
   final response = await dio.post<Map<String, dynamic>>(
     'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
     options: Options(headers: {'x-goog-api-key': apiKey}),
@@ -364,6 +373,7 @@ Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String s
           'role': 'user',
           'parts': [
             {'text': user},
+            for (final image in images) {'inlineData': {'mimeType':image.substring(5,image.indexOf(';')), 'data':image.substring(image.indexOf(',')+1)}},
           ],
         },
       ],
@@ -393,4 +403,16 @@ Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String s
       ((usage['candidatesTokenCount'] as num? ?? 0) + (usage['thoughtsTokenCount'] as num? ?? 0)).toInt(),
     ),
   );
+}
+
+/// Only bounded inline images are accepted; no server-side URL fetching.
+void validateImages(List<String> images) {
+  if (images.length > 3) throw const ClaudeChatException('사진은 한 번에 최대 3장까지 AI에게 전달할 수 있어요.');
+  for (final image in images) {
+    if (!RegExp(r'^data:image/(jpeg|png|webp);base64,').hasMatch(image) || image.length > 1400000) {
+      throw const ClaudeChatException('사진 형식이나 크기를 확인해 주세요.');
+    }
+    try { base64Decode(image.substring(image.indexOf(',')+1)); }
+    on FormatException { throw const ClaudeChatException('사진을 읽지 못했어요. 다시 첨부해 주세요.'); }
+  }
 }
