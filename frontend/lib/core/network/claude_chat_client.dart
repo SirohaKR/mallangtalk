@@ -115,6 +115,7 @@ class ClaudeChatClient {
     FreeTalkPace pace = FreeTalkPace.open,
     List<String> memories = const [],
     List<FreeTalkPhoto> photos = const [],
+    void Function(Duration wait)? onRetryWait,
   }) async {
     final transcript =
         conversationTranscript(history, userName, character.name);
@@ -173,6 +174,7 @@ ${newUserMessages.join('\n')}''';
       effort: 'low', // 짧은 잡담이라 깊게 생각할 필요 없음 (빠르고 저렴)
       refusalMessage: 'AI가 이 대화에는 답하지 않았어요.',
       unreadableMessage: 'AI 답장을 읽지 못했어요. 다시 보내 주세요.',
+      onRetryWait: onRetryWait,
     );
     return _parse(json);
   }
