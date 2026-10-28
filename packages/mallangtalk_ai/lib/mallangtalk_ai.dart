@@ -121,6 +121,7 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
   String refusalMessage = 'AI가 이 내용에는 답하지 않았어요.',
   String truncatedMessage = 'AI 답이 너무 길어서 중간에 끊겼어요.',
   String unreadableMessage = 'AI 응답을 읽지 못했어요. 다시 시도해 주세요.',
+  void Function(Duration wait)? onRetryWait,
 }) async {
   try {
     validateImages(images);
@@ -133,7 +134,7 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
               refusalMessage, truncatedMessage, fromBrowser, images),
           AiProvider.openai => await _openai(dio, apiKey, model, system, user, schema, maxTokens,
               refusalMessage, truncatedMessage, images),
-          AiProvider.gemini => await _gemini(dio, apiKey, model, system, user, schema, maxTokens,
+          AiProvider.gemini => await _gemini(dio, apiKey, model, system, user, schema, maxTokens, effort,
               refusalMessage, truncatedMessage, images),
         };
     // 분당 한도(429)나 잠깐 붐빔(503)이면 회사가 알려 준 시간만큼 기다렸다가 몇 번 더 해 봄
@@ -144,6 +145,7 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
       } on DioException catch (e) {
         final wait = attempt < aiMaxRetries ? retryWaitOf(e, attempt) : null;
         if (wait == null) rethrow;
+        onRetryWait?.call(wait);
         await aiRetrySleep(wait);
       }
     }
@@ -358,7 +360,8 @@ Future<(String, AiUsage)> _openai(Dio dio, String apiKey, String model, String s
 }
 
 Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String system, String user,
-    Map<String, dynamic> schema, int maxTokens, String refusal, String truncated, List<String> images) async {
+    Map<String, dynamic> schema, int maxTokens, String effort, String refusal, String truncated,
+    List<String> images) async {
   final response = await dio.post<Map<String, dynamic>>(
     'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
     options: Options(headers: {'x-goog-api-key': apiKey}),
@@ -382,6 +385,10 @@ Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String s
         'maxOutputTokens': maxTokens * 2 > 65536 ? 65536 : maxTokens * 2,
         'responseMimeType': 'application/json',
         'responseJsonSchema': schema,
+        // Gemini 3 이후 모델은 따로 말하지 않으면 깊게(high) 생각해서 짧은 톡 답장도 수십 초 걸림.
+        // effort가 low(자유대화 답장 등)면 생각을 짧게 해서 빨리 답하게 함
+        if (effort == 'low' && !model.startsWith('gemini-2'))
+          'thinkingConfig': {'thinkingLevel': 'low'},
       },
     },
   );

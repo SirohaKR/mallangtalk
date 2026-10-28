@@ -10,9 +10,11 @@ class _SeqAdapter implements HttpClientAdapter {
   _SeqAdapter(this.responses);
   final List<(int, Map<String, dynamic>)> responses;
   var calls = 0;
+  final bodies = <Object?>[];
 
   @override
   Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    bodies.add(options.data);
     final (status, body) = responses[calls.clamp(0, responses.length - 1)];
     calls++;
     return ResponseBody.fromString(jsonEncode(body), status, headers: {
@@ -96,6 +98,22 @@ void main() {
     expect(await call(adapter), {'ok': true});
     expect(adapter.calls, 3);
     expect(waits, [const Duration(milliseconds: 12500), const Duration(milliseconds: 12500)]);
+  });
+
+  test('effort가 low면 Gemini에게 생각을 짧게(thinkingLevel low) 하라고 하고, 기다릴 때 알려 줌', () async {
+    Future<void> run(String effort) async {
+      final adapter = _SeqAdapter([(429, _geminiLimit()), (200, _geminiOk())]);
+      final told = <Duration>[];
+      await callJsonModel(Dio()..httpClientAdapter = adapter,
+          provider: AiProvider.gemini, apiKey: 'k', model: 'gemini-3.8-flash', system: 's', user: 'u',
+          schema: const {'type': 'object'}, maxTokens: 10, effort: effort, onRetryWait: told.add);
+      expect(told, [const Duration(milliseconds: 12500)]);
+      final config = (adapter.bodies.last as Map)['generationConfig'] as Map;
+      expect(config['thinkingConfig'], effort == 'low' ? {'thinkingLevel': 'low'} : isNull);
+    }
+
+    await run('low');
+    await run('medium'); // 대본 만들기는 지금처럼 깊게 생각
   });
 
   test('계속 막히면 세 번까지만 다시 하고 알기 쉬운 안내', () async {

@@ -346,6 +346,7 @@ class _FakeClaude extends ClaudeChatClient {
     FreeTalkPace pace = FreeTalkPace.open,
     List<String> memories = const [],
     List<FreeTalkPhoto> photos = const [],
+    void Function(Duration wait)? onRetryWait,
   }) async {
     paces.add(pace);
     lastPhotos = photos;

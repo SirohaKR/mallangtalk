@@ -1381,6 +1381,12 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               pace: pace,
               memories: state.memories,
               photos: _free ? _bundle.freeTalkPhotos : const [],
+              // 무료 한도(429)·붐빔(503)으로 기다렸다 다시 물어볼 때, 입력 중 점만 계속 보이지 않게 알려 줌
+              onRetryWait: (wait) {
+                if (stillValid())
+                  _addSystemNotice(
+                      'AI가 지금 붐벼서 ${wait.inSeconds}초 뒤에 다시 물어볼게요. (무료 등급은 1분에 보낼 수 있는 횟수가 정해져 있어요)');
+              },
             );
         _awaitingAiReply = false;
         if (!stillValid()) return;
