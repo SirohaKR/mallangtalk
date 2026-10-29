@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -30,6 +31,25 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       return const Scaffold(body: Center(child: Text('캐릭터를 찾을 수 없어요')));
     }
     final received = ref.watch(chatRoomProvider(widget.characterId).select((s) => s.receivedPhotos)).toSet();
+    // '이 톡으로 가기': 지금 대화방(스토리 → 자유대화 순)에 그 사진 톡이 남아 있으면
+    String? roomWith(String label) {
+      for (final room in [widget.characterId, freeRoomId(widget.characterId)]) {
+        if (!ref.read(chatRoomsProvider).contains(room) && room != widget.characterId) continue;
+        final has = ref.read(chatRoomProvider(room)).messages.any((m) => m.hasPhoto && m.photoLabel!.trim() == label);
+        if (has) return room;
+      }
+      return null;
+    }
+
+    void goTo(String room, String label) {
+      ref.read(chatJumpProvider.notifier).request(room, label);
+      if (room == widget.characterId && context.canPop()) {
+        context.pop();
+      } else {
+        context.go(isFreeRoom(room) ? '/free/${widget.characterId}' : '/chat/${widget.characterId}');
+      }
+    }
+
     final theme = ChatTheme.of(bundle.character);
     final all = bundle.albumPhotos;
     // 호감도 단계 순서대로 묶음 (단계에 없는 묶음은 맨 뒤)
@@ -108,7 +128,14 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                           items: [
                                             for (final p in got)
                                               PhotoViewerItem(
-                                                  label: p.label, image: p.image, chip: p.group, caption: p.event?.title ?? '자유대화'),
+                                                  label: p.label,
+                                                  image: p.image,
+                                                  chip: p.group,
+                                                  caption: p.event?.title ?? '자유대화',
+                                                  onGoTo: switch (roomWith(p.label)) {
+                                                    final room? => () => goTo(room, p.label),
+                                                    null => null,
+                                                  }),
                                           ],
                                         ),
                                       )

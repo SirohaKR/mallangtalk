@@ -64,10 +64,13 @@ void main() {
     expect(find.byKey(const ValueKey('photo_viewer')), findsOneWidget);
     expect(find.descendant(of: find.byKey(const ValueKey('photo_viewer')), matching: find.text(dubuPhoto)),
         findsWidgets);
-    await tester.tap(find.byTooltip('닫기'));
+    // 진짜 사진이 없는 설명 카드라 '저장'은 없고, '이 톡으로 가기'는 닫고 그 톡으로
+    expect(find.byKey(const ValueKey('photo_viewer_save')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('photo_viewer_goto')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const ValueKey('photo_viewer')), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('예전 앨범(컷씬만 기록)도 새 앨범에 들어감', (tester) async {

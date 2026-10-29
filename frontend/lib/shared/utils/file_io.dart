@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'dart:typed_data';
+import 'package:dio/dio.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../core/network/api_endpoint.dart';
 import '../widgets/photo_crop_screen.dart';
 
 /// 고른 파일 (이름 + 내용)
@@ -34,6 +38,38 @@ class FileIO {
   }
 
   static const jsonMime = 'application/json';
+
+  /// 사진 한 장을 기기에 저장 (웹은 다운로드 폴더로). [image]는 data: 주소·서버 주소·앱 안 그림. 못 하면 false
+  static Future<bool> savePhoto(String image, String label) async {
+    try {
+      Uint8List bytes;
+      var mime = 'image/jpeg';
+      if (image.startsWith('data:')) {
+        final comma = image.indexOf(',');
+        mime = image.substring(5, comma).split(';').first;
+        bytes = base64Decode(image.substring(comma + 1));
+      } else if (image.startsWith('assets/')) {
+        bytes = (await rootBundle.load(image)).buffer.asUint8List();
+        if (image.endsWith('.png')) mime = 'image/png';
+      } else {
+        final url = image.startsWith('/api/') ? resolveApiAsset(image) : image;
+        final res = await Dio().get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+        bytes = Uint8List.fromList(res.data ?? const []);
+        mime = res.headers.value('content-type')?.split(';').first ?? mime;
+      }
+      if (bytes.isEmpty) return false;
+      final ext = switch (mime) {
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+        _ => 'jpg',
+      };
+      await save(fileName: '${safeName(label)}.$ext', bytes: bytes, mimeType: mime);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// 파일 이름에 못 쓰는 글자를 빼고 정리
   static String safeName(String name) {

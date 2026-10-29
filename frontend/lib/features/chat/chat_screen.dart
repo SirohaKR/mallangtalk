@@ -125,6 +125,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // 입력칸 쪽으로 밀 수 있다. 기존 포커스는 TextFieldTapRegion으로 유지한다.
   }
 
+  /// 사진 톡 줄 (사진 크게 보기·앨범의 '이 톡으로 가기'에서 그 톡을 찾아 스크롤)
+  final Map<String, GlobalKey> _photoKeys = {};
+
+  /// 잠깐 반짝 표시할 톡
+  String? _flashId;
+
+  /// [messageId] 톡이 보이게 스크롤하고 잠깐 반짝임. 목록이 길어 아직 안 그려졌으면 그쪽으로 조금씩 옮겨 가며 찾음
+  Future<void> _scrollToMessage(String messageId) async {
+    final messages = ref.read(chatRoomProvider(widget.roomId)).messages;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index < 0) return;
+    for (var tries = 0; tries < 12 && mounted; tries++) {
+      final ctx = _photoKeys[messageId]?.currentContext;
+      if (ctx != null) {
+        await Scrollable.ensureVisible(ctx,
+            alignment: 0.5, duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
+        if (!mounted) return;
+        setState(() => _flashId = messageId);
+        await Future.delayed(const Duration(milliseconds: 1400));
+        if (mounted && _flashId == messageId) setState(() => _flashId = null);
+        return;
+      }
+      if (!_scrollController.hasClients) return;
+      // 거꾸로 그린 목록: 최근 톡이 0. 대략 몇 번째 위인지로 위치를 어림잡아 옮김
+      final position = _scrollController.position;
+      final fromBottom = (messages.length - 1 - index) / messages.length.clamp(1, 1 << 30);
+      final target = (position.maxScrollExtent * fromBottom).clamp(0.0, position.maxScrollExtent);
+      _scrollController.jumpTo(target);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+  }
+
   /// 목록을 거꾸로(reverse) 그려서 맨 아래(최근 톡)가 0 위치. 다시 들어와도 최근 톡부터 보임
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -220,6 +252,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             chip: albumGroups[m.photoLabel!.trim()],
             caption:
                 '${photoTimeLabel(m.timestamp)}에 ${m.isUser ? '보냄' : '받음 · ${m.speakerName}'}',
+            onGoTo: () => _scrollToMessage(m.id),
           ),
       ],
     );
@@ -239,6 +272,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final theme = ChatTheme.of(chatState.character);
     final screenWidth = MediaQuery.sizeOf(context).width;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    // 앨범에서 '이 톡으로 가기'로 왔으면 그 사진 톡으로
+    final jump = ref.watch(chatJumpProvider);
+    if (jump != null && jump.roomId == roomId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || ref.read(chatJumpProvider) != jump) return;
+        ref.read(chatJumpProvider.notifier).clear();
+        final target =
+            chatState.messages.where((m) => m.hasPhoto && m.photoLabel!.trim() == jump.label).lastOrNull;
+        if (target != null) _scrollToMessage(target.id);
+      });
+    }
 
     if (bottomInset > _lastBottomInset) {
       _scrollToBottom();
@@ -345,15 +389,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 _inputFocus.requestFocus();
                               }
                             : null,
-                        child: _MessageBubbleRow(
-                          message: msg,
-                          theme: theme,
-                          photoUrl: image,
-                          maxBubbleWidth: screenWidth >= 720 ? 420 : 290,
-                          onPhotoTap: msg.hasPhoto
-                              ? () => _openPhotoViewer(
-                                  msg, chatState, bundle, theme, notifier)
+                        child: AnimatedContainer(
+                          key: msg.hasPhoto
+                              ? _photoKeys.putIfAbsent(msg.id, GlobalKey.new)
                               : null,
+                          duration: const Duration(milliseconds: 300),
+                          decoration: BoxDecoration(
+                            color: _flashId == msg.id
+                                ? theme.accent.withValues(alpha: 0.14)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: _MessageBubbleRow(
+                            message: msg,
+                            theme: theme,
+                            photoUrl: image,
+                            maxBubbleWidth: screenWidth >= 720 ? 420 : 290,
+                            onPhotoTap: msg.hasPhoto
+                                ? () => _openPhotoViewer(
+                                    msg, chatState, bundle, theme, notifier)
+                                : null,
+                          ),
                         ));
                   },
                 ),

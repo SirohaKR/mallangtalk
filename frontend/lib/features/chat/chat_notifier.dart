@@ -51,6 +51,18 @@ typedef EpilogueItem = ({
   int photos
 });
 
+/// 앨범의 '이 톡으로 가기': 대화방이 이 사진 톡으로 스크롤해 주길 바라는 요청 (방 ID, 사진 설명)
+class ChatJumpRequest extends Notifier<({String roomId, String label})?> {
+  @override
+  ({String roomId, String label})? build() => null;
+
+  void request(String roomId, String label) => state = (roomId: roomId, label: label.trim());
+
+  void clear() => state = null;
+}
+
+final chatJumpProvider = NotifierProvider<ChatJumpRequest, ({String roomId, String label})?>(ChatJumpRequest.new);
+
 /// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
 const _freeSuffix = '#free';
 String freeRoomId(String characterId) => '$characterId$_freeSuffix';

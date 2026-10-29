@@ -3,11 +3,12 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../utils/file_io.dart';
 import 'character_avatar.dart';
 
 /// 크게 보기에서 보여 줄 사진 한 장
 class PhotoViewerItem {
-  const PhotoViewerItem({required this.label, this.image, this.chip, this.caption});
+  const PhotoViewerItem({required this.label, this.image, this.chip, this.caption, this.onGoTo});
 
   /// 사진 설명 (진짜 사진이 없으면 이 글을 카드로 보여 줌)
   final String label;
@@ -18,6 +19,9 @@ class PhotoViewerItem {
 
   /// 맨 아래 작은 글 (예: 10월 26일 밤 11:43에 받음 · 카이엔)
   final String? caption;
+
+  /// '이 톡으로 가기': 크게 보기를 닫고 이 사진이 온 톡으로 (없으면 버튼 안 보임)
+  final VoidCallback? onGoTo;
 }
 
 /// [초보자 노트] 사진 크게 보기 화면 (대화방·앨범이 같이 써요).
@@ -53,6 +57,18 @@ class _PhotoViewerState extends State<PhotoViewer> {
 
   void _go(int index) => _pages.animateToPage(index,
       duration: const Duration(milliseconds: 240), curve: Curves.easeOut);
+
+  bool _saving = false;
+
+  Future<void> _save(PhotoViewerItem item) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final ok = await FileIO.savePhoto(item.image ?? '', item.label);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(ok ? '사진을 저장했어요' : '사진을 저장하지 못했어요')));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -162,6 +178,44 @@ class _PhotoViewerState extends State<PhotoViewer> {
                         const SizedBox(height: 4),
                         Text(item.caption!,
                             style: AppTextStyles.messageTime.copyWith(color: Colors.white70)),
+                      ],
+                      if (photo != null || item.onGoTo != null) ...[
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            if (photo != null)
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  key: const ValueKey('photo_viewer_save'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(color: Colors.white38),
+                                    minimumSize: const Size.fromHeight(44),
+                                  ),
+                                  onPressed: _saving ? null : () => _save(item),
+                                  icon: const Icon(Icons.download_rounded, size: 18),
+                                  label: const Text('저장'),
+                                ),
+                              ),
+                            if (photo != null && item.onGoTo != null) const SizedBox(width: 10),
+                            if (item.onGoTo != null)
+                              Expanded(
+                                child: FilledButton.icon(
+                                  key: const ValueKey('photo_viewer_goto'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: widget.accent,
+                                    minimumSize: const Size.fromHeight(44),
+                                  ),
+                                  onPressed: () {
+                                    widget.onClose();
+                                    item.onGoTo!();
+                                  },
+                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                                  label: const Text('이 톡으로 가기'),
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ],
                   ),
