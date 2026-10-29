@@ -119,6 +119,10 @@ class ClaudeChatClient {
   }) async {
     final transcript =
         conversationTranscript(history, userName, character.name);
+    final recallText = recentTextForRecall(history, newUserMessages);
+    final lore = LoreEntry.pick(character.lorebook, recallText);
+    final recalled = recallMemories(memories, recallText,
+        ignore: {userName.toLowerCase(), character.name.toLowerCase()});
 
     final system = '''
 너는 메신저 연애 시뮬레이션 게임 속 캐릭터 "${character.name}"이다. 아래 설정을 지키며 유저와 카톡을 주고받는다.
@@ -132,7 +136,7 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 [현재 관계]
 ${stageLabel != null ? '${character.name}에게 유저는 지금 "$stageLabel" 단계다.' : '정해진 이야기 없이 설정과 유저 페르소나대로 자유롭게 이어 가는 대화다. 관계는 설정에 맞춰 자연스럽게 정한다.'}${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
 
-${memories.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억]\n${memories.map((m) => '- $m').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
+${lore.isEmpty ? '' : '[지금 대화와 관련된 설정 (로어북)] (캐릭터가 이미 알고 있는 사실. 대화에 필요할 때 자연스럽게 쓰고, 설명하듯 늘어놓지 않는다)\n${lore.map((e) => '- ${CharacterModel.fillUserName(e.content.trim(), userName, charName: character.name)}').join('\n')}\n\n'}${recalled.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억] (오래된 것부터. 캐릭터는 이 일들을 기억하고, 관련 얘기가 나오면 먼저 떠올려 말할 수 있다)\n${recalled.map((m) => '- $m').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
 - 유저가 한 말을 매번 요약하거나 되풀이한 뒤 감상을 붙이는 방식으로 답하지 않는다. 질문에 바로 대답하고, 자기 생각·취향·지금 하는 일·작은 사건으로 대화를 이어 간다.
 - 유저가 애정을 말해도 자동으로 "나도 좋아해"로 되받지 않는다. 관계와 캐릭터의 성격에 맞는 구체적인 반응을 고른다. 평범한 일상 화제를 억지로 사랑 고백으로 바꾸지 않는다.
 - 이미 말한 고백·상투어를 연속해서 반복하지 않는다. 모든 답장 끝에 질문을 붙이지 말고, 짧은 반응·자기 이야기·질문을 상황에 맞게 섞는다.

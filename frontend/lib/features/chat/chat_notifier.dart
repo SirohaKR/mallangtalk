@@ -1677,9 +1677,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       );
     }
     if (memory.isNotEmpty) {
+      // 최근 30개까지 모아 둠. AI에겐 최근 5개 + 지금 대화와 관련된 옛 기억만 넘김 (recallMemories)
       final all = [...state.memories, memory];
       state =
-          state.copyWith(memories: all.skip(max(0, all.length - 5)).toList());
+          state.copyWith(memories: all.skip(max(0, all.length - 30)).toList());
     }
     if (ends) {
       await _endFreeTalk(byCharacter: true);
