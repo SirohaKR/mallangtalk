@@ -4,8 +4,11 @@
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <!-- 모바일 가상 키보드 오픈 시 브라우저와 Flutter가 높이를 중복 차감해 화면이 위로 밀리는 현상 방지 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- 모바일 가상 키보드 오픈 시 브라우저와 Flutter가 높이를 중복 차감해 화면이 위로 밀리는 현상 방지.
+       interactive-widget=resizes-content: 안드로이드 크롬·삼성 인터넷은 기본으로 키보드만큼 보이는 영역을 위로 밀어(pan)
+       입력칸을 보여 주는데, Flutter도 키보드만큼 화면을 줄이니 위가 잘리고 아래 빈칸이 생겼다(작가 코멘트 칸 등).
+       페이지 자체를 키보드 위로 줄이면 밀 곳이 없어 겹치지 않는다. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="말랑톡">
@@ -54,6 +57,18 @@
           return window.setTimeout(restoreDocumentPosition, delay);
         });
       }
+      // 키보드가 뜰 때 브라우저가 입력칸을 보이려고 overflow:hidden인 body나 Flutter 화면 요소까지
+      // 스크롤하면 앱 전체가 위로 밀린다. Flutter는 DOM 스크롤을 쓰지 않으니 바로 0으로 되돌린다.
+      // 여러 줄 입력칸(textarea) 안쪽 스크롤은 그대로 둔다.
+      function restoreElementScroll(event) {
+        var el = event.target;
+        if (!el || el === document || !el.tagName) return;
+        var tag = el.tagName.toUpperCase();
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+        if (el.scrollTop !== 0) el.scrollTop = 0;
+        if (el.scrollLeft !== 0) el.scrollLeft = 0;
+      }
+      document.addEventListener('scroll', restoreElementScroll, { capture: true, passive: true });
       window.addEventListener('scroll', restoreDocumentPosition, { passive: true });
       window.addEventListener('resize', restoreAfterKeyboardAnimation, { passive: true });
       document.addEventListener('focusout', restoreAfterKeyboardAnimation);

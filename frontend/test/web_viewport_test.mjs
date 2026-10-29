@@ -37,7 +37,7 @@ function browser(hasViewport = true) {
   runInNewContext(script, { window, document: { addEventListener: listen('document') } });
   return {
     window, timers,
-    fire: (event) => listeners[event](),
+    fire: (event, arg) => listeners[event](arg),
     flush: () => { while (frames.length) frames.shift()(); },
     restores: () => restores,
   };
@@ -77,4 +77,19 @@ test('focusout and window resize work without the Visual Viewport API', () => {
     assert.equal(b.window.scrollY, 0);
   }
   assert.equal(b.restores(), 3);
+});
+
+test('element scroll from keyboard focus is undone, but text boxes keep their own scroll', () => {
+  const b = browser();
+  const body = { tagName: 'BODY', scrollTop: 180, scrollLeft: 0 };
+  b.fire('document:scroll', { target: body });
+  assert.equal(body.scrollTop, 0);
+  const box = { tagName: 'TEXTAREA', scrollTop: 40, scrollLeft: 0 };
+  b.fire('document:scroll', { target: box });
+  assert.equal(box.scrollTop, 40);
+});
+
+test('keyboard resizes the page instead of panning it (Android Chrome / Samsung Internet)', () => {
+  const meta = html.match(/<meta name="viewport" content="([^"]*)">/)[1];
+  assert.match(meta, /interactive-widget=resizes-content/);
 });
