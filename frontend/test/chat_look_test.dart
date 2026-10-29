@@ -112,4 +112,43 @@ void main() {
     expect(byok.provider.name, 'claude');
     expect(byok.hasKey, isTrue);
   });
+
+  testWidgets('대화방 AI를 이 대화만으로 고르면 그 방만 바뀌고 다른 대화는 기본 AI 그대로', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'byok_provider': 'gemini',
+      'byok_key_gemini': 'AIza-test',
+      'byok_model_gemini': 'gemini-3.8-flash',
+      'byok_claude_api_key': 'sk-ant-test',
+    });
+    final container = await openDohaChat(tester);
+    await tester.tap(find.byTooltip('대화 설정'));
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    await tester.tap(find.text('자유대화 AI 고르기'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    await tester.tap(find.text('이 대화만'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('ai_provider_claude')));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('ai_model_claude-haiku-5-5')));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final here = container.read(roomByokProvider(dohaId));
+    expect(here.provider.name, 'claude');
+    expect(here.model, 'claude-haiku-5-5');
+    // 모든 대화 기본(다른 방)은 그대로 Gemini
+    expect(container.read(byokSettingsProvider).provider.name, 'gemini');
+    expect(container.read(roomByokProvider('other_room')).model, 'gemini-3.8-flash');
+
+    // 모든 대화 기본으로 바꾸면 지금 고른 AI가 기본이 되고, 이 방의 따로 설정은 지워짐
+    await tester.tap(find.text('모든 대화 기본으로'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(container.read(roomAiChoiceProvider(dohaId)), isNull);
+    expect(container.read(byokSettingsProvider).provider.name, 'claude');
+    expect(container.read(byokSettingsProvider).model, 'claude-haiku-5-5');
+  });
 }

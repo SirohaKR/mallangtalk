@@ -929,7 +929,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       ServiceConfig config, DateTime when, Set<String> used,
       {bool loud = false}) async {
     if (config.mode == 'ai') {
-      final byok = ref.read(byokSettingsProvider);
+      final byok = ref.read(roomByokProvider(_roomId));
       if (!byok.canUseAi) {
         if (loud)
           _addSystemNotice('AI 키를 넣으면 ${state.character.name}의 톡을 AI가 새로 써요');
@@ -1266,7 +1266,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final trimmed = text.trim();
     if (trimmed.isEmpty && (photoLabel == null || photoLabel.isEmpty))
       return false;
-    if (!ref.read(byokSettingsProvider).canUseAi) {
+    if (!ref.read(roomByokProvider(_roomId)).canUseAi) {
       _addSystemNotice('자유대화를 하려면 API 키를 등록해 주세요.');
       return false;
     }
@@ -1367,7 +1367,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 내가 연속으로 보낸 여러 마디를 한꺼번에 읽고('1' 제거), 현실적으로 끊어서 답장합니다.
   Future<void> _processCombinedUserBurstReply() async {
     if (_pendingUserBurstTexts.isEmpty) return;
-    if (!ref.read(byokSettingsProvider).canUseAi) {
+    if (!ref.read(roomByokProvider(_roomId)).canUseAi) {
       state = state.copyWith(isCharacterTyping: false, canRetryFreeTalk: true);
       _addSystemNotice('자유대화를 하려면 API 키를 등록해 주세요.');
       return;
@@ -1407,7 +1407,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     var affectionDelta = 0;
     var ends = false;
     var memory = '';
-    final byok = ref.read(byokSettingsProvider);
+    final byok = ref.read(roomByokProvider(_roomId));
     if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
       _awaitingAiReply = true;

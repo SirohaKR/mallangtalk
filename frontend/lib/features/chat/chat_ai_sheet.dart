@@ -7,7 +7,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../settings/byok_settings.dart';
 
 /// 대화방에서 자유대화 AI(회사·모델)를 바로 고르는 시트
-Future<void> showChatAiSheet(BuildContext context, {required Color accent}) {
+Future<void> showChatAiSheet(BuildContext context, {required Color accent, String? roomId}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -15,24 +15,33 @@ Future<void> showChatAiSheet(BuildContext context, {required Color accent}) {
     useSafeArea: true,
     backgroundColor: AppColors.surfaceWhite,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-    builder: (_) => _ChatAiSheet(accent: accent),
+    builder: (_) => _ChatAiSheet(accent: accent, roomId: roomId),
   );
 }
 
 /// [초보자 노트] 설정까지 가지 않고 대화방에서 AI를 바꾸는 곳.
 /// 키가 있는 회사는 모델만 고르면 되고, 키가 없는 회사를 누르면 그 자리에서 키를 붙여 넣어 연결해요.
-/// 고른 AI는 모든 대화에 똑같이 쓰여요 (설정 > AI 연결과 같은 값).
+/// 대화방에서 열면 '이 대화만 / 모든 대화 기본으로' 중 어디에 쓸지 고를 수 있어요.
+/// 모든 대화 기본은 설정 > AI 연결과 같은 값이에요.
 class _ChatAiSheet extends ConsumerStatefulWidget {
-  const _ChatAiSheet({required this.accent});
+  const _ChatAiSheet({required this.accent, this.roomId});
 
   final Color accent;
+
+  /// 대화방에서 열었으면 그 방 (없으면 모든 대화 기본만 바꿈)
+  final String? roomId;
 
   @override
   ConsumerState<_ChatAiSheet> createState() => _ChatAiSheetState();
 }
 
 class _ChatAiSheetState extends ConsumerState<_ChatAiSheet> {
-  late AiProvider _provider = ref.read(byokSettingsProvider).provider;
+  String? get _room => widget.roomId;
+  ByokSettings _active() => _room == null ? ref.read(byokSettingsProvider) : ref.read(roomByokProvider(_room!));
+  late AiProvider _provider = _active().provider;
+
+  /// true면 이 대화방에만 (이미 '이 대화만'으로 골라 둔 방이면 처음부터 true)
+  late bool _onlyHere = _room != null && ref.read(roomAiChoiceProvider(_room!)) != null;
   final _key = TextEditingController();
   bool _saving = false;
 
@@ -45,14 +54,34 @@ class _ChatAiSheetState extends ConsumerState<_ChatAiSheet> {
   Future<void> _use({String? apiKey, String? model}) async {
     final notifier = ref.read(byokSettingsProvider.notifier);
     final current = notifier.peek(_provider);
+    final active = _active();
+    final pickedModel = model ?? (active.provider == _provider ? active.model : current.model);
     setState(() => _saving = true);
-    await notifier.save(provider: _provider, apiKey: apiKey ?? '', model: model ?? current.model);
+    if (_onlyHere && _room != null) {
+      if (apiKey != null && apiKey.trim().isNotEmpty) await notifier.saveKey(_provider, apiKey);
+      await ref.read(roomAiChoiceProvider(_room!).notifier).set(_provider, pickedModel);
+    } else {
+      await notifier.save(provider: _provider, apiKey: apiKey ?? '', model: pickedModel);
+      if (_room != null) await ref.read(roomAiChoiceProvider(_room!).notifier).clear();
+    }
     if (mounted) setState(() => _saving = false);
+  }
+
+  /// 적용할 곳을 바꾸면 지금 이 방에서 쓰는 AI를 그쪽에 그대로 옮김
+  Future<void> _setScope(bool onlyHere) async {
+    if (onlyHere == _onlyHere) return;
+    final active = _active();
+    setState(() {
+      _onlyHere = onlyHere;
+      _provider = active.provider;
+    });
+    if (active.canUseAi) await _use(model: active.model);
   }
 
   @override
   Widget build(BuildContext context) {
-    final active = ref.watch(byokSettingsProvider);
+    ref.watch(byokSettingsProvider);
+    final active = _room == null ? ref.watch(byokSettingsProvider) : ref.watch(roomByokProvider(_room!));
     final notifier = ref.read(byokSettingsProvider.notifier);
     final picked = _provider == active.provider ? active : notifier.peek(_provider);
     final accent = widget.accent;
@@ -101,8 +130,28 @@ class _ChatAiSheetState extends ConsumerState<_ChatAiSheet> {
           children: [
             const Text('자유대화 AI', style: AppTextStyles.appBarTitle),
             const SizedBox(height: 4),
-            const Text('AI가 캐릭터가 되어 자유롭게 답해요. 고른 AI는 모든 대화에 쓰여요.',
+            Text(
+                _room == null
+                    ? 'AI가 캐릭터가 되어 자유롭게 답해요. 고른 AI는 모든 대화에 쓰여요.'
+                    : _onlyHere
+                        ? 'AI가 캐릭터가 되어 자유롭게 답해요. 고른 AI는 이 대화방에만 쓰여요.'
+                        : 'AI가 캐릭터가 되어 자유롭게 답해요. 고른 AI는 따로 정하지 않은 모든 대화에 쓰여요.',
                 style: AppTextStyles.systemNotice),
+            if (_room != null) ...[
+              const SizedBox(height: 12),
+              const Text('적용할 곳', style: AppTextStyles.speakerName),
+              const SizedBox(height: 6),
+              SegmentedButton<bool>(
+                key: const ValueKey('ai_scope'),
+                segments: const [
+                  ButtonSegment(value: true, label: Text('이 대화만')),
+                  ButtonSegment(value: false, label: Text('모든 대화 기본으로')),
+                ],
+                selected: {_onlyHere},
+                showSelectedIcon: false,
+                onSelectionChanged: _saving ? null : (v) => _setScope(v.first),
+              ),
+            ],
             const SizedBox(height: 14),
             const Text('AI 회사', style: AppTextStyles.speakerName),
             const SizedBox(height: 6),

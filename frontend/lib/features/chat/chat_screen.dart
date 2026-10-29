@@ -138,7 +138,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   bool _ensureAiReady() {
-    if (ref.read(byokSettingsProvider).canUseAi) return true;
+    if (ref.read(roomByokProvider(widget.roomId)).canUseAi) return true;
     showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -152,7 +152,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     onPressed: () {
                       Navigator.pop(ctx);
                       showChatAiSheet(context,
-                          accent: Theme.of(context).colorScheme.primary);
+                          accent: Theme.of(context).colorScheme.primary, roomId: widget.roomId);
                     },
                     child: const Text('API 키 등록')),
               ],
@@ -233,7 +233,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final chatState = ref.watch(chatRoomProvider(roomId));
     final service = chatState.character.isService;
     final notifier = ref.read(chatRoomProvider(roomId).notifier);
-    final hasApiKey = ref.watch(byokSettingsProvider.select((s) => s.canUseAi));
+    final hasApiKey = ref.watch(roomByokProvider(roomId).select((s) => s.canUseAi));
     final bundle = ref.watch(characterBundleProvider(id));
     final theme = ChatTheme.of(chatState.character);
     final screenWidth = MediaQuery.sizeOf(context).width;
@@ -455,7 +455,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               if (chatState.isByokAiModeEnabled && !hasApiKey)
                 GestureDetector(
-                  onTap: () => showChatAiSheet(context, accent: theme.accent),
+                  onTap: () => showChatAiSheet(context, accent: theme.accent, roomId: roomId),
                   child: const Padding(
                     padding: EdgeInsets.only(bottom: 6),
                     child: Text(
@@ -564,7 +564,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     GestureDetector(
                       key: const ValueKey('chat_ai_pill'),
                       onTap: () =>
-                          showChatAiSheet(context, accent: theme.accent),
+                          showChatAiSheet(context, accent: theme.accent, roomId: roomId),
                       child: Container(
                         margin: const EdgeInsets.only(top: 2),
                         padding: const EdgeInsets.symmetric(
@@ -575,7 +575,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '${free && ref.watch(romanceSettingsProvider(id)) != RomanceTone.basic && !hasMinorAge(chatState.character) ? '성인 · ${ref.watch(romanceSettingsProvider(id)).label} · ' : ''}${service ? 'AI' : '자유대화'} · ${aiModelName(ref.watch(byokSettingsProvider))} ▾',
+                          '${free && ref.watch(romanceSettingsProvider(id)) != RomanceTone.basic && !hasMinorAge(chatState.character) ? '성인 · ${ref.watch(romanceSettingsProvider(id)).label} · ' : ''}${service ? 'AI' : '자유대화'} · ${aiModelName(ref.watch(roomByokProvider(roomId)))} ▾',
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.messageTime.copyWith(
                             color: Color.lerp(
@@ -615,7 +615,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 case 'tempo':
                   pickChatTempo(context, chatState.character);
                 case 'ai':
-                  showChatAiSheet(context, accent: theme.accent);
+                  showChatAiSheet(context, accent: theme.accent, roomId: roomId);
                 case 'end_scene':
                   notifier.endConversation();
                   setState(() => _replyTarget = null);
