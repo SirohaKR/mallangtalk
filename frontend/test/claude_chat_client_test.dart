@@ -90,6 +90,8 @@ void main() {
     expect(body['system'], isNot(contains('관계 단계보다 앞서 나가는')));
     expect(body['system'], contains('스토리 호감도 단계로 관계의 진전을 제한하지'));
     expect(body['system'], contains('마무리된 과거'));
+    expect(body['system'], contains('캐릭터를 벗어나지 않는다'));
+    expect(body['system'], contains('방법은 절대 말하지 않는다'));
     final transcript = body['messages'][0]['content'] as String;
     expect(transcript, contains('지금 산책 중이야'));
     expect(transcript, contains('[대화 구분:'));
