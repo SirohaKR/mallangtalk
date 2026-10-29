@@ -27,7 +27,12 @@ enum StoryProgress {
 }
 
 /// 공략 뒤 다시 볼 수 있는 대화: 아직 안 고른 선택지가 남은 대화
-typedef ReplayableEvent = ({ScenarioEventModel event, int unseenChoices});
+/// 다시 볼 수 있는 대화. [missed]: 그 시간에 없어서 아직 못 받은 특별한 톡
+typedef ReplayableEvent = ({
+  ScenarioEventModel event,
+  int unseenChoices,
+  bool missed
+});
 
 /// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
 const _freeSuffix = '#free';
@@ -89,6 +94,10 @@ class ChatRoomState {
   /// 공략 뒤 '안 본 갈래 다시 보기' 중인지 (진행·호감도에 영향 없음)
   final bool isReplaying;
 
+  /// 대본(이벤트)이 재생 중인지. 말풍선 사이·대화 사이 잠깐 쉬는 동안에도 true라서
+  /// 그 틈에 공략 완료 패널(다시 보기 버튼)이 깜빡 뜨지 않음
+  final bool isScriptPlaying;
+
   const ChatRoomState({
     required this.character,
     required this.internalAffection,
@@ -114,6 +123,7 @@ class ChatRoomState {
     this.scriptsTotal = 0,
     this.sparkleChoiceIds = const [],
     this.isReplaying = false,
+    this.isScriptPlaying = false,
   });
 
   /// 캐릭터가 보냈는데 내가 아직 안 본 말풍선 수
@@ -156,6 +166,7 @@ class ChatRoomState {
     int? scriptsTotal,
     List<String>? sparkleChoiceIds,
     bool? isReplaying,
+    bool? isScriptPlaying,
   }) {
     return ChatRoomState(
       character: character,
@@ -186,6 +197,7 @@ class ChatRoomState {
       scriptsTotal: scriptsTotal ?? this.scriptsTotal,
       sparkleChoiceIds: sparkleChoiceIds ?? this.sparkleChoiceIds,
       isReplaying: isReplaying ?? this.isReplaying,
+      isScriptPlaying: isScriptPlaying ?? this.isScriptPlaying,
     );
   }
 }
@@ -238,6 +250,23 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     List<String> completed
   })? _replaySnapshot;
 
+  /// 지금 돌고 있는 대본 재생 수 (겹쳐서 돌 수 있어 숫자로 셈)
+  int _scriptDepth = 0;
+
+  /// 대본 재생 하나를 감싸서, 도는 동안 [ChatRoomState.isScriptPlaying]을 켜 둠
+  Future<void> _playing(Future<void> Function() body) async {
+    _scriptDepth++;
+    if (!_disposed && !state.isScriptPlaying)
+      state = state.copyWith(isScriptPlaying: true);
+    try {
+      await body();
+    } finally {
+      if (_scriptDepth > 0) _scriptDepth--;
+      if (_scriptDepth == 0 && !_disposed && state.isScriptPlaying)
+        state = state.copyWith(isScriptPlaying: false);
+    }
+  }
+
   /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
   int? _resetAt;
   bool _disposed = false;
@@ -262,6 +291,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   @override
   ChatRoomState build(String roomId) {
     _disposed = false;
+    _scriptDepth = 0;
     _currentNode = null;
     _currentNextBubble = 0;
     // 로그인 계정이 바뀌거나 로그아웃하면 대화방 상태도 즉시 폐기·초기화되어 이전 계정 데이터가 남지 않게 함
@@ -369,22 +399,25 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         _currentNode = node;
         _currentNextBubble = saved.nextBubble;
         // 이벤트 중간에 나갔으면 나가기 전 그 자리부터 (치던 말풍선 다음, 또는 선택지)
-        Future.microtask(() =>
-            _playNode(node, runId, from: saved.nextBubble, resuming: true));
+        Future.microtask(() => _playing(() =>
+            _playNode(node, runId, from: saved.nextBubble, resuming: true)));
         return restored.copyWith(
-            currentEventId: node.eventId, currentStepOrder: node.stepOrder);
+            currentEventId: node.eventId,
+            currentStepOrder: node.stepOrder,
+            isScriptPlaying: true);
       }
       if (!saved.cleared) {
         Future.microtask(() => _advance(runId));
       } else {
         // 공략을 끝낸 뒤에도 특별한 시간에 들어오면 그 시간 톡은 옴. 그다음 못 본 일상 대화
-        Future.microtask(() async {
-          await _playSpecialIfDue(runId);
-          if (runId == _runId && state.currentChoices.isEmpty)
-            await _continueEpilogue(runId);
-        });
+        Future.microtask(() => _playing(() async {
+              await _playSpecialIfDue(runId);
+              if (runId == _runId && state.currentChoices.isEmpty)
+                await _continueEpilogue(runId);
+            }));
       }
-      return restored;
+      // 들어오자마자 패널이 한 번 깜빡이지 않게, 이어질 대본이 있는지 보기 전까지는 재생 중으로 둠
+      return saved.cleared ? restored.copyWith(isScriptPlaying: true) : restored;
     }
     // 처음 대화하는 캐릭터는 내 별명을 정한 뒤(begin)부터 대화가 시작됨
     if (ref.read(chatPrefsProvider(characterId)).nickname != null) {
@@ -429,7 +462,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   /// 공략을 끝낸 뒤: 공략 후 이야기를 순서대로, 그다음 아직 한 번도 못 본 일상 대화를 이어서 보여 줌
-  Future<void> _continueEpilogue(int runId) async {
+  Future<void> _continueEpilogue(int runId) =>
+      _playing(() => _continueEpilogueInner(runId));
+
+  Future<void> _continueEpilogueInner(int runId) async {
     if (state.progress != StoryProgress.cleared) return;
     final after = _bundle.events
         .where((e) =>
@@ -583,8 +619,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   void checkSpecialEvents() {
     if (_aiRoom) return;
     if (state.isCharacterTyping || state.currentChoices.isNotEmpty) return;
-    if (state.progress == StoryProgress.playing) return;
-    _playSpecialIfDue(_runId);
+    if (state.progress == StoryProgress.playing || _scriptDepth > 0) return;
+    _playing(() => _playSpecialIfDue(_runId));
   }
 
   /// 방금 끝낸 게 호감도 이벤트였는지 (그 다음엔 일상 대화를 하나 끼워 넣음)
@@ -599,7 +635,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   static const sceneGapAfter = Duration(milliseconds: 2500);
   DateTime? _lastEventEndedAt;
 
-  Future<void> _playEvent(ScenarioEventModel event, int runId) async {
+  Future<void> _playEvent(ScenarioEventModel event, int runId) =>
+      _playing(() => _playEventInner(event, runId));
+
+  Future<void> _playEventInner(ScenarioEventModel event, int runId) async {
     _eventStart =
         (affection: state.internalAffection, flags: state.acquiredFlags);
     state = state.copyWith(currentEventId: event.id);
@@ -725,6 +764,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       final id = _bundle.character.id;
       _store.saveSeenSpecials(
           id, {..._store.loadSeenSpecials(id), event.id}.toList());
+      if (_replaySnapshot != null) {
+        _endReplay();
+        return;
+      }
       if (state.progress != StoryProgress.playing)
         return; // 공략 완료·막힘 뒤에 온 톡이면 여기서 끝
       await Future.delayed(const Duration(milliseconds: 1200));
@@ -733,18 +776,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
     _markSeen(event);
-    if (_replaySnapshot case final snap?) {
-      // 다시 보기 끝: 진행 상태를 그대로 돌려놓음 (받은 사진·고른 선택지만 남음)
-      _replaySnapshot = null;
-      state = state.copyWith(
-        internalAffection: snap.affection,
-        acquiredFlags: snap.flags,
-        completedEventIds: snap.completed,
-        isReplaying: false,
-        clearEvent: true,
-      );
-      _addSystemNotice('다시 보기가 끝났어요');
-      _saveRun();
+    if (_replaySnapshot != null) {
+      _endReplay();
       return;
     }
     if (event.isEnding) {
@@ -774,6 +807,22 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     await Future.delayed(const Duration(milliseconds: 1200));
     if (runId != _runId) return;
     await _advance(runId);
+  }
+
+  /// 다시 보기 끝: 진행 상태를 그대로 돌려놓음 (받은 사진·고른 선택지만 남음)
+  void _endReplay() {
+    final snap = _replaySnapshot;
+    if (snap == null) return;
+    _replaySnapshot = null;
+    state = state.copyWith(
+      internalAffection: snap.affection,
+      acquiredFlags: snap.flags,
+      completedEventIds: snap.completed,
+      isReplaying: false,
+      clearEvent: true,
+    );
+    _addSystemNotice('다시 보기가 끝났어요');
+    _saveRun();
   }
 
   /// 다음에 열 수 있는 이벤트를 재생하거나, 더 없으면 공략 완료/놓친 컷씬/막힘을 판정합니다.
@@ -941,21 +990,27 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   /// 공략 뒤 다시 볼 수 있는 대화 (안 고른 선택지가 남은 것, 이야기 순서대로)
+  /// 특별한 시간 톡은 그 시간에 없어서 못 받은 것도 여기서 볼 수 있어요 (이야기 뒤에 붙음)
   List<ReplayableEvent> get replayableEvents {
     if (_aiRoom) return const [];
     final out = <ReplayableEvent>[];
+    final specials = <ReplayableEvent>[];
+    final seenSpecials = _store.loadSeenSpecials(_bundle.character.id).toSet();
     final events = [..._bundle.events]
       ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     for (final e in events) {
-      if (e.isSpecial || !_seenScripts.contains(e.id)) continue;
+      final missed = e.isSpecial && !seenSpecials.contains(e.id);
+      if (!e.isSpecial && !_seenScripts.contains(e.id)) continue;
       final unseen = _bundle.nodes.values
           .where((n) => n.eventId == e.id)
           .expand((n) => n.choices)
           .where((c) => !_chosen.contains(c.id))
           .length;
-      if (unseen > 0) out.add((event: e, unseenChoices: unseen));
+      if (unseen == 0 && !missed) continue;
+      (e.isSpecial ? specials : out)
+          .add((event: e, unseenChoices: unseen, missed: missed));
     }
-    return out;
+    return [...out, ...specials];
   }
 
   /// 공략 뒤 '안 본 갈래 다시 보기': 대화를 처음부터 다시 보되 호감도·진행은 끝나면 그대로 돌려놓음.
@@ -966,6 +1021,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     if (state.isCharacterTyping ||
         state.currentChoices.isNotEmpty ||
+        _scriptDepth > 0 ||
         _replaySnapshot != null) return;
     _replaySnapshot = (
       affection: state.internalAffection,
@@ -1141,7 +1197,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   /// [선택지 클릭 시] 내가 고른 대답도 짧게 끊어서 연속 전송한 뒤, 캐릭터가 현실적인 타자 속도로 답장합니다.
-  Future<void> selectChoice(ChoiceOption choice) async {
+  Future<void> selectChoice(ChoiceOption choice) =>
+      _playing(() => _selectChoice(choice));
+
+  Future<void> _selectChoice(ChoiceOption choice) async {
     final runId = _runId;
     _userBurstReplyTimer?.cancel();
     if (_chosen.add(choice.id))

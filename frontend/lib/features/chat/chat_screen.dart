@@ -391,6 +391,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   !service &&
                   chatState.progress != StoryProgress.playing &&
                   !chatState.isReplaying &&
+                  !chatState.isScriptPlaying &&
                   chatState.currentChoices.isEmpty &&
                   !chatState.isCharacterTyping)
                 _RunEndPanel(
@@ -1041,7 +1042,12 @@ class _RunEndPanel extends StatelessWidget {
                   leading: Icon(Icons.auto_awesome_rounded, color: accent),
                   title: Text(r.event.title,
                       maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text('안 고른 선택지 ${r.unseenChoices}개',
+                  subtitle: Text(
+                      [
+                        if (r.missed) '특별한 시간 톡 · 아직 못 받음'
+                        else if (r.event.isSpecial) '특별한 시간 톡',
+                        if (r.unseenChoices > 0) '안 고른 선택지 ${r.unseenChoices}개',
+                      ].join(' · '),
                       style: AppTextStyles.messageTime),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () {
