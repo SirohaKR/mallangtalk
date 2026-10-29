@@ -637,7 +637,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'nickname',
-                child: Text('내 별명·설정: ${ref.read(chatNicknameProvider(id))}'),
+                child: Text('${chatState.character.isService ? '내 별명·정보' : '내 별명·설정'}: ${ref.read(chatNicknameProvider(id))}'),
               ),
               const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
               if (free)

@@ -189,6 +189,7 @@ ${newUserMessages.join('\n')}''';
     required String prompt,
     required String userName,
     required DateTime now,
+    String userInfo = '',
   }) async {
     const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
     final system = '''
@@ -199,7 +200,7 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 
 [이번에 보낼 톡]
 ${prompt.trim()}
-
+${userInfo.trim().isEmpty ? '' : '\n[유저가 알려 준 정보]\n${userInfo.trim()}\n'}
 [규칙]
 - 카톡 한 개, 1~4문장. 괄호 지문·행동 묘사는 쓰지 않는다.
 - 유저 이름(별명)은 "$userName"이다.

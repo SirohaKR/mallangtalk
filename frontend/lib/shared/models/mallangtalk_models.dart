@@ -179,6 +179,10 @@ class ServiceConfig {
   /// 대화방에 '한 번 더 뽑기' 버튼
   final bool reroll;
 
+  /// 대화를 시작할 때 유저에게 물어볼 정보 (예: 띠, 생일, 별자리). 페르소나 대신 이걸 받음.
+  /// 데이터 표에 같은 이름의 칸이 있으면 유저 값과 맞는 줄에서 고르고, 틀에 {띠}처럼 넣을 수도 있음
+  final List<String> ask;
+
   const ServiceConfig({
     this.days = const [1, 2, 3, 4, 5, 6, 7],
     this.times = const ['08:00'],
@@ -190,6 +194,7 @@ class ServiceConfig {
     this.aiPrompt = '',
     this.noRepeat = true,
     this.reroll = true,
+    this.ask = const [],
   });
 
   static const modes = ['list', 'table', 'ai'];
@@ -205,6 +210,7 @@ class ServiceConfig {
     String? aiPrompt,
     bool? noRepeat,
     bool? reroll,
+    List<String>? ask,
   }) =>
       ServiceConfig(
         days: days ?? this.days,
@@ -217,6 +223,7 @@ class ServiceConfig {
         aiPrompt: aiPrompt ?? this.aiPrompt,
         noRepeat: noRepeat ?? this.noRepeat,
         reroll: reroll ?? this.reroll,
+        ask: ask ?? this.ask,
       );
 
   factory ServiceConfig.fromJson(Map<String, dynamic> json) => ServiceConfig(
@@ -242,6 +249,7 @@ class ServiceConfig {
         aiPrompt: json['ai_prompt'] as String? ?? '',
         noRepeat: json['no_repeat'] != false,
         reroll: json['reroll'] != false,
+        ask: [for (final a in json['ask'] as List? ?? const []) '$a'],
       );
 
   Map<String, dynamic> toJson() => {
@@ -255,7 +263,18 @@ class ServiceConfig {
         if (aiPrompt.isNotEmpty) 'ai_prompt': aiPrompt,
         'no_repeat': noRepeat,
         'reroll': reroll,
+        if (ask.isNotEmpty) 'ask': ask,
       };
+
+  /// 물어볼 정보 중 데이터 표에도 있는 칸이면 그 칸의 값들 (고르기 버튼으로 보여 줌)
+  List<String> choicesFor(String field) {
+    final c = columns.indexWhere((x) => x.trim() == field.trim());
+    if (c < 0) return const [];
+    return {
+      for (final r in rows)
+        if (c < r.length && r[c].trim().isNotEmpty) r[c].trim()
+    }.toList();
+  }
 }
 
 class CharacterModel {

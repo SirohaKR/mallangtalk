@@ -101,6 +101,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   void dispose() {
     _autosave?.cancel();
     if (widget.initial == null) _saveDraftNow();
+    _askInput.dispose();
     super.dispose();
   }
 
@@ -1363,6 +1364,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   /// 미리보기에서 다른 줄을 뽑을 때마다 바뀜
   int _previewSeed = 0;
 
+  /// 서비스 말랑이 '물어볼 내 정보' 직접 더하기 칸
+  final _askInput = TextEditingController();
+
   /// 4단계 성격 막대: 왼쪽 ↔ 오른쪽 낱말과 어느 쪽에 가까운지. 오른쪽을 비우면 한쪽짜리 (신중함 80%)
   Widget _traitsEditor() {
     final d = _draft;
@@ -1453,15 +1457,28 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     final s = d.service;
     void set(ServiceConfig c) => setState(() => d.service = c);
     const days = ['월', '화', '수', '목', '금', '토', '일'];
-    final holes = ['이름', '날짜', '요일', '숫자', ...s.columns.where((c) => c.trim().isNotEmpty)];
+    final holes = {'이름', '날짜', '요일', '숫자', ...s.ask, ...s.columns.where((c) => c.trim().isNotEmpty)}.toList();
     final userName = ref.read(userProfileProvider).nickname;
+    // 미리보기는 물어볼 정보마다 고르기 목록의 첫 값(없으면 예시)을 넣어 봄
+    final sampleInfo = {
+      for (final f in s.ask) f: serviceAskChoices(s, f).firstOrNull ?? (f.contains('생일') ? '3월 2일' : f),
+    };
     final preview = composeServiceMessage(
       s,
       userName: userName.isEmpty ? '다홍' : userName,
       charName: d.name.trim().isEmpty ? '말랑이' : d.name.trim(),
       now: DateTime.now(),
       random: Random(_previewSeed),
+      userInfo: sampleInfo,
     );
+    void addAsk(String v) {
+      final words = [
+        for (final w in v.split(RegExp(r'[,，]')))
+          if (w.trim().isNotEmpty && !s.ask.contains(w.trim())) w.trim(),
+      ];
+      _askInput.clear();
+      if (words.isNotEmpty) set(s.copyWith(ask: [...s.ask, ...words]));
+    }
     return ListView(
       padding: pad,
       children: [
@@ -1528,6 +1545,44 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         ),
         const SizedBox(height: 4),
         const Text('앱을 안 켜 둔 동안 온 톡은 대화방을 열면 쌓여 있어요', style: AppTextStyles.messageTime),
+        const SizedBox(height: AppSpacing.lg),
+        const Text('대화 시작 때 물어볼 내 정보', style: AppTextStyles.speakerName),
+        const SizedBox(height: 4),
+        const Text(
+          '서비스 말랑이는 페르소나 대신 이걸 물어봐요. 데이터 표에 같은 이름의 칸(예: 띠)이 있으면 그 사람 값에 맞는 줄만 보내고, 틀에 {띠}처럼 넣을 수도 있어요',
+          style: AppTextStyles.messageTime,
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final a in s.ask)
+              InputChip(
+                key: ValueKey('studio_ask_$a'),
+                label: Text(a),
+                onDeleted: () => set(s.copyWith(ask: [for (final x in s.ask) if (x != a) x])),
+              ),
+            for (final p in ['띠', '생일', '별자리', '혈액형', 'MBTI'])
+              if (!s.ask.contains(p))
+                ActionChip(
+                  key: ValueKey('studio_ask_add_$p'),
+                  avatar: const Icon(Icons.add_rounded, size: 16),
+                  label: Text(p),
+                  onPressed: () => addAsk(p),
+                ),
+            SizedBox(
+              width: 130,
+              child: TextField(
+                key: const ValueKey('studio_ask_input'),
+                controller: _askInput,
+                decoration: const InputDecoration(isDense: true, hintText: '＋ 직접 적기'),
+                onSubmitted: addAsk,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.lg),
         const Text('문구는 어떻게 만들까요', style: AppTextStyles.speakerName),
         const SizedBox(height: 6),

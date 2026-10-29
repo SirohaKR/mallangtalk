@@ -74,32 +74,107 @@ ServiceMessage? composeServiceMessage(
   required DateTime now,
   required Random random,
   Set<String> used = const {},
+  Map<String, String> userInfo = const {},
 }) {
+  final info = {
+    for (final e in userInfo.entries)
+      if (e.value.trim().isNotEmpty) e.key.trim(): e.value.trim()
+  };
   switch (config.mode) {
     case 'list':
-      final lines = [for (final l in config.lines) if (l.trim().isNotEmpty) l.trim()];
+      final lines = [
+        for (final l in config.lines)
+          if (l.trim().isNotEmpty) l.trim()
+      ];
       if (lines.isEmpty) return null;
-      final i = _pick(lines.length, config.noRepeat ? used : const {}, random);
-      return (text: fillServiceTemplate(lines[i], const {}, userName: userName, charName: charName, now: now, random: random), key: 'l$i');
+      final i = _pick([for (var j = 0; j < lines.length; j++) j], config.noRepeat ? used : const {}, random);
+      return (
+        text: fillServiceTemplate(lines[i], info, userName: userName, charName: charName, now: now, random: random),
+        key: 'l$i'
+      );
     case 'table':
       if (config.rows.isEmpty || config.template.trim().isEmpty) return null;
-      final i = _pick(config.rows.length, config.noRepeat ? used : const {}, random);
+      final i = _pick(matchingServiceRows(config, info), config.noRepeat ? used : const {}, random);
       final row = config.rows[i];
       final values = {
+        ...info,
         for (var c = 0; c < config.columns.length; c++) config.columns[c].trim(): c < row.length ? row[c] : '',
       };
-      return (text: fillServiceTemplate(config.template, values, userName: userName, charName: charName, now: now, random: random), key: 'r$i');
+      return (
+        text: fillServiceTemplate(config.template, values,
+            userName: userName, charName: charName, now: now, random: random),
+        key: 'r$i'
+      );
     default:
       return null;
   }
 }
 
+/// 표에서 고를 수 있는 줄: 유저가 알려 준 정보(띠 등)와 같은 이름의 칸이 있으면 값이 맞는 줄만.
+/// 맞는 줄이 없으면 전체
+List<int> matchingServiceRows(ServiceConfig config, Map<String, String> userInfo) {
+  final all = [for (var i = 0; i < config.rows.length; i++) i];
+  var pool = all;
+  for (final e in userInfo.entries) {
+    final c = config.columns.indexWhere((x) => x.trim() == e.key.trim());
+    if (c < 0 || e.value.trim().isEmpty) continue;
+    final want = e.value.trim().toLowerCase();
+    final hit = [
+      for (final i in pool)
+        if (c < config.rows[i].length && config.rows[i][c].trim().toLowerCase() == want) i
+    ];
+    if (hit.isNotEmpty) pool = hit;
+  }
+  return pool;
+}
+
 /// 아직 안 쓴 것 중에서 무작위 (다 썼으면 전체에서)
-int _pick(int count, Set<String> used, Random random) {
-  final fresh = [for (var i = 0; i < count; i++) if (!used.contains('l$i') && !used.contains('r$i')) i];
-  final pool = fresh.isEmpty ? [for (var i = 0; i < count; i++) i] : fresh;
+int _pick(List<int> candidates, Set<String> used, Random random) {
+  final fresh = [
+    for (final i in candidates)
+      if (!used.contains('l$i') && !used.contains('r$i')) i
+  ];
+  final pool = fresh.isEmpty ? candidates : fresh;
   return pool[random.nextInt(pool.length)];
 }
+
+/// 서비스 말랑이가 자주 묻는 정보의 기본 고르기 목록 (데이터 표에 같은 칸이 있으면 표 값이 먼저)
+const serviceAskPresets = <String, List<String>>{
+  '띠': ['쥐띠', '소띠', '범띠', '토끼띠', '용띠', '뱀띠', '말띠', '양띠', '원숭이띠', '닭띠', '개띠', '돼지띠'],
+  '별자리': ['양자리', '황소자리', '쌍둥이자리', '게자리', '사자자리', '처녀자리', '천칭자리', '전갈자리', '사수자리', '염소자리', '물병자리', '물고기자리'],
+  '혈액형': ['A형', 'B형', 'O형', 'AB형'],
+  'MBTI': [
+    'ISTJ',
+    'ISFJ',
+    'INFJ',
+    'INTJ',
+    'ISTP',
+    'ISFP',
+    'INFP',
+    'INTP',
+    'ESTP',
+    'ESFP',
+    'ENFP',
+    'ENTP',
+    'ESTJ',
+    'ESFJ',
+    'ENFJ',
+    'ENTJ'
+  ],
+};
+
+/// 물어볼 정보 [field]의 고르기 목록 (없으면 직접 적기)
+List<String> serviceAskChoices(ServiceConfig config, String field) {
+  final fromTable = config.choicesFor(field);
+  if (fromTable.isNotEmpty && fromTable.length <= 24) return fromTable;
+  return serviceAskPresets[field.trim()] ?? const [];
+}
+
+/// 유저 정보를 AI에게 넘길 한 줄로 ('띠: 범띠 / 생일: 3월 2일')
+String serviceUserInfoLine(Map<String, String> info) => [
+      for (final e in info.entries)
+        if (e.value.trim().isNotEmpty) '${e.key.trim()}: ${e.value.trim()}'
+    ].join(' / ');
 
 /// 틀의 {칸 이름}을 표 값으로, {이름}·{날짜}·{요일}·{숫자}를 그때 값으로 채움
 String fillServiceTemplate(
@@ -125,7 +200,10 @@ String fillServiceTemplate(
 
 /// 엑셀·시트에서 복사한 표(탭) 또는 CSV(쉼표)를 칸 이름 + 줄들로. 첫 줄이 칸 이름
 ({List<String> columns, List<List<String>> rows}) parseServiceTable(String text) {
-  final lines = [for (final l in text.split(RegExp(r'\r?\n'))) if (l.trim().isNotEmpty) l];
+  final lines = [
+    for (final l in text.split(RegExp(r'\r?\n')))
+      if (l.trim().isNotEmpty) l
+  ];
   if (lines.isEmpty) return (columns: const <String>[], rows: const <List<String>>[]);
   final sep = lines.first.contains('\t') ? '\t' : ',';
   List<String> cells(String l) => [for (final c in l.split(sep)) c.trim()];

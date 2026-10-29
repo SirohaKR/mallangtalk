@@ -259,7 +259,8 @@ class LocalStore {
     'seen_',
     'freetalk_',
     'romance_',
-    'ai_room_'
+    'ai_room_',
+    'userinfo_'
   ];
   static const _syncTimesKey = 'sync_ts_v1';
 
@@ -504,6 +505,7 @@ class LocalStore {
     await _write('tempo_$characterId', null);
     await _write('ai_room_$characterId', null);
     await _write('ai_room_$characterId#free', null);
+    await _write('userinfo_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
     await _write('seen_$characterId', null);
@@ -521,6 +523,7 @@ class LocalStore {
     await _write('svc_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
+    await _write('userinfo_$characterId', null);
     await _write('seen_$characterId', null);
     await _write('freetalk_$characterId', null);
     await _write('specials_$characterId', null);
@@ -532,6 +535,19 @@ class LocalStore {
 
   Future<void> saveChatTempo(String characterId, double tempo) =>
       _write('tempo_$characterId', tempo.toString());
+
+  /// 서비스 말랑이에게 알려 준 내 정보 (칸 이름 → 값)
+  Map<String, String> serviceUserInfo(String characterId) {
+    try {
+      final raw = jsonDecode(_getString('userinfo_$characterId') ?? '{}') as Map;
+      return {for (final e in raw.entries) '${e.key}': '${e.value}'};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> saveServiceUserInfo(String characterId, Map<String, String> info) =>
+      _write('userinfo_$characterId', jsonEncode(info));
 
   String? romanceSetting(String characterId) =>
       _getString('romance_$characterId');

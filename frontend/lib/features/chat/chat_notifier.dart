@@ -944,6 +944,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               character: state.character,
               prompt: config.aiPrompt,
               userName: _nickname,
+              userInfo: serviceUserInfoLine(ref.read(serviceUserInfoProvider(_characterId))),
               now: when,
             );
       } on ClaudeChatException catch (e) {
@@ -963,6 +964,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       now: when,
       random: ref.read(storyRandomProvider),
       used: used,
+      userInfo: ref.read(serviceUserInfoProvider(_characterId)),
     );
     if (msg == null) return null;
     used.add(msg.key);
