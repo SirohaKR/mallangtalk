@@ -66,6 +66,39 @@
   </script>
 </head>
 <body>
+  <script>
+    // 예전 버전이 등록한 서비스 워커·캐시를 지움 (남아 있으면 새 버전 대신 예전 파일을 보여 줄 수 있음)
+    // mallangReload: 새 버전이 나왔을 때 앱(AppUpdateWatcher)이 부름. 정리한 뒤 새로고침
+    (function () {
+      function cleanup() {
+        var jobs = [];
+        try {
+          if ('serviceWorker' in navigator) {
+            jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+              return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            }));
+          }
+          if (window.caches) {
+            jobs.push(caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }));
+          }
+        } catch (e) {}
+        return Promise.all(jobs).catch(function () {});
+      }
+      cleanup();
+      window.mallangReload = function () {
+        var done = false;
+        function go() {
+          if (done) return;
+          done = true;
+          window.location.reload();
+        }
+        cleanup().then(go, go);
+        window.setTimeout(go, 1500);
+      };
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

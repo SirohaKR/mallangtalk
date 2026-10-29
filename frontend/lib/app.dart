@@ -8,6 +8,7 @@ import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_text_styles.dart';
 import 'core/theme/app_theme.dart';
+import 'core/update/app_update.dart';
 import 'features/auth/auth_state.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/state_sync.dart';
@@ -23,7 +24,16 @@ class MallangTalkApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       routerConfig: appRouter,
-      builder: (context, child) => _BootGate(child: child!),
+      // 새 버전이 서버에 올라오면 알아서 바뀌게 (켤 때·다른 앱에 갔다 올 때)
+      builder: (context, child) => Consumer(
+        builder: (context, ref, _) => AppUpdateWatcher(
+          beforeReload: () async {
+            // 새로고침 전에 아직 안 보낸 진행 상황을 서버로
+            if (ref.read(authProvider).isLoggedIn) await ref.read(syncOutboxProvider).flush();
+          },
+          child: _BootGate(child: child!),
+        ),
+      ),
     );
   }
 }
