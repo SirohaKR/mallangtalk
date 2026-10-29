@@ -227,7 +227,7 @@ class _MyProfileEditorState extends ConsumerState<_MyProfileEditor> {
             TextField(
               controller: _persona,
               minLines: 2,
-              maxLines: 5,
+              maxLines: null,
               maxLength: 400,
               decoration: const InputDecoration(
                 labelText: '기본 페르소나',

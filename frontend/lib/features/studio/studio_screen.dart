@@ -27,7 +27,7 @@ import 'photo_box.dart';
 import 'scenario_draft.dart';
 import 'studio_widgets.dart';
 
-/// [초보자 노트] 캐릭터 만들기(편집기) 화면입니다. 한 화면에 한 단계씩, 8단계로 만듭니다.
+/// [초보자 노트] 캐릭터 만들기(편집기) 화면입니다. 한 화면에 한 단계씩, 9단계로 만듭니다(마지막은 작가 코멘트·공개).
 /// 기본 → 대표색 → 프로필 → 성격·말투 → 이야기 → 인물·비밀 → 호감도·대본 → 마무리
 /// - 3~6단계의 '빈 칸 AI로 채우기'는 그 단계의 빈 칸만 AI가 써 넣어요.
 /// - 7단계 맨 위 'AI로 생성하기'를 누르면 앞 단계 설정을 토대로 이벤트·일상 대화·특별 이벤트·엔딩과 모든 대사를 채워 줍니다.
@@ -723,8 +723,9 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
   // ───────────────────────── 화면 ─────────────────────────
 
   /// 만들기 단계 (한 화면에 한 단계, 위 막대를 누르면 바로 이동).
-  /// 이야기 말랑이는 8단계, 서비스 말랑이는 기본·대표색·보내기·마무리 4단계
-  List<int> get _stepIds => _draft.isService ? const [0, 1, 8, 7] : const [0, 1, 2, 3, 4, 5, 6, 7];
+  /// 이야기 말랑이는 9단계, 서비스 말랑이는 기본·대표색·보내기·공개 4단계.
+  /// 작가 코멘트·공개 여부는 키보드에 가리지 않게 맨 끝 한 장에 따로 둠
+  List<int> get _stepIds => _draft.isService ? const [0, 1, 8, 9] : const [0, 1, 2, 3, 4, 5, 6, 7, 9];
 
   static const _stepNames = [
     ('기본', '말랑이 찾기 카드와 채팅방에 보이는 것들'),
@@ -736,6 +737,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
     ('호감도·대본', ''),
     ('마무리', ''),
     ('보내기', ''),
+    ('공개', '작가 코멘트와 말랑이 찾기에 올릴지'),
   ];
 
   List<(String, String)> get _steps => [for (final id in _stepIds) _stepNames[id]];
@@ -1018,7 +1020,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
               key: const ValueKey('create_ai'),
               icon: Icons.auto_awesome_rounded,
               title: 'AI로 만들기',
-              note: "8단계로 설정을 채우고, 7단계 대본에서 'AI로 생성하기'를 누르면 대화와 대사를 AI가 써 줘요. "
+              note: "9단계로 설정을 채우고, 7단계 대본에서 'AI로 생성하기'를 누르면 대화와 대사를 AI가 써 줘요. "
                   "빈 칸은 단계마다 'AI로 채우기'로도 채워요 (내 AI 키 사용)",
               primary: true,
               onTap: () => start(kind: '', ai: true),
@@ -1378,6 +1380,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
         );
       case 6:
         return _scriptEvent != null && d.events.contains(_scriptEvent) ? _scriptTab() : _storyboardStep();
+      case 9:
+        return _publishStep();
       default:
         return _finishStep();
     }
@@ -1671,7 +1675,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
     );
   }
 
-  /// 8단계: 사진함 확인 + 작가 코멘트 + 공개
+  /// 8단계: 사진함 확인 (작가 코멘트·공개는 다음 단계 _publishStep)
   /// 미리보기에서 다른 줄을 뽑을 때마다 바뀜
   int _previewSeed = 0;
 
@@ -1963,7 +1967,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
           if (s.columns.isNotEmpty) ...[
             Text('${s.rows.length}줄 · ${s.columns.length}칸', style: AppTextStyles.messageTime),
             Text(
-              switch ([for (final a in s.ask) if (s.columns.any((c) => c.trim() == a)) a]) {
+              switch ([
+                for (final a in s.ask)
+                  if (s.columns.any((c) => c.trim() == a)) a
+              ]) {
                 [] => '고르는 방법: 랜덤 (대화 시작 때 물어볼 정보와 같은 이름의 칸이 있으면 그 값에 맞는 줄)',
                 final matched => "고르는 방법: 대화 시작 때 받은 ${matched.map((m) => "'$m'").join('·')}와 맞는 줄 · 없으면 랜덤",
               },
@@ -2169,15 +2176,16 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
               ),
             ),
         ],
-        const SizedBox(height: AppSpacing.md),
-        EditField(
-          fieldKey: _k(d, 'author'),
-          value: d.authorComment,
-          label: '작가 코멘트 · 상세 화면 맨 아래',
-          hint: '예) 첫 캐릭터예요! 진지할 때 말이 짧아지니 그때를 잘 봐 주세요…',
-          lines: 4,
-          onChanged: (v) => d.authorComment = v,
-        ),
+      ],
+    );
+  }
+
+  /// 마지막 단계: 작가 코멘트 + 말랑이 찾기에 올리기
+  Widget _publishStep() {
+    final d = _draft;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl),
+      children: [
         SwitchListTile(
           key: const ValueKey('studio_publish'),
           contentPadding: EdgeInsets.zero,
@@ -2186,6 +2194,15 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
           value: !d.unlisted,
           activeTrackColor: const Color(0xFFB83B66),
           onChanged: (v) => setState(() => d.unlisted = !v),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        EditField(
+          fieldKey: _k(d, 'author'),
+          value: d.authorComment,
+          label: '작가 코멘트 · 상세 화면 맨 아래',
+          hint: '예) 첫 캐릭터예요! 진지할 때 말이 짧아지니 그때를 잘 봐 주세요…',
+          lines: 4,
+          onChanged: (v) => d.authorComment = v,
         ),
       ],
     );

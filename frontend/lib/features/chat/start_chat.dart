@@ -267,7 +267,7 @@ class _NicknameDialogState extends State<_NicknameDialog> {
           key: const ValueKey('persona_field'),
           controller: _persona,
           minLines: widget.chooseMode ? 2 : 3,
-          maxLines: 6,
+          maxLines: null,
           maxLength: 400,
           decoration: InputDecoration(
             labelText: '내 설정 (페르소나)',
