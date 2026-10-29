@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
+import '../help/help_guide.dart';
 import '../library/character_library.dart';
 import '../settings/user_profile.dart';
 import 'chat_notifier.dart';
@@ -163,6 +164,61 @@ class _NicknameDialogState extends State<_NicknameDialog> {
   bool _free = false;
   String? _error;
 
+  /// 처음 안내 4단계: 대화 시작 창 위 말랑이 말풍선 (처음 한 번)
+  /// (서비스 말랑이는 작은 창 위에 따로 한 번)
+  String get _tipId => widget.character.isService ? HelpGuide.startService : HelpGuide.start;
+  late bool _tip = widget.isFirstTime &&
+      HelpGuide.autoShow &&
+      !ProviderScope.containerOf(context, listen: false).read(helpSeenProvider).contains(_tipId);
+
+  void _closeTip() {
+    if (!_tip) return;
+    ProviderScope.containerOf(context, listen: false).read(helpSeenProvider.notifier).mark([_tipId]);
+    setState(() => _tip = false);
+  }
+
+  Widget _tipCard() {
+    final service = widget.character.isService;
+    return Container(
+      key: const ValueKey('help_start_tip'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF3F7),
+        border: Border.all(color: const Color(0xFFF0CFDB)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MallangSays(
+            service
+                ? '서비스 말랑이는 정해진 때마다 **먼저 톡**을 보내 줘. 필요한 내 정보만 적어 두면 돼!'
+                : '대화하기 전에 **대화 방식**을 골라. 둘 다 해 봐도 돼, 대화방이 따로라 서로 영향이 없어.',
+            size: 40,
+          ),
+          if (service) ...[
+            const HelpLine(null, '아래 정보는 톡 문구에 들어가. 나중에 대화방 메뉴의 **내 별명·정보**에서 바꿀 수 있어', tag: '내 정보'),
+          ] else ...[
+            const HelpLine(null, '선택지를 골라 이야기를 따라가. 사진을 모으고 엔딩을 볼 수 있어. 키 없어도 돼!', tag: '스토리'),
+            const HelpLine(null, '하고 싶은 말을 직접 써. AI 키가 필요하고 호감도·엔딩은 없어', tag: '자유대화'),
+            const HelpLine(null, '이 대화에서만 쓸 별명과 나에 대한 설정을 바꿀 수 있어', tag: '내 설정'),
+          ],
+          Row(children: [
+            if (!service) const HelpDots(3),
+            const Spacer(),
+            TextButton(
+              key: const ValueKey('help_start_ok'),
+              onPressed: _closeTip,
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFFB83B66)),
+              child: const Text('알겠어'),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
   /// 서비스 말랑이가 물어보는 정보 (칸 이름 → 값)
   late final Map<String, String> _info = {...widget.initialInfo};
   late final _infoText = {
@@ -189,6 +245,7 @@ class _NicknameDialogState extends State<_NicknameDialog> {
   void _submit() {
     final text = _controller.text.trim();
     if (text.isEmpty) return setState(() => _error = '별명을 적어 주세요');
+    _closeTip();
     for (final e in _infoText.entries) {
       _info[e.key] = e.value.text.trim();
     }
@@ -247,6 +304,7 @@ class _NicknameDialogState extends State<_NicknameDialog> {
   Widget build(BuildContext context) {
     final name = widget.character.name;
     final fields = <Widget>[
+      if (_tip && !widget.chooseMode) _tipCard(),
       Text(
         '${josa(name, '이', '가')} 나를 이렇게 불러요. 설정의 기본 별명이 들어가 있고, 이 대화에서만 바꿀 수 있어요.',
         style: AppTextStyles.systemNotice,
@@ -323,6 +381,7 @@ class _NicknameDialogState extends State<_NicknameDialog> {
             const SizedBox(height: 12),
             Text('${josa(name, '과', '와')} 어떻게 대화할까요?', style: AppTextStyles.appBarTitle.copyWith(fontSize: 18)),
             const SizedBox(height: 12),
+            if (_tip) _tipCard(),
             _ModeCard(
               key: const ValueKey('start_mode_story'),
               icon: Icons.auto_stories_rounded,

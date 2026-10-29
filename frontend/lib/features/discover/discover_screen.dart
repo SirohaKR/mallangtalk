@@ -9,6 +9,8 @@ import '../../shared/widgets/character_avatar.dart';
 import '../library/character_library.dart';
 import '../chat/chat_notifier.dart';
 import '../chat/start_chat.dart';
+import '../help/help_guide.dart';
+import '../help/welcome_screen.dart';
 import 'gallery_card.dart';
 
 /// 새로 올라온 말랑이 정렬
@@ -71,12 +73,66 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String? _gender;
   GallerySort _sort = GallerySort.latest;
 
+  // 처음 사용자 안내에서 밝게 비출 자리
+  final _searchKey = GlobalKey();
+  final _picksKey = GlobalKey();
+  final _bellKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (isFirstVisit(ref)) {
+        context.push('/welcome');
+      } else if (shouldShowHelp(ref, HelpGuide.discover)) {
+        _showHelp();
+      }
+    });
+  }
+
+  /// 처음 안내 3단계: 말랑이 찾기 (이 화면이 맨 위에 보일 때만)
+  Future<void> _showHelp({int tries = 0}) async {
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await WidgetsBinding.instance.endOfFrame; // 앞 화면(인사 안내)이 다 닫힌 뒤에
+    if (!mounted) return;
+    if (ModalRoute.of(context)?.isCurrent != true ||
+        GoRouter.of(context).routerDelegate.currentConfiguration.uri.path != '/discover') {
+      if (tries < 10) _showHelp(tries: tries + 1);
+      return;
+    }
+    final seen = ref.read(helpSeenProvider.notifier);
+    final result = await showCoach(
+      context,
+      say: '여기서 다른 사람들이 만든 말랑이를 구경할 수 있어. **마음에 드는 카드를 눌러 봐!** 상세 화면에서 친구 추가하고 대화를 시작해.',
+      highlight: [_picksKey],
+      items: [
+        CoachItem('위 **검색창**에서 이름·태그·제작자로 찾아', target: _searchKey),
+        const CoachItem('**장르·성별** 칩과 최신·인기로 골라 볼 수도 있어'),
+        CoachItem('오른쪽 위 **종**에는 새로 온 톡이 모여', target: _bellKey),
+      ],
+      tourIndex: 2,
+      extraLabel: '내 말랑이를 직접 만들고 싶어요',
+      extraIcon: Icons.add_rounded,
+    );
+    if (result == null) return;
+    await seen.mark(result == 'skip' ? HelpGuide.tour : const [HelpGuide.discover]);
+    if (result == 'extra' && mounted) context.push('/create');
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 인사·프로필·키 안내를 마치면 이어서 이 화면 안내
+    ref.listen(helpRequestProvider, (_, next) {
+      if (next != HelpGuide.discover) return;
+      ref.read(helpRequestProvider.notifier).state = null;
+      _showHelp();
+    });
     final gallery = ref.watch(galleryProvider);
     final all = gallery.valueOrNull ?? const <GalleryItem>[];
     final friends = ref.watch(characterLibraryProvider).map((e) => e.id).toSet();
-    final items = genderFiltered(_tag == null ? all : all.where((g) => g.character.tags.contains(_tag)).toList(), _gender);
+    final items =
+        genderFiltered(_tag == null ? all : all.where((g) => g.character.tags.contains(_tag)).toList(), _gender);
     final tags = topTagsOf(all);
     final picks = recommendedOf(items);
     final sorted = [...items]..sort(_sort == GallerySort.latest ? _byLatest : _byPopular);
@@ -88,7 +144,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             : 2;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('말랑이 찾기'), actions: const [_AlertBell(), SizedBox(width: 6)]),
+      appBar: AppBar(
+          title: const Text('말랑이 찾기'),
+          actions: [KeyedSubtree(key: _bellKey, child: const _AlertBell()), const SizedBox(width: 6)]),
       body: Center(
         child: ConstrainedBox(
           constraints: AppSpacing.pageConstraints(context),
@@ -100,7 +158,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
-                    child: _SearchBox(onTap: () => context.push('/search')),
+                    child: _SearchBox(key: _searchKey, onTap: () => context.push('/search')),
                   ),
                 ),
                 if (tags.isNotEmpty)
@@ -157,6 +215,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                   const _SectionTitle('오늘의 추천'),
                   SliverToBoxAdapter(
                     child: SizedBox(
+                      key: _picksKey,
                       height: 268,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
@@ -216,7 +275,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 }
 
 class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.onTap});
+  const _SearchBox({super.key, required this.onTap});
 
   final VoidCallback onTap;
 
@@ -251,6 +310,7 @@ class _TagChip extends StatelessWidget {
   const _TagChip({super.key, required this.label, required this.selected, required this.onTap, this.plain = false});
 
   final String label;
+
   /// 태그가 아닌 칩(성별)은 # 없이
   final bool plain;
   final bool selected;
@@ -483,7 +543,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final store = ref.watch(localStoreProvider);
     final q = _query.text.trim();
     final scored = q.isEmpty ? const <(GalleryItem, int)>[] : [for (final g in all) (g, searchScore(g, q))];
-    final results = [for (final (g, score) in scored) if (score > 0) g];
+    final results = [
+      for (final (g, score) in scored)
+        if (score > 0) g
+    ];
     final score = {for (final (g, s) in scored) g: s};
     results.sort(switch (_sort) {
       SearchSort.relevance => (a, b) {
@@ -539,7 +602,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              for (final t in topTagsOf(all, count: 16)) ActionChip(label: Text('#$t'), onPressed: () => _search('#$t')),
+              for (final t in topTagsOf(all, count: 16))
+                ActionChip(label: Text('#$t'), onPressed: () => _search('#$t')),
             ],
           ),
         ],
@@ -671,7 +735,8 @@ class _SearchTab extends StatelessWidget {
           height: 46,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: on ? AppColors.primaryPink : AppColors.borderLight, width: on ? 2 : 1)),
+            border: Border(
+                bottom: BorderSide(color: on ? AppColors.primaryPink : AppColors.borderLight, width: on ? 2 : 1)),
           ),
           child: Text(
             label,
@@ -725,7 +790,9 @@ class GalleryRow extends StatelessWidget {
                   Row(
                     children: [
                       if (showCreator && item.creator != null) ...[
-                        Flexible(child: CreatorLine(creator: item.creator!, avatarUrl: item.creatorAvatar, mine: item.mine, size: 16)),
+                        Flexible(
+                            child: CreatorLine(
+                                creator: item.creator!, avatarUrl: item.creatorAvatar, mine: item.mine, size: 16)),
                         const SizedBox(width: 8),
                       ],
                       if (item.friends > 0) Text('친구 ${item.friends}', style: AppTextStyles.messageTime),

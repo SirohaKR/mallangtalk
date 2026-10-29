@@ -244,7 +244,8 @@ class LocalStore {
     'my_profile',
     'favorites_v1',
     'chat_rooms_v1',
-    'library_v1'
+    'library_v1',
+    'help_seen'
   };
   static const _syncedPrefixes = [
     'run_',
@@ -469,6 +470,15 @@ class LocalStore {
       _write('server_access_code', code == null || code.isEmpty ? null : code);
 
   /// 만들기 화면에서 쓰던 새 캐릭터 초안 (새로고침·새 버전이 떠도 이어 쓰게)
+  /// 처음 사용자 도움말 중 이미 본 것 (계정 연동)
+  /// (쉼표로 이은 글자 하나로 저장해서 연동할 때도 그대로 오감)
+  List<String> get helpSeen => [
+        for (final id in (_getString('help_seen') ?? '').split(','))
+          if (id.isNotEmpty) id
+      ];
+  Future<void> saveHelpSeen(List<String> ids) =>
+      _write('help_seen', ids.isEmpty ? null : ids.join(','));
+
   String? loadStudioDraft() => _getString('studio_draft_v1');
   Future<void> saveStudioDraft(String json) => _write('studio_draft_v1', json);
 

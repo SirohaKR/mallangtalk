@@ -5,6 +5,7 @@ import '../../features/album/album_screen.dart';
 import '../../features/chat/chat_screen.dart';
 import '../../features/chats/chat_list_screen.dart';
 import '../../features/discover/discover_screen.dart';
+import '../../features/help/welcome_screen.dart';
 import '../../features/home/home_shell.dart';
 import '../../features/my/my_mallang_screen.dart';
 import '../../features/relations/relation_map_screen.dart';
@@ -17,6 +18,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 /// - 하단 탭 4개: /discover(말랑이 찾기, 첫 화면) /chats(채팅) /my(내 말랑이) /settings(설정)
 /// - 검색: /search, 제작자 프로필: /creator/닉네임, 갤러리 캐릭터 상세: /gallery/캐릭터ID
 /// - 새 말랑이 만들기: /create, 만든 캐릭터 고치기: /edit/캐릭터ID
+/// - 처음 사용자 안내(인사·프로필·AI 키): /welcome
 /// - 설정 안쪽: /settings/account(계정 · 프로필), /settings/ai(AI 연결)
 /// - 내가 만든 캐릭터끼리 관계도: /relations
 /// - 대화방은 탭 위에 전체 화면으로: /chat/캐릭터ID(스토리), /free/캐릭터ID(자유대화), 앨범은 /chat/캐릭터ID/album
@@ -55,6 +57,12 @@ final appRouter = GoRouter(
               builder: (context, state) => const SettingsScreen()),
         ]),
       ],
+    ),
+    // 처음 사용자 안내 앞부분 (인사 → 내 프로필 → AI 키)
+    GoRoute(
+      path: '/welcome',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const WelcomeScreen(),
     ),
     GoRoute(
       path: '/search',
