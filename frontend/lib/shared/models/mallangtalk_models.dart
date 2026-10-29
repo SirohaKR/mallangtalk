@@ -149,6 +149,56 @@ class ExtraCast {
       };
 }
 
+/// 로어북 한 항목: 대화에 키워드가 나오면 그때만 AI에게 넘기는 설정 조각
+/// (SillyTavern·loreshelf 같은 AI 챗의 로어북/월드 인포와 같은 생각)
+class LoreEntry {
+  /// 이 말이 대화에 나오면 꺼냄 (예: 루나, 고양이)
+  final List<String> keys;
+  final String content;
+
+  /// 키워드와 상관없이 늘 넘김
+  final bool always;
+
+  const LoreEntry({this.keys = const [], this.content = '', this.always = false});
+
+  factory LoreEntry.fromJson(Map<String, dynamic> json) => LoreEntry(
+        keys: [
+          for (final k in json['keys'] as List? ?? const [])
+            if ((k as String).trim().isNotEmpty) k.trim(),
+        ],
+        content: json['content'] as String? ?? '',
+        always: json['always'] == true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'keys': keys,
+        'content': content,
+        if (always) 'always': true,
+      };
+
+  /// 쉼표·줄바꿈으로 나눈 키워드 글자를 목록으로
+  static List<String> splitKeys(String text) => [
+        for (final k in text.split(RegExp(r'[,，\n]')))
+          if (k.trim().isNotEmpty) k.trim(),
+      ];
+
+  /// 대화 글에 키워드가 하나라도 나오는지 (영어는 대소문자 무시)
+  bool matches(String text) {
+    final lower = text.toLowerCase();
+    return keys.any((k) => lower.contains(k.toLowerCase()));
+  }
+
+  /// [text](최근 대화)에 맞는 항목을 고름: 항상 넘기는 것 먼저, 그다음 키워드가 나온 것, 최대 [limit]개
+  static List<LoreEntry> pick(List<LoreEntry> entries, String text,
+      {int limit = 8}) {
+    final usable = entries.where((e) => e.content.trim().isNotEmpty);
+    return [
+      ...usable.where((e) => e.always),
+      ...usable.where((e) => !e.always && e.matches(text)),
+    ].take(limit).toList();
+  }
+}
+
 /// 2. 캐릭터 기본 설정 모델 (DB 테이블: characters)
 /// 설정 항목은 쨋뀨의 캐릭터 아카이브 loreshelf(인물·유저·기타 인물 카드)를 참고했어요.
 /// 서비스 말랑이가 언제 무슨 톡을 보낼지
@@ -339,6 +389,9 @@ class CharacterModel {
   /// 주변 인물
   final List<ExtraCast> extraCast;
 
+  /// 로어북: 키워드가 대화에 나올 때만 AI에게 넘기는 설정 (자유대화 기억력용)
+  final List<LoreEntry> lorebook;
+
   /// 캐릭터 대표 색 (#RRGGBB, 비우면 기본 분홍)
   final String themeColor;
 
@@ -389,6 +442,7 @@ class CharacterModel {
     this.secret = '',
     this.userRole = '',
     this.extraCast = const [],
+    this.lorebook = const [],
     this.themeColor = '',
     this.gender = '',
     this.unlisted = false,
@@ -434,6 +488,10 @@ class CharacterModel {
         for (final e in json['extra_cast'] as List? ?? const [])
           ExtraCast.fromJson(e as Map<String, dynamic>),
       ],
+      lorebook: [
+        for (final e in json['lorebook'] as List? ?? const [])
+          if (e is Map) LoreEntry.fromJson(Map<String, dynamic>.from(e)),
+      ],
       themeColor: json['theme_color'] as String? ?? '',
       gender: json['gender'] as String? ?? '',
       unlisted: json['unlisted'] == true,
@@ -477,6 +535,8 @@ class CharacterModel {
         if (userRole.isNotEmpty) 'user_role': userRole,
         if (extraCast.isNotEmpty)
           'extra_cast': [for (final e in extraCast) e.toJson()],
+        if (lorebook.isNotEmpty)
+          'lorebook': [for (final e in lorebook) e.toJson()],
         if (themeColor.isNotEmpty) 'theme_color': themeColor,
         if (gender.isNotEmpty) 'gender': gender,
         if (unlisted) 'unlisted': true,
@@ -507,6 +567,7 @@ class CharacterModel {
     String? secret,
     String? userRole,
     List<ExtraCast>? extraCast,
+    List<LoreEntry>? lorebook,
     String? themeColor,
     String? gender,
     bool? unlisted,
@@ -533,6 +594,7 @@ class CharacterModel {
       secret: secret ?? this.secret,
       userRole: userRole ?? this.userRole,
       extraCast: extraCast ?? this.extraCast,
+      lorebook: lorebook ?? this.lorebook,
       themeColor: themeColor ?? this.themeColor,
       gender: gender ?? this.gender,
       unlisted: unlisted ?? this.unlisted,

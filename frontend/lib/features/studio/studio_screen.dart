@@ -762,7 +762,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
     2: ['profile_fields'],
     3: ['quote', 'sample_quotes', 'traits'],
     4: ['world_setting', 'user_role'],
-    5: ['extra_cast', 'secret'],
+    5: ['extra_cast', 'secret', 'lorebook'],
   };
 
   int _step = 0;
@@ -1393,6 +1393,12 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
               onChanged: (v) => d.secret = v,
             ),
             const Text('플레이어에게 안 보이고, AI 대본과 자유대화가 서서히 드러내요', style: AppTextStyles.messageTime),
+            const SizedBox(height: 16),
+            const Text('로어북', style: AppTextStyles.speakerName),
+            const Text('대화에 키워드가 나오면 그 내용을 AI가 떠올려요. 장소·물건·추억·습관처럼 자세한 설정을 적어 두면 캐릭터가 더 잘 기억해요',
+                style: AppTextStyles.messageTime),
+            const SizedBox(height: 6),
+            _loreEditor(),
           ],
         );
       case 6:
@@ -2250,6 +2256,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
           'user_role' => d.userRole.trim().isEmpty,
           'extra_cast' => d.cast.every((c) => c.name.trim().isEmpty),
           'secret' => d.secret.trim().isEmpty,
+          'lorebook' => d.lore.every((e) => e.content.trim().isEmpty),
           _ => false,
         })
           f,
@@ -2305,6 +2312,14 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
             ]);
         }
         if (json.containsKey('secret')) d.secret = text('secret');
+        if (json.containsKey('lorebook')) {
+          d.lore
+            ..removeWhere((e) => e.content.trim().isEmpty)
+            ..addAll([
+              for (final x in list('lorebook'))
+                LoreDraft(keys: '${x['keys'] ?? ''}'.trim(), content: '${x['content'] ?? ''}'.trim()),
+            ]);
+        }
         _version++;
       });
       _toast('빈 칸 ${empty.length}곳을 채웠어요. 마음에 안 들면 고쳐 써 주세요');
@@ -2428,6 +2443,65 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
               onPressed: _pickMyCharacterAsCast,
               icon: const Icon(Icons.link_rounded, size: 18),
               label: const Text('내가 만든 캐릭터 연결'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loreEditor() {
+    final d = _draft;
+    return StudioCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final e in d.lore)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: EditField(
+                            fieldKey: _k(e, 'keys'),
+                            value: e.keys,
+                            hint: e.always ? '항상 기억 (키워드 없어도 돼요)' : '키워드 (쉼표로, 예: 루나, 고양이)',
+                            dense: true,
+                            onChanged: (v) => e.keys = v),
+                      ),
+                      Tooltip(
+                        message: '키워드와 상관없이 늘 기억',
+                        child: FilterChip(
+                          label: const Text('항상'),
+                          selected: e.always,
+                          onSelected: (v) => setState(() => e.always = v),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '빼기',
+                        onPressed: () => setState(() => d.lore.remove(e)),
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                      ),
+                    ],
+                  ),
+                  EditField(
+                      fieldKey: _k(e, 'content'),
+                      value: e.content,
+                      hint: '내용 (예: 루나는 3살 고등어 고양이. 간식은 츄르만 먹고 {{char}} 무릎에서 잔다)',
+                      lines: 2,
+                      onChanged: (v) => e.content = v),
+                ],
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => d.lore.add(LoreDraft())),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('항목 추가'),
             ),
           ),
         ],
