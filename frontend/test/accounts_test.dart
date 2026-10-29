@@ -129,7 +129,7 @@ void main() {
     expect(find.text('jjaet 계정으로 로그인'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('settings_ai')));
     await settle(tester);
-    expect(find.text('Gemini 키 받으러 가기'), findsOneWidget); // 처음이면 Gemini가 기본
+    expect(find.textContaining('모든 대화 기본: Gemini'), findsOneWidget); // 처음이면 Gemini가 기본
     appRouter.go('/settings/account');
     await settle(tester);
     expect(find.text('쨋뀨 (jjaet)'), findsOneWidget);

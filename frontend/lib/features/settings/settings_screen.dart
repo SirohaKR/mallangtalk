@@ -360,7 +360,7 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '모든 대화 기본: ${current.provider.label.split(' ').first} · ${current.modelOption?.label ?? current.model}',
+                            '모든 대화 기본: ${current.modelOption?.label ?? '${current.provider.label.split(' ').first} · ${current.model}'}',
                             style: AppTextStyles.chatBubbleBody,
                           ),
                           const Text('쓸 AI와 모델은 대화방 위쪽에서 바로 골라요', style: AppTextStyles.messageTime),
