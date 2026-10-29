@@ -94,6 +94,7 @@ Future<ProviderContainer> openDohaChat(
   List<Override> extra = const [],
   ScenarioBundle? bundle,
   String roomId = dohaId,
+  bool settleAfter = true,
 }) async {
   bundle ??= loadSampleBundle();
   await tester.binding.setSurfaceSize(const Size(420, 900));
@@ -112,6 +113,7 @@ Future<ProviderContainer> openDohaChat(
           theme: AppTheme.lightTheme, home: BootGate(roomId: roomId)),
     ),
   );
+  if (!settleAfter) return ProviderScope.containerOf(tester.element(find.byType(BootGate)));
   await settle(tester);
   return ProviderScope.containerOf(tester.element(find.byType(ChatScreen)));
 }

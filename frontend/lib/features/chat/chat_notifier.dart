@@ -27,7 +27,12 @@ enum StoryProgress {
 }
 
 /// 공략 뒤 다시 볼 수 있는 대화: 아직 안 고른 선택지가 남은 대화
-typedef ReplayableEvent = ({ScenarioEventModel event, int unseenChoices});
+/// 다시 볼 수 있는 대화. [missed]: 그 시간에 없어서 아직 못 받은 특별한 톡
+typedef ReplayableEvent = ({
+  ScenarioEventModel event,
+  int unseenChoices,
+  bool missed
+});
 
 /// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
 const _freeSuffix = '#free';
@@ -397,7 +402,9 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         Future.microtask(() => _playing(() =>
             _playNode(node, runId, from: saved.nextBubble, resuming: true)));
         return restored.copyWith(
-            currentEventId: node.eventId, currentStepOrder: node.stepOrder);
+            currentEventId: node.eventId,
+            currentStepOrder: node.stepOrder,
+            isScriptPlaying: true);
       }
       if (!saved.cleared) {
         Future.microtask(() => _advance(runId));
@@ -409,7 +416,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
                 await _continueEpilogue(runId);
             }));
       }
-      return restored;
+      // 들어오자마자 패널이 한 번 깜빡이지 않게, 이어질 대본이 있는지 보기 전까지는 재생 중으로 둠
+      return saved.cleared ? restored.copyWith(isScriptPlaying: true) : restored;
     }
     // 처음 대화하는 캐릭터는 내 별명을 정한 뒤(begin)부터 대화가 시작됨
     if (ref.read(chatPrefsProvider(characterId)).nickname != null) {
@@ -756,6 +764,10 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       final id = _bundle.character.id;
       _store.saveSeenSpecials(
           id, {..._store.loadSeenSpecials(id), event.id}.toList());
+      if (_replaySnapshot != null) {
+        _endReplay();
+        return;
+      }
       if (state.progress != StoryProgress.playing)
         return; // 공략 완료·막힘 뒤에 온 톡이면 여기서 끝
       await Future.delayed(const Duration(milliseconds: 1200));
@@ -764,18 +776,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
     _markSeen(event);
-    if (_replaySnapshot case final snap?) {
-      // 다시 보기 끝: 진행 상태를 그대로 돌려놓음 (받은 사진·고른 선택지만 남음)
-      _replaySnapshot = null;
-      state = state.copyWith(
-        internalAffection: snap.affection,
-        acquiredFlags: snap.flags,
-        completedEventIds: snap.completed,
-        isReplaying: false,
-        clearEvent: true,
-      );
-      _addSystemNotice('다시 보기가 끝났어요');
-      _saveRun();
+    if (_replaySnapshot != null) {
+      _endReplay();
       return;
     }
     if (event.isEnding) {
@@ -805,6 +807,22 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     await Future.delayed(const Duration(milliseconds: 1200));
     if (runId != _runId) return;
     await _advance(runId);
+  }
+
+  /// 다시 보기 끝: 진행 상태를 그대로 돌려놓음 (받은 사진·고른 선택지만 남음)
+  void _endReplay() {
+    final snap = _replaySnapshot;
+    if (snap == null) return;
+    _replaySnapshot = null;
+    state = state.copyWith(
+      internalAffection: snap.affection,
+      acquiredFlags: snap.flags,
+      completedEventIds: snap.completed,
+      isReplaying: false,
+      clearEvent: true,
+    );
+    _addSystemNotice('다시 보기가 끝났어요');
+    _saveRun();
   }
 
   /// 다음에 열 수 있는 이벤트를 재생하거나, 더 없으면 공략 완료/놓친 컷씬/막힘을 판정합니다.
@@ -972,21 +990,27 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   }
 
   /// 공략 뒤 다시 볼 수 있는 대화 (안 고른 선택지가 남은 것, 이야기 순서대로)
+  /// 특별한 시간 톡은 그 시간에 없어서 못 받은 것도 여기서 볼 수 있어요 (이야기 뒤에 붙음)
   List<ReplayableEvent> get replayableEvents {
     if (_aiRoom) return const [];
     final out = <ReplayableEvent>[];
+    final specials = <ReplayableEvent>[];
+    final seenSpecials = _store.loadSeenSpecials(_bundle.character.id).toSet();
     final events = [..._bundle.events]
       ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     for (final e in events) {
-      if (e.isSpecial || !_seenScripts.contains(e.id)) continue;
+      final missed = e.isSpecial && !seenSpecials.contains(e.id);
+      if (!e.isSpecial && !_seenScripts.contains(e.id)) continue;
       final unseen = _bundle.nodes.values
           .where((n) => n.eventId == e.id)
           .expand((n) => n.choices)
           .where((c) => !_chosen.contains(c.id))
           .length;
-      if (unseen > 0) out.add((event: e, unseenChoices: unseen));
+      if (unseen == 0 && !missed) continue;
+      (e.isSpecial ? specials : out)
+          .add((event: e, unseenChoices: unseen, missed: missed));
     }
-    return out;
+    return [...out, ...specials];
   }
 
   /// 공략 뒤 '안 본 갈래 다시 보기': 대화를 처음부터 다시 보되 호감도·진행은 끝나면 그대로 돌려놓음.

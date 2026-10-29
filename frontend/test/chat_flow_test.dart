@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
+import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -312,6 +313,52 @@ void main() {
     expect(state().currentEventId, 'daily_lunch_menu');
   });
 
+  testWidgets('공략 뒤 다시 보기에서 그 시간에 못 받은 특별한 톡도 볼 수 있음', (tester) async {
+    final bundle = loadSampleBundle();
+    final run = SavedRun(
+      affection: 100,
+      flags: const [],
+      completedEventIds: [
+        for (final e in bundle.events)
+          if (e.isAffectionEvent || e.isDaily || e.isEnding) e.id,
+      ],
+      messages: const [],
+      cleared: true,
+    );
+    SharedPreferences.setMockInitialValues({...fastTempo, 'run_$dohaId': jsonEncode(run.toJson())});
+    final container = await openDohaChat(tester, bundle: bundle);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+
+    final special = notifier.replayableEvents.firstWhere((r) => r.event.id == 'special_playlist');
+    expect(special.missed, isTrue);
+    expect(notifier.replayableEvents.last.event.isSpecial, isTrue, reason: '특별한 톡은 이야기 뒤에');
+    final completed = state().completedEventIds;
+
+    await tester.tap(find.byKey(const ValueKey('replay_button')));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    final item = find.byKey(const ValueKey('replay_special_playlist'));
+    await tester.scrollUntilVisible(item, 200, scrollable: find.byType(Scrollable).last);
+    expect(find.descendant(of: item, matching: find.textContaining('아직 못 받음')), findsOneWidget);
+    await tester.tap(item);
+    await settle(tester);
+    expect(state().isReplaying, isTrue);
+    expect(find.text('안 자?'), findsOneWidget);
+    while (state().currentChoices.isNotEmpty) {
+      await tester.tap(find.widgetWithText(ElevatedButton, state().currentChoices.first.buttonLabel));
+      await settle(tester);
+    }
+    expect(state().isReplaying, isFalse);
+    expect(state().progress, StoryProgress.cleared);
+    expect(state().completedEventIds, completed);
+    expect(find.text('다시 보기가 끝났어요'), findsOneWidget);
+    // 받은 뒤엔 '못 받음'이 아니고, 안 고른 선택지가 남았을 때만 목록에 남음
+    final again = notifier.replayableEvents.where((r) => r.event.id == 'special_playlist');
+    expect(again.every((r) => !r.missed && r.unseenChoices > 0), isTrue);
+  });
+
   testWidgets('스토리 방엔 자유대화 스위치가 없고, 자유대화 방은 따로 저장되며 호감도가 없음', (tester) async {
     final story = await openChat(tester);
     expect(find.byType(Switch), findsNothing);
@@ -378,13 +425,15 @@ void main() {
       cleared: true,
     );
     SharedPreferences.setMockInitialValues({...fastTempo, 'run_$dohaId': jsonEncode(run.toJson())});
-    final container = await openDohaChat(tester, bundle: bundle);
+    // 방에 들어오는 첫 화면부터 잘게 넘기며 봄
+    final container = await openDohaChat(tester, bundle: bundle, settleAfter: false);
     ChatRoomState state() => container.read(chatRoomProvider(dohaId));
     final panel = find.textContaining('처음부터 다시 하기');
 
-    // 대화가 끝날 때까지 잘게 넘기며, 선택지를 기다리는 때 말고는 패널이 한 번도 안 보여야 함
-    for (var i = 0; i < 400; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
+    // 대화가 끝날 때까지, 들어오자마자 포함 패널이 한 번도 안 보여야 함
+    for (var i = 0; i < 800; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      if (find.byType(ChatScreen).evaluate().isEmpty) continue;
       final s = state();
       if (s.currentChoices.isNotEmpty) {
         expect(panel, findsNothing);
