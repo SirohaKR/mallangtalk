@@ -345,7 +345,8 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
     BUILD_ID가 없는 개발·테스트 실행과 claude.ai 플레이 링크에서는 확인하지 않음.
   - frontend/web/flutter_bootstrap.js: 서비스 워커 없이 Flutter를 띄움. index.html: 예전 서비스 워커·캐시를 지우고,
     앱이 부르는 `mallangReload`(정리 후 새로고침)를 둠.
-- 검증: 이 작업 환경에 Flutter가 없어 로컬 flutter analyze·test·웹 빌드는 못 돌림. 새 테스트 `frontend/test/app_update_test.dart`(5개)를 추가했고
-  GitHub Actions(analyze·test·build web)로 확인 예정. NAS 배포·실제 폰 홈 화면 앱에서 확인은 안 함.
+- 검증: 이 작업 환경에 Flutter가 없어 로컬에선 못 돌림. GitHub Actions에서 flutter analyze 통과, flutter test 132개 통과
+  (새 테스트 `frontend/test/app_update_test.dart` 5개 포함), flutter build web 통과(새 flutter_bootstrap.js 포함).
+  index.html 정리 스크립트는 node로 확인. NAS 배포·실제 폰 홈 화면 앱에서 확인은 안 함.
 - 주의: 이 버전이 처음 깔리기 전의 예전 앱에는 확인 장치가 없으니, 이번 한 번은 앱을 완전히 닫고(최근 앱 목록에서 밀어서) 다시 열어야 함. 그 뒤부터는 자동.
 - 다음: 배포 후 폰 홈 화면 앱에서 다른 앱에 갔다 왔을 때 바뀌는지 확인.
