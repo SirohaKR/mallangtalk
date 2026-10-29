@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../shared/utils/file_io.dart';
 import '../home/friends_screen.dart';
 import '../auth/auth_state.dart';
+import '../chat/chat_ai_sheet.dart';
 import 'byok_settings.dart';
 import 'user_profile.dart';
 
@@ -234,27 +235,8 @@ class AiConnectScreen extends ConsumerStatefulWidget {
 }
 
 class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
-  static const _custom = '__custom__';
-  final _keyController = TextEditingController();
-  late AiProvider _provider = ref.read(byokSettingsProvider).provider;
-  late String _model = _modelChoiceOf(ref.read(byokSettingsProvider));
-  late final _customModel = TextEditingController(
-    text: _model == _custom ? ref.read(byokSettingsProvider).model : '',
-  );
-
-  /// 드롭다운에 보일 값: 목록에 있는 모델이면 그 id, 직접 입력한 모델이면 '직접 입력'
-  String _modelChoiceOf(ByokSettings s) => s.modelOption != null ? s.model : _custom;
-
-  void _pickProvider(AiProvider provider) {
-    final saved = ref.read(byokSettingsProvider.notifier).peek(provider);
-    setState(() {
-      _provider = provider;
-      _model = _modelChoiceOf(saved);
-      _customModel.text = _model == _custom ? saved.model : '';
-      _keyController.clear();
-    });
-  }
-
+  /// 회사마다 키 칸 (와이어프레임 4-3: 여기선 키만, 쓸 AI·모델은 대화방 위에서 고름)
+  final _keys = {for (final p in AiProvider.values) p: TextEditingController()};
   final _accessCode = TextEditingController();
 
   @override
@@ -265,25 +247,46 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
 
   @override
   void dispose() {
-    _keyController.dispose();
-    _customModel.dispose();
+    for (final c in _keys.values) {
+      c.dispose();
+    }
     _accessCode.dispose();
     super.dispose();
   }
-
-  static String _usd(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
   void _toast(String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  Future<void> _saveKeys() async {
+    final notifier = ref.read(byokSettingsProvider.notifier);
+    final typed = [
+      for (final e in _keys.entries)
+        if (e.value.text.trim().isNotEmpty) e.key
+    ];
+    if (typed.isEmpty) {
+      _toast('넣을 키를 적어 주세요');
+      return;
+    }
+    for (final p in typed) {
+      await notifier.saveKey(p, _keys[p]!.text);
+      _keys[p]!.clear();
+    }
+    // 기본 AI 회사에 키가 없으면 방금 키를 넣은 회사를 기본으로 (모델은 그 회사 기본)
+    if (!ref.read(byokSettingsProvider).canUseAi) {
+      final p = typed.first;
+      await notifier.save(provider: p, apiKey: '', model: notifier.peek(p).model);
+    }
+    if (!mounted) return;
+    setState(() {});
+    _toast('키를 저장했어요');
+  }
+
   @override
   Widget build(BuildContext context) {
-    ref.watch(byokSettingsProvider);
+    final current = ref.watch(byokSettingsProvider);
     final notifier = ref.read(byokSettingsProvider.notifier);
-    // 지금 드롭다운에서 고른 회사에 저장해 둔 키 (아직 저장 전이면 다른 회사 키일 수 있음)
-    final settings = notifier.peek(_provider);
-    final server = settings.server;
+    final server = current.server;
 
     return Scaffold(
       appBar: AppBar(title: const Text('AI 연결')),
@@ -293,12 +296,9 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              Text(server != null && server.providers.isNotEmpty ? 'AI 설정' : '내 AI 키',
-                  style: AppTextStyles.appBarTitle),
-              const SizedBox(height: 6),
               const Text(
-                '대화방 자유대화와 말랑이 만들기의 AI로 만들기에서 여기서 고른 AI를 불러요. '
-                '요금은 그 키의 계정에 청구돼요. 내 키는 이 브라우저에만 저장돼요.',
+                "AI 자유대화와 'AI로 만들기'에 쓰는 내 키예요. 키는 이 기기에만 저장되고 다른 기기로 넘어가지 않아요. "
+                '요금은 그 키의 계정에 청구돼요.',
                 style: AppTextStyles.systemNotice,
               ),
               if (server != null && server.providers.isNotEmpty) ...[
@@ -333,122 +333,103 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
                     ],
                   ),
               ],
+              for (final p in AiProvider.values) ...[
+                const SizedBox(height: AppSpacing.lg),
+                _keyCard(p, notifier.peek(p), notifier),
+              ],
               const SizedBox(height: AppSpacing.lg),
-              const Text('AI 회사', style: AppTextStyles.speakerName),
-              const SizedBox(height: 4),
-              DropdownButtonFormField<AiProvider>(
-                key: ValueKey('provider_${_provider.name}'),
-                initialValue: _provider,
-                isExpanded: true,
-                items: [
-                  for (final p in AiProvider.values) DropdownMenuItem(value: p, child: Text(p.label)),
-                ],
-                onChanged: (p) {
-                  if (p != null && p != _provider) _pickProvider(p);
-                },
+              ElevatedButton(
+                key: const ValueKey('ai_keys_save'),
+                onPressed: _saveKeys,
+                child: const Text('저장'),
               ),
-              const SizedBox(height: 4),
-              Text(
-                settings.usesServer ? '서버 키로 불러요. 내 키는 넣지 않아도 돼요.' : _provider.keyNote,
-                style: AppTextStyles.messageTime,
-              ),
-              if (!settings.usesServer)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                    label: Text('${_provider.label.split(' ').first} 키 받으러 가기'),
-                    onPressed: () => launchUrl(Uri.parse(aiKeyPage(_provider)), webOnlyWindowName: '_blank'),
-                  ),
+              const SizedBox(height: AppSpacing.lg),
+              // 지금 모든 대화에 쓰는 AI (바꾸기는 대화방과 같은 고르기 창)
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.aiActivePurple.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              const SizedBox(height: AppSpacing.md),
-              Text(settings.usesServer ? 'API 키 (안 넣어도 됨)' : 'API 키', style: AppTextStyles.speakerName),
-              const SizedBox(height: 4),
-              if (settings.hasKey) ...[
-                Row(
+                child: Row(
                   children: [
-                    const Icon(Icons.vpn_key_rounded, size: 18, color: AppColors.aiActivePurple),
-                    const SizedBox(width: 8),
+                    const Icon(Icons.forum_outlined, size: 20, color: AppColors.aiActivePurple),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text('저장된 키: ${settings.maskedKey}', style: AppTextStyles.chatBubbleBody),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '모든 대화 기본: ${current.provider.label.split(' ').first} · ${current.modelOption?.label ?? current.model}',
+                            style: AppTextStyles.chatBubbleBody,
+                          ),
+                          const Text('쓸 AI와 모델은 대화방 위쪽에서 바로 골라요', style: AppTextStyles.messageTime),
+                        ],
+                      ),
                     ),
                     TextButton(
-                      onPressed: () async {
-                        await notifier.removeKey(_provider);
-                        setState(() {});
-                        _toast('키를 지웠어요');
-                      },
-                      child: const Text('지우기'),
+                      key: const ValueKey('ai_default_change'),
+                      onPressed: () => showChatAiSheet(context, accent: AppColors.primaryPink),
+                      child: const Text('바꾸기'),
                     ),
                   ],
                 ),
-              ],
-              TextField(
-                controller: _keyController,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  hintText: settings.hasKey ? '새 키로 바꾸려면 입력' : _provider.keyHint,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const Text('모델', style: AppTextStyles.speakerName),
-              const SizedBox(height: 4),
-              DropdownButtonFormField<String>(
-                key: ValueKey('model_${_provider.name}'),
-                initialValue: _model,
-                isExpanded: true,
-                items: [
-                  for (final m in _provider.models)
-                    DropdownMenuItem(
-                      value: m.id,
-                      child: Text('${m.label} · ${m.note}', overflow: TextOverflow.ellipsis),
-                    ),
-                  const DropdownMenuItem(value: _custom, child: Text('직접 입력')),
-                ],
-                onChanged: (id) {
-                  if (id != null) setState(() => _model = id);
-                },
-              ),
-              if (_model == _custom) ...[
-                const SizedBox(height: AppSpacing.sm),
-                TextField(
-                  controller: _customModel,
-                  autocorrect: false,
-                  decoration: const InputDecoration(hintText: '모델 이름 그대로 (예: 새로 나온 모델)'),
-                ),
-              ],
-              if (_provider.option(_model) case final m?) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '요금: 입력 100만 토큰당 \$${_usd(m.inputUsdPerMTok)}, 출력 \$${_usd(m.outputUsdPerMTok)} (2026년 10월 기준)',
-                  style: AppTextStyles.messageTime,
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              ElevatedButton(
-                onPressed: () async {
-                  final key = _keyController.text.trim().isNotEmpty ? _keyController.text.trim() : settings.apiKey;
-                  if ((key == null || key.isEmpty) && !settings.usesServer) {
-                    _toast('API 키를 입력해 주세요');
-                    return;
-                  }
-                  final model = _model == _custom ? _customModel.text.trim() : _model;
-                  if (model.isEmpty) {
-                    _toast('모델 이름을 적어 주세요');
-                    return;
-                  }
-                  await notifier.save(provider: _provider, apiKey: key ?? '', model: model);
-                  _keyController.clear();
-                  _toast('${_provider.label}로 저장했어요');
-                },
-                child: const Text('저장'),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 회사 하나: 이름 · 키 받으러 가기 · 저장된 키(지우기) · 새 키 칸
+  Widget _keyCard(AiProvider p, ByokSettings saved, ByokSettingsNotifier notifier) {
+    final name = p.label.split(' ').first;
+    final viaServer = saved.server?.providers.contains(p) ?? false;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('$name 키', style: AppTextStyles.speakerName)),
+            TextButton(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: () => launchUrl(Uri.parse(aiKeyPage(p)), webOnlyWindowName: '_blank'),
+              child: Text(p == AiProvider.gemini ? '무료로 키 받으러 가기 ›' : '키 받으러 가기 ›'),
+            ),
+          ],
+        ),
+        if (viaServer)
+          const Text('서버 키로 불러서 내 키는 안 넣어도 돼요', style: AppTextStyles.messageTime),
+        if (saved.hasKey)
+          Row(
+            children: [
+              const Icon(Icons.vpn_key_rounded, size: 16, color: AppColors.aiActivePurple),
+              const SizedBox(width: 6),
+              Expanded(child: Text('저장된 키: ${saved.maskedKey}', style: AppTextStyles.messageTime)),
+              TextButton(
+                key: ValueKey('ai_key_remove_${p.name}'),
+                onPressed: () async {
+                  await notifier.removeKey(p);
+                  setState(() {});
+                  _toast('$name 키를 지웠어요');
+                },
+                child: const Text('지우기'),
+              ),
+            ],
+          ),
+        TextField(
+          key: ValueKey('ai_key_${p.name}'),
+          controller: _keys[p],
+          obscureText: true,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: saved.hasKey ? '새 키로 바꾸려면 입력' : p.keyHint,
+          ),
+        ),
+      ],
     );
   }
 }

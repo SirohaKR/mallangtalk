@@ -262,8 +262,8 @@ void main() {
     expect(find.text('윤도하 대화 속도'), findsOneWidget);
   });
 
-  testWidgets('설정: 드롭다운으로 AI 회사를 고르고 키와 모델을 저장', (tester) async {
-    SharedPreferences.setMockInitialValues({'byok_claude_api_key': 'sk-ant-old-key-123456'});
+  testWidgets('설정 › AI 연결: 회사마다 키 칸만 있고, 키를 넣으면 그 회사로 쓸 수 있게 됨', (tester) async {
+    SharedPreferences.setMockInitialValues({});
     appRouter.go('/settings/ai');
     await tester.binding.setSurfaceSize(const Size(420, 1400));
     await tester.pumpWidget(ProviderScope(
@@ -275,28 +275,26 @@ void main() {
       child: const MallangTalkApp(),
     ));
     await settle(tester);
-    expect(find.text('Claude (Anthropic)'), findsOneWidget);
-    expect(find.textContaining('저장된 키'), findsOneWidget);
+    // 모델 고르기는 없고 회사별 키 칸만
+    expect(find.text('모델'), findsNothing);
+    for (final p in AiProvider.values) {
+      expect(find.byKey(ValueKey('ai_key_${p.name}')), findsOneWidget);
+    }
+    expect(find.text('무료로 키 받으러 가기 ›'), findsOneWidget);
 
-    await tester.tap(find.text('Claude (Anthropic)'));
+    await tester.enterText(find.byKey(const ValueKey('ai_key_claude')), 'sk-ant-new-key-123456');
+    await tester.tap(find.byKey(const ValueKey('ai_keys_save')));
     await settle(tester);
-    await tester.tap(find.text('Gemini (Google)').last);
-    await settle(tester);
-    expect(find.textContaining('저장된 키'), findsNothing); // Gemini 키는 아직 없음
-    await tester.enterText(find.widgetWithText(TextField, 'AIza로 시작하는 Gemini API 키'), 'AIza-new-key-0000');
-
-    await tester.tap(find.textContaining('Gemini 3.8 Flash')); // Gemini는 무료 한도가 있는 Flash가 기본
-    await settle(tester);
-    await tester.tap(find.textContaining('Gemini 3.5 Flash-Lite').last);
-    await settle(tester);
-    await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
-    await settle(tester);
-
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('byok_provider'), 'gemini');
-    expect(prefs.getString('byok_key_gemini'), 'AIza-new-key-0000');
-    expect(prefs.getString('byok_model_gemini'), 'gemini-3.5-flash-lite');
-    expect(prefs.getString('byok_claude_api_key'), 'sk-ant-old-key-123456'); // Claude 키는 그대로
+    expect(prefs.getString('byok_key_claude') ?? prefs.getString('byok_claude_api_key'), 'sk-ant-new-key-123456');
+    // 기본(Gemini)에 키가 없어서 키를 넣은 Claude가 모든 대화 기본이 됨
+    expect(prefs.getString('byok_provider'), 'claude');
+    expect(find.textContaining('저장된 키'), findsOneWidget);
+    expect(find.textContaining('모든 대화 기본: Claude'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('ai_key_remove_claude')));
+    await settle(tester);
+    expect(find.textContaining('저장된 키'), findsNothing);
   });
 
   testWidgets('설정: 말랑톡 서버에서 열면 서버 키 안내와 접속 코드 칸이 보이고, 내 키 없이 저장됨', (tester) async {
@@ -318,7 +316,7 @@ void main() {
     ));
     await settle(tester);
     expect(find.textContaining('Claude (Anthropic)는 서버 .env 키로'), findsOneWidget);
-    expect(find.text('API 키 (안 넣어도 됨)'), findsOneWidget);
+    expect(find.text('서버 키로 불러서 내 키는 안 넣어도 돼요'), findsOneWidget);
 
     // 접속 코드는 '고급' 안에 숨어 있음
     expect(find.widgetWithText(TextField, '서버 .env의 ACCESS_CODE'), findsNothing);
@@ -327,13 +325,11 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, '서버 .env의 ACCESS_CODE'), 'mallang');
     await tester.tap(find.widgetWithText(OutlinedButton, '저장'));
     await settle(tester);
-    await tester.tap(find.widgetWithText(ElevatedButton, '저장'));
-    await settle(tester);
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('server_access_code'), 'mallang');
-    expect(prefs.getString('byok_provider'), 'claude'); // 키 없이도 저장됨
-    expect(prefs.getString('byok_claude_model'), 'claude-opus-5-5');
+    // 서버 키가 있는 Claude가 내 키 없이 모든 대화 기본
+    expect(find.textContaining('모든 대화 기본: Claude'), findsOneWidget);
   });
 
   testWidgets('만들기: 쓰던 초안은 새로 열어도 남아 있음', (tester) async {
