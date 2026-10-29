@@ -65,6 +65,9 @@ class MyCreationsList extends ConsumerWidget {
     // 로그인해서 서버에 올렸으면 말랑이 찾기에 보이고, 아니면 이 기기에만 있어요
     final online = ref.watch(accountApiProvider) != null;
     final wide = AppSpacing.isWide(context, 760);
+    // 말랑이 찾기에서 몇 명이 친구로 추가했는지 (서버 목록에 있을 때만)
+    final gallery = ref.watch(galleryProvider).valueOrNull ?? const <GalleryItem>[];
+    int? friendsOf(String id) => gallery.where((g) => g.character.id == id).firstOrNull?.friends;
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -94,12 +97,12 @@ class MyCreationsList extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(14),
                   side: const BorderSide(color: AppColors.borderLight),
                 ),
-                child: _CreationTile(entry: mine[i], online: online),
+                child: _CreationTile(entry: mine[i], online: online, friends: friendsOf(mine[i].id)),
               ),
             ),
           )
         else
-          for (final entry in mine) _CreationTile(entry: entry, online: online),
+          for (final entry in mine) _CreationTile(entry: entry, online: online, friends: friendsOf(entry.id)),
         if (mine.isEmpty)
           const Padding(
             padding: EdgeInsets.all(AppSpacing.xl),
@@ -152,22 +155,52 @@ class _NewTile extends StatelessWidget {
 }
 
 class _CreationTile extends StatelessWidget {
-  const _CreationTile({required this.entry, required this.online});
+  const _CreationTile({required this.entry, required this.online, this.friends});
 
   final LibraryEntry entry;
   final bool online;
+
+  /// 말랑이 찾기 친구 수 (서버에 없으면 null)
+  final int? friends;
 
   @override
   Widget build(BuildContext context) {
     final c = entry.bundle.character;
     final events = entry.bundle.events.length;
+    // 공개: 로그인해서 말랑이 찾기에 올라감 / 나만 보기: 찾기에 안 보이게 했거나 이 기기에만 있음
+    final public = online && !c.unlisted;
     return ListTile(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 2),
       leading: CharacterAvatar(character: c, radius: 24),
-      title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(c.name,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            key: ValueKey('creation_visibility_${c.id}'),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+            decoration: BoxDecoration(
+              color: public ? const Color(0xFFFBE3EB) : const Color(0xFFEFEDEE),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(public ? '공개' : '나만 보기',
+                style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: public ? const Color(0xFF8E2E52) : AppColors.textSecondary)),
+          ),
+        ],
+      ),
       subtitle: Text(
-        '${online ? '말랑이 찾기에 공개' : '이 기기에만 저장'} · 대화 $events개',
+        [
+          if (public && friends != null) '친구 $friends',
+          if (!online) '이 기기에만 저장',
+          c.isService ? '서비스 말랑이' : '이야기 $events개',
+        ].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: AppTextStyles.systemNotice,

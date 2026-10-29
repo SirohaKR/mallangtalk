@@ -5,6 +5,7 @@ import 'package:mallangtalk/features/chat/affection_gauge.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/chat_theme.dart';
 import 'package:mallangtalk/features/settings/byok_settings.dart';
+import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers.dart';
@@ -26,6 +27,14 @@ void main() {
     expect(pinkBubble.myBubble, AppColors.myBubble);
     expect(pinkBubble.myText, AppColors.textPrimary, reason: '밝은 말풍선엔 검은 글자');
     expect(pinkBubble.background, AppColors.surfaceWhite);
+
+    // 사진 배경: 사진이 있을 때만, 파일로 저장했다 불러와도 그대로
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    final photo = doha.copyWith(chatBackground: 'photo', chatBackgroundImage: png);
+    expect(ChatTheme.of(photo).backgroundImage, png);
+    expect(ChatTheme.of(photo.copyWith(themeColor: '')).backgroundImage, png);
+    expect(ChatTheme.of(doha.copyWith(chatBackground: 'photo')).backgroundImage, isNull);
+    expect(ChatTheme.of(CharacterModel.fromJson(photo.toJson())).backgroundImage, png);
   });
 
   test('앨범에는 사진 말풍선과 컷씬이 구분 없이, 같은 설명은 한 번만, 호감도 단계로 묶여 들어감', () {

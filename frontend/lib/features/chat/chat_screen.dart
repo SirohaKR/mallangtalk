@@ -319,8 +319,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     };
     final chatColumn = Column(
       children: [
-        // 1. 대화창 메시지 리스트
+        // 1. 대화창 메시지 리스트 ('사진' 배경이면 사진 위에 흰 막을 얇게 깔아 글이 잘 보이게)
         Expanded(
+          child: DecoratedBox(
+          decoration: BoxDecoration(
+            image: switch (CharacterImage.providerFor(
+                bundle?.resolveImage(theme.backgroundImage) ?? theme.backgroundImage ?? '')) {
+              final provider? => DecorationImage(
+                  image: provider,
+                  fit: BoxFit.cover,
+                  colorFilter: ColorFilter.mode(Colors.white.withValues(alpha: 0.45), BlendMode.srcATop),
+                ),
+              null => null,
+            },
+          ),
           child: free &&
                   chatState.messages.isEmpty &&
                   !chatState.isCharacterTyping
@@ -413,6 +425,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ));
                   },
                 ),
+          ),
         ),
 
         // 2. 하단 선택지 패널 & 연속 전송 가능한 직접 입력바 + 카메라 버튼

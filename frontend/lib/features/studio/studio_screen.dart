@@ -1384,6 +1384,16 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
   }
 
   /// 2단계: 대표색 고르기 + 톡방 꾸미기 + 미리보기
+  /// 톡방 배경 사진 고르기 (폰 화면처럼 세로로 길게 잘라 씀)
+  Future<void> _pickChatBackground() async {
+    final picked = await pickPhoto(context);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _draft.chatBackgroundImage = picked;
+      _draft.chatBackground = 'photo';
+    });
+  }
+
   Widget _colorStep() {
     final d = _draft;
     const presets = [
@@ -1473,10 +1483,38 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
         const Text('톡방 배경', style: AppTextStyles.speakerName),
         const SizedBox(height: 6),
         Row(children: [
-          option('대표색 연하게', d.chatBackground != 'white', () => d.chatBackground = ''),
+          option('대표색 연하게', d.chatBackground == '', () => d.chatBackground = ''),
           option('흰색', d.chatBackground == 'white', () => d.chatBackground = 'white',
               key: const ValueKey('studio_bg_white')),
+          option('사진', d.chatBackground == 'photo', () {
+            if (d.chatBackgroundImage.isEmpty) {
+              _pickChatBackground();
+            } else {
+              d.chatBackground = 'photo';
+            }
+          }, key: const ValueKey('studio_bg_photo')),
         ]),
+        if (d.chatBackground == 'photo' && d.chatBackgroundImage.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              if (CharacterImage.providerFor(d.chatBackgroundImage) case final provider?)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image(image: provider, width: 40, height: 56, fit: BoxFit.cover),
+                ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _pickChatBackground,
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: const Text('사진 바꾸기'),
+              ),
+              const Expanded(
+                child: Text('사진 위에 흰 막을 얇게 깔아 글이 잘 보여요', style: AppTextStyles.messageTime),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: AppSpacing.sm),
         const Text('내 말풍선', style: AppTextStyles.speakerName),
         const SizedBox(height: 6),
@@ -1489,7 +1527,18 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
         Container(
           key: const ValueKey('studio_color_preview'),
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(color: theme.background, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+            color: theme.background,
+            borderRadius: BorderRadius.circular(16),
+            image: switch (CharacterImage.providerFor(theme.backgroundImage ?? '')) {
+              final provider? => DecorationImage(
+                  image: provider,
+                  fit: BoxFit.cover,
+                  colorFilter: ColorFilter.mode(Colors.white.withValues(alpha: 0.45), BlendMode.srcATop),
+                ),
+              null => null,
+            },
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

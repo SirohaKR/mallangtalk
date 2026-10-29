@@ -175,6 +175,7 @@ class ScenarioDraft {
   String quote = '';
   String themeColor = '';
   String chatBackground = '';
+  String chatBackgroundImage = '';
   String gender = '';
   bool unlisted = false;
   /// 말랑이 종류: '' 이야기 말랑이, 'service' 서비스 말랑이
@@ -279,6 +280,7 @@ class ScenarioDraft {
       ..quote = c.quote
       ..themeColor = c.themeColor
       ..chatBackground = c.chatBackground
+      ..chatBackgroundImage = c.chatBackgroundImage
       ..gender = c.gender
       ..unlisted = c.unlisted
       ..kind = c.kind
@@ -422,6 +424,7 @@ class ScenarioDraft {
         ],
         themeColor: themeColor,
         chatBackground: chatBackground,
+        chatBackgroundImage: chatBackgroundImage,
         gender: gender,
         unlisted: unlisted,
         kind: kind,

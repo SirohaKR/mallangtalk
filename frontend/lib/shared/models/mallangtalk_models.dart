@@ -336,8 +336,11 @@ class CharacterModel {
   /// 서비스 말랑이의 보내기 설정 (이야기 말랑이는 null)
   final ServiceConfig? service;
 
-  /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색
+  /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색, 'photo' = [chatBackgroundImage] 사진
   final String chatBackground;
+
+  /// 톡방 배경 사진 (data: 주소 또는 서버 사진 주소)
+  final String chatBackgroundImage;
 
   /// 내 말풍선 색: '' = 대표색, 'pink' = 기본 분홍
   final String bubbleStyle;
@@ -374,6 +377,7 @@ class CharacterModel {
     this.kind = '',
     this.service,
     this.chatBackground = '',
+    this.chatBackgroundImage = '',
     this.bubbleStyle = '',
     this.authorComment = '',
     this.typingSpeedMultiplier = 1.0,
@@ -421,6 +425,7 @@ class CharacterModel {
               Map<String, dynamic>.from(json['service'] as Map))
           : null,
       chatBackground: json['chat_background'] as String? ?? '',
+      chatBackgroundImage: json['chat_background_image'] as String? ?? '',
       bubbleStyle: json['bubble_style'] as String? ?? '',
       authorComment: json['author_comment'] as String? ?? '',
       typingSpeedMultiplier:
@@ -460,6 +465,7 @@ class CharacterModel {
         if (kind.isNotEmpty) 'kind': kind,
         if (service != null) 'service': service!.toJson(),
         if (chatBackground.isNotEmpty) 'chat_background': chatBackground,
+        if (chatBackgroundImage.isNotEmpty) 'chat_background_image': chatBackgroundImage,
         if (bubbleStyle.isNotEmpty) 'bubble_style': bubbleStyle,
         if (authorComment.isNotEmpty) 'author_comment': authorComment,
         'typing_speed_multiplier': typingSpeedMultiplier,
@@ -487,6 +493,7 @@ class CharacterModel {
     String? gender,
     bool? unlisted,
     String? chatBackground,
+    String? chatBackgroundImage,
     String? bubbleStyle,
     String? authorComment,
   }) {
@@ -514,6 +521,7 @@ class CharacterModel {
       kind: kind,
       service: service,
       chatBackground: chatBackground ?? this.chatBackground,
+      chatBackgroundImage: chatBackgroundImage ?? this.chatBackgroundImage,
       bubbleStyle: bubbleStyle ?? this.bubbleStyle,
       authorComment: authorComment ?? this.authorComment,
       typingSpeedMultiplier: typingSpeedMultiplier,
