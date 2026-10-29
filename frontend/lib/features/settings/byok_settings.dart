@@ -84,6 +84,13 @@ class ByokSettingsNotifier extends Notifier<ByokSettings> {
     state = _load(store, provider);
   }
 
+  /// 쓰는 회사는 그대로 두고 그 회사 키만 저장
+  Future<void> saveKey(AiProvider provider, String apiKey) async {
+    final store = ref.read(localStoreProvider);
+    await store.saveApiKey(provider.name, apiKey.trim());
+    state = _load(store, state.provider);
+  }
+
   Future<void> removeKey(AiProvider provider) async {
     final store = ref.read(localStoreProvider);
     await store.clearApiKey(provider.name);
@@ -100,6 +107,49 @@ class ByokSettingsNotifier extends Notifier<ByokSettings> {
 final byokSettingsProvider = NotifierProvider<ByokSettingsNotifier, ByokSettings>(
   ByokSettingsNotifier.new,
 );
+
+/// 대화방(roomId)에서 '이 대화만'으로 고른 AI 회사·모델. null이면 모든 대화 기본 AI를 따름.
+/// 같은 계정이면 PC·폰이 같은 값 (키는 기기마다라, 그 회사 키가 없는 기기에서는 기본 AI로)
+class RoomAiChoice extends FamilyNotifier<(AiProvider, String)?, String> {
+  @override
+  (AiProvider, String)? build(String roomId) {
+    final raw = ref.watch(localStoreProvider).roomAi(roomId);
+    final parts = raw?.split('|');
+    if (parts == null || parts.length != 2 || parts[1].isEmpty) return null;
+    if (!AiProvider.values.any((p) => p.name == parts[0])) return null;
+    return (AiProvider.byName(parts[0]), parts[1]);
+  }
+
+  Future<void> set(AiProvider provider, String model) async {
+    await ref.read(localStoreProvider).saveRoomAi(arg, '${provider.name}|$model');
+    state = (provider, model);
+  }
+
+  /// '모든 대화 기본으로' 돌아감
+  Future<void> clear() async {
+    await ref.read(localStoreProvider).saveRoomAi(arg, null);
+    state = null;
+  }
+}
+
+final roomAiChoiceProvider =
+    NotifierProvider.family<RoomAiChoice, (AiProvider, String)?, String>(RoomAiChoice.new);
+
+/// 이 대화방에서 실제로 쓸 AI: '이 대화만'으로 고른 게 있고 쓸 수 있으면 그것, 아니면 모든 대화 기본 AI
+final roomByokProvider = Provider.family<ByokSettings, String>((ref, roomId) {
+  final base = ref.watch(byokSettingsProvider);
+  final choice = ref.watch(roomAiChoiceProvider(roomId));
+  if (choice == null) return base;
+  final saved = ref.read(byokSettingsProvider.notifier).peek(choice.$1);
+  final room = ByokSettings(
+    provider: choice.$1,
+    apiKey: saved.apiKey,
+    model: choice.$2,
+    server: saved.server,
+    accessCode: saved.accessCode,
+  );
+  return room.canUseAi ? room : base;
+});
 
 /// AI 회사별 API 키 발급 페이지
 String aiKeyPage(AiProvider provider) => switch (provider) {

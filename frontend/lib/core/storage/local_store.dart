@@ -258,7 +258,9 @@ class LocalStore {
     'persona_',
     'seen_',
     'freetalk_',
-    'romance_'
+    'romance_',
+    'ai_room_',
+    'userinfo_'
   ];
   static const _syncTimesKey = 'sync_ts_v1';
 
@@ -444,6 +446,15 @@ class LocalStore {
 
   Future<void> clearApiKey(String provider) => _write(_keyKey(provider), null);
 
+  /// 쓰는 AI 회사는 그대로 두고 키만 저장 (대화방에서 '이 대화만' 다른 회사를 연결할 때)
+  Future<void> saveApiKey(String provider, String apiKey) =>
+      _write(_keyKey(provider), apiKey);
+
+  /// 대화방마다 따로 고른 AI ('회사|모델'). 없으면 모든 대화 기본 AI를 씀
+  String? roomAi(String roomId) => _getString('ai_room_$roomId');
+  Future<void> saveRoomAi(String roomId, String? value) =>
+      _write('ai_room_$roomId', value);
+
   /// 말랑톡 서버 로그인 (토큰과 아이디·닉네임). 로그아웃하면 지움
   String? get authToken => _getString('auth_token');
   String? get authUserJson => _getString('auth_user');
@@ -492,6 +503,9 @@ class LocalStore {
     await _write('chosen_$characterId', null);
     await _write('svc_$characterId', null);
     await _write('tempo_$characterId', null);
+    await _write('ai_room_$characterId', null);
+    await _write('ai_room_$characterId#free', null);
+    await _write('userinfo_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
     await _write('seen_$characterId', null);
@@ -509,6 +523,7 @@ class LocalStore {
     await _write('svc_$characterId', null);
     await _write('nickname_$characterId', null);
     await _write('persona_$characterId', null);
+    await _write('userinfo_$characterId', null);
     await _write('seen_$characterId', null);
     await _write('freetalk_$characterId', null);
     await _write('specials_$characterId', null);
@@ -520,6 +535,19 @@ class LocalStore {
 
   Future<void> saveChatTempo(String characterId, double tempo) =>
       _write('tempo_$characterId', tempo.toString());
+
+  /// 서비스 말랑이에게 알려 준 내 정보 (칸 이름 → 값)
+  Map<String, String> serviceUserInfo(String characterId) {
+    try {
+      final raw = jsonDecode(_getString('userinfo_$characterId') ?? '{}') as Map;
+      return {for (final e in raw.entries) '${e.key}': '${e.value}'};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> saveServiceUserInfo(String characterId, Map<String, String> info) =>
+      _write('userinfo_$characterId', jsonEncode(info));
 
   String? romanceSetting(String characterId) =>
       _getString('romance_$characterId');

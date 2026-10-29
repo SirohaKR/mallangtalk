@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/service_messages.dart';
+import 'package:mallangtalk/features/chat/start_chat.dart';
+import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/features/studio/scenario_draft.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -76,6 +78,13 @@ void main() {
       ['소띠', '쉬는 날'],
     ]);
     expect(parseServiceTable('a,b\n1,2').rows.single, ['1', '2']);
+    // 엑셀 CSV: 맨 앞 BOM, 따옴표 안의 쉼표·줄바꿈·""
+    final csv = parseServiceTable('﻿띠,운세\r\n쥐띠,"작은 친절이, 큰 행운으로"\r\n소띠,"쉬어 가요\n""천천히"""\r\n');
+    expect(csv.columns, ['띠', '운세']);
+    expect(csv.rows, [
+      ['쥐띠', '작은 친절이, 큰 행운으로'],
+      ['소띠', '쉬어 가요\n"천천히"'],
+    ]);
   });
 
   test('서비스 말랑이는 초안을 거쳐도 그대로, 이야기·호감도 단계 없이 저장됨', () {
@@ -122,5 +131,76 @@ void main() {
     expect(stacked.map((m) => m.timestamp), [DateTime(2026, 10, 21, 8), DateTime(2026, 10, 22, 8)]);
     expect(again.read(chatRoomProvider(dohaId)).unreadCount, 0, reason: '보고 있는 대화방이라 바로 읽음');
     await settle(tester);
+  });
+
+  test('내 정보: 표에 같은 이름의 칸이 있으면 그 값에 맞는 줄만, 틀의 {칸}도 채움', () {
+    final config = table.copyWith(ask: ['띠', '생일'], template: '{생일}생 {띠}! {운세}');
+    expect(matchingServiceRows(config, {'띠': '범띠'}), [2]);
+    expect(matchingServiceRows(config, {'띠': '용띠'}), [0, 1, 2], reason: '맞는 줄이 없으면 전체');
+    final msg = composeServiceMessage(config,
+        userName: '다홍', charName: '콩떡', now: DateTime(2026, 10, 26), random: Random(0),
+        userInfo: {'띠': '범띠', '생일': '3월 2일'})!;
+    expect(msg.text, '3월 2일생 범띠! 새 사람에게서 힌트를 얻어요');
+    // 목록 모드도 {생일}처럼 넣을 수 있음
+    const list = ServiceConfig(mode: 'list', lines: ['{생일} 생일 축하 미리!'], ask: ['생일']);
+    expect(composeServiceMessage(list,
+            userName: '다홍', charName: '콩떡', now: DateTime(2026, 10, 26), random: Random(0),
+            userInfo: {'생일': '3월 2일'})!
+        .text, '3월 2일 생일 축하 미리!');
+    expect(config.choicesFor('띠'), ['쥐띠', '소띠', '범띠']);
+    expect(serviceAskChoices(config, '생일'), isEmpty);
+    expect(serviceAskChoices(const ServiceConfig(), '혈액형'), ['A형', 'B형', 'O형', 'AB형']);
+    expect(serviceUserInfoLine({'띠': '범띠', '생일': ''}), '띠: 범띠');
+    expect(ServiceConfig.fromJson(config.toJson()).ask, ['띠', '생일']);
+  });
+
+  testWidgets('서비스 말랑이는 페르소나 대신 물어볼 내 정보를 받고, 그 값에 맞는 줄을 보냄', (tester) async {
+    final config = table.copyWith(ask: ['띠', '생일']);
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    final bundle = serviceBundle(config);
+    final container = await openDohaChat(tester, bundle: bundle);
+    final ask = askChatNickname(tester.element(find.byType(ChatScreen)), bundle.character);
+    await settle(tester);
+    expect(find.byKey(const ValueKey('persona_field')), findsNothing);
+    expect(find.text('다른 캐릭터에도 기본으로 쓰기'), findsNothing);
+    expect(find.byKey(const ValueKey('ask_띠_쥐띠')), findsOneWidget, reason: '표의 띠 칸 값으로 고르기');
+    await tester.tap(find.byKey(const ValueKey('ask_띠_범띠')));
+    await tester.enterText(find.byKey(const ValueKey('ask_생일')), '3월 2일');
+    await tester.tap(find.text('저장'));
+    await settle(tester);
+    await ask;
+    final prefs = await SharedPreferences.getInstance();
+    expect(jsonDecode(prefs.getString('userinfo_$dohaId')!), {'띠': '범띠', '생일': '3월 2일'});
+
+    await tester.tap(find.byKey(const ValueKey('service_reroll')));
+    await settle(tester);
+    final last = container.read(chatRoomProvider(dohaId)).messages.lastWhere((m) => !m.isUser && !m.isSystem);
+    expect(last.text, contains('범띠 운세는… 새 사람에게서 힌트를 얻어요'));
+  });
+
+  testWidgets('답장 방식: 정해 둔 답은 AI 키 없이 그중 하나로 답하고, 읽씹은 읽기만 함', (tester) async {
+    const base = ServiceConfig(mode: 'list', lines: ['오늘도 좋은 하루!'], reply: 'list', replyLines: ['{이름}, 콩떡은 거짓말 못 해!']);
+    expect(ServiceConfig.fromJson(base.toJson()).reply, 'list');
+    expect(ServiceConfig.fromJson(base.toJson()).replyLines, base.replyLines);
+    expect(ServiceConfig.fromJson(const ServiceConfig().toJson()).reply, 'ai');
+
+    SharedPreferences.setMockInitialValues({...fastTempo, 'nickname_$dohaId': '다홍'});
+    var container = await openDohaChat(tester, bundle: serviceBundle(base));
+    var notifier = container.read(chatRoomProvider(dohaId).notifier);
+    expect(notifier.repliesWithAi, isFalse);
+    expect(notifier.sendUserMessage(text: '이거 진짜 맞아요?'), isTrue, reason: 'AI 키 없어도 보내짐');
+    await settle(tester);
+    var messages = container.read(chatRoomProvider(dohaId)).messages;
+    expect(messages.last.text, '다홍, 콩떡은 거짓말 못 해!');
+    expect(messages.where((m) => m.isUser).every((m) => !m.isUnread), isTrue);
+
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    container = await openDohaChat(tester, bundle: serviceBundle(base.copyWith(reply: 'none')));
+    notifier = container.read(chatRoomProvider(dohaId).notifier);
+    expect(notifier.sendUserMessage(text: '안녕'), isTrue);
+    await settle(tester);
+    messages = container.read(chatRoomProvider(dohaId)).messages;
+    expect(messages.last.isUser, isTrue);
+    expect(messages.last.isUnread, isFalse, reason: '읽고 답은 안 함');
   });
 }

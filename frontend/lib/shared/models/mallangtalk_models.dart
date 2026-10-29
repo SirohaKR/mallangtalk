@@ -179,6 +179,18 @@ class ServiceConfig {
   /// 대화방에 '한 번 더 뽑기' 버튼
   final bool reroll;
 
+  /// 대화를 시작할 때 유저에게 물어볼 정보 (예: 띠, 생일, 별자리). 페르소나 대신 이걸 받음.
+  /// 데이터 표에 같은 이름의 칸이 있으면 유저 값과 맞는 줄에서 고르고, 틀에 {띠}처럼 넣을 수도 있음
+  final List<String> ask;
+
+  /// 유저가 답장하면: 'ai' AI가 답함(기본) / 'list' [replyLines] 중 랜덤 / 'none' 읽고 답 안 함(읽씹)
+  final String reply;
+
+  /// 정해 둔 답 (reply가 'list'일 때, {이름} 등 넣을 수 있음)
+  final List<String> replyLines;
+
+  static const replyModes = ['ai', 'list', 'none'];
+
   const ServiceConfig({
     this.days = const [1, 2, 3, 4, 5, 6, 7],
     this.times = const ['08:00'],
@@ -190,6 +202,9 @@ class ServiceConfig {
     this.aiPrompt = '',
     this.noRepeat = true,
     this.reroll = true,
+    this.ask = const [],
+    this.reply = 'ai',
+    this.replyLines = const [],
   });
 
   static const modes = ['list', 'table', 'ai'];
@@ -205,6 +220,9 @@ class ServiceConfig {
     String? aiPrompt,
     bool? noRepeat,
     bool? reroll,
+    List<String>? ask,
+    String? reply,
+    List<String>? replyLines,
   }) =>
       ServiceConfig(
         days: days ?? this.days,
@@ -217,6 +235,9 @@ class ServiceConfig {
         aiPrompt: aiPrompt ?? this.aiPrompt,
         noRepeat: noRepeat ?? this.noRepeat,
         reroll: reroll ?? this.reroll,
+        ask: ask ?? this.ask,
+        reply: reply ?? this.reply,
+        replyLines: replyLines ?? this.replyLines,
       );
 
   factory ServiceConfig.fromJson(Map<String, dynamic> json) => ServiceConfig(
@@ -242,6 +263,9 @@ class ServiceConfig {
         aiPrompt: json['ai_prompt'] as String? ?? '',
         noRepeat: json['no_repeat'] != false,
         reroll: json['reroll'] != false,
+        ask: [for (final a in json['ask'] as List? ?? const []) '$a'],
+        reply: replyModes.contains(json['reply']) ? json['reply'] as String : 'ai',
+        replyLines: [for (final l in json['reply_lines'] as List? ?? const []) '$l'],
       );
 
   Map<String, dynamic> toJson() => {
@@ -255,7 +279,20 @@ class ServiceConfig {
         if (aiPrompt.isNotEmpty) 'ai_prompt': aiPrompt,
         'no_repeat': noRepeat,
         'reroll': reroll,
+        if (ask.isNotEmpty) 'ask': ask,
+        if (reply != 'ai') 'reply': reply,
+        if (replyLines.isNotEmpty) 'reply_lines': replyLines,
       };
+
+  /// 물어볼 정보 중 데이터 표에도 있는 칸이면 그 칸의 값들 (고르기 버튼으로 보여 줌)
+  List<String> choicesFor(String field) {
+    final c = columns.indexWhere((x) => x.trim() == field.trim());
+    if (c < 0) return const [];
+    return {
+      for (final r in rows)
+        if (c < r.length && r[c].trim().isNotEmpty) r[c].trim()
+    }.toList();
+  }
 }
 
 class CharacterModel {
@@ -317,8 +354,11 @@ class CharacterModel {
   /// 서비스 말랑이의 보내기 설정 (이야기 말랑이는 null)
   final ServiceConfig? service;
 
-  /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색
+  /// 톡방 배경: '' = 대표색 연하게, 'white' = 흰색, 'photo' = [chatBackgroundImage] 사진
   final String chatBackground;
+
+  /// 톡방 배경 사진 (data: 주소 또는 서버 사진 주소)
+  final String chatBackgroundImage;
 
   /// 내 말풍선 색: '' = 대표색, 'pink' = 기본 분홍
   final String bubbleStyle;
@@ -355,6 +395,7 @@ class CharacterModel {
     this.kind = '',
     this.service,
     this.chatBackground = '',
+    this.chatBackgroundImage = '',
     this.bubbleStyle = '',
     this.authorComment = '',
     this.typingSpeedMultiplier = 1.0,
@@ -402,6 +443,7 @@ class CharacterModel {
               Map<String, dynamic>.from(json['service'] as Map))
           : null,
       chatBackground: json['chat_background'] as String? ?? '',
+      chatBackgroundImage: json['chat_background_image'] as String? ?? '',
       bubbleStyle: json['bubble_style'] as String? ?? '',
       authorComment: json['author_comment'] as String? ?? '',
       typingSpeedMultiplier:
@@ -441,6 +483,7 @@ class CharacterModel {
         if (kind.isNotEmpty) 'kind': kind,
         if (service != null) 'service': service!.toJson(),
         if (chatBackground.isNotEmpty) 'chat_background': chatBackground,
+        if (chatBackgroundImage.isNotEmpty) 'chat_background_image': chatBackgroundImage,
         if (bubbleStyle.isNotEmpty) 'bubble_style': bubbleStyle,
         if (authorComment.isNotEmpty) 'author_comment': authorComment,
         'typing_speed_multiplier': typingSpeedMultiplier,
@@ -468,6 +511,7 @@ class CharacterModel {
     String? gender,
     bool? unlisted,
     String? chatBackground,
+    String? chatBackgroundImage,
     String? bubbleStyle,
     String? authorComment,
   }) {
@@ -495,6 +539,7 @@ class CharacterModel {
       kind: kind,
       service: service,
       chatBackground: chatBackground ?? this.chatBackground,
+      chatBackgroundImage: chatBackgroundImage ?? this.chatBackgroundImage,
       bubbleStyle: bubbleStyle ?? this.bubbleStyle,
       authorComment: authorComment ?? this.authorComment,
       typingSpeedMultiplier: typingSpeedMultiplier,

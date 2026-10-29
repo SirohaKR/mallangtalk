@@ -315,6 +315,7 @@ ${_characterSheet(base)}
       gender: base.gender,
       unlisted: base.unlisted,
       chatBackground: base.chatBackground,
+      chatBackgroundImage: base.chatBackgroundImage,
       bubbleStyle: base.bubbleStyle,
       typingSpeedMultiplier: base.typingSpeedMultiplier,
       affectionStages: base.affectionStages,

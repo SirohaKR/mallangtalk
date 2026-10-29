@@ -33,7 +33,7 @@ Future<Map<String, dynamic>> moveImagesToStore(
   final images = bundle['images'];
   final character =
       Map<String, dynamic>.of(bundle['character'] as Map<String, dynamic>);
-  for (final key in const ['avatar_url', 'cover_url']) {
+  for (final key in const ['avatar_url', 'cover_url', 'chat_background_image']) {
     if (character[key] is String)
       character[key] = await moved(character[key] as String);
   }

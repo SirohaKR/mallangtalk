@@ -5,6 +5,7 @@ import 'package:mallangtalk/features/chat/affection_gauge.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/features/chat/chat_theme.dart';
 import 'package:mallangtalk/features/settings/byok_settings.dart';
+import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers.dart';
@@ -26,6 +27,14 @@ void main() {
     expect(pinkBubble.myBubble, AppColors.myBubble);
     expect(pinkBubble.myText, AppColors.textPrimary, reason: '밝은 말풍선엔 검은 글자');
     expect(pinkBubble.background, AppColors.surfaceWhite);
+
+    // 사진 배경: 사진이 있을 때만, 파일로 저장했다 불러와도 그대로
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    final photo = doha.copyWith(chatBackground: 'photo', chatBackgroundImage: png);
+    expect(ChatTheme.of(photo).backgroundImage, png);
+    expect(ChatTheme.of(photo.copyWith(themeColor: '')).backgroundImage, png);
+    expect(ChatTheme.of(doha.copyWith(chatBackground: 'photo')).backgroundImage, isNull);
+    expect(ChatTheme.of(CharacterModel.fromJson(photo.toJson())).backgroundImage, png);
   });
 
   test('앨범에는 사진 말풍선과 컷씬이 구분 없이, 같은 설명은 한 번만, 호감도 단계로 묶여 들어감', () {
@@ -64,10 +73,13 @@ void main() {
     expect(find.byKey(const ValueKey('photo_viewer')), findsOneWidget);
     expect(find.descendant(of: find.byKey(const ValueKey('photo_viewer')), matching: find.text(dubuPhoto)),
         findsWidgets);
-    await tester.tap(find.byTooltip('닫기'));
+    // 진짜 사진이 없는 설명 카드라 '저장'은 없고, '이 톡으로 가기'는 닫고 그 톡으로
+    expect(find.byKey(const ValueKey('photo_viewer_save')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('photo_viewer_goto')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const ValueKey('photo_viewer')), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('예전 앨범(컷씬만 기록)도 새 앨범에 들어감', (tester) async {
@@ -111,5 +123,46 @@ void main() {
     final byok = container.read(byokSettingsProvider);
     expect(byok.provider.name, 'claude');
     expect(byok.hasKey, isTrue);
+  });
+
+  testWidgets('대화방 AI를 이 대화만으로 고르면 그 방만 바뀌고 다른 대화는 기본 AI 그대로', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'byok_provider': 'gemini',
+      'byok_key_gemini': 'AIza-test',
+      'byok_model_gemini': 'gemini-3.8-flash',
+      'byok_claude_api_key': 'sk-ant-test',
+    });
+    final container = await openDohaChat(tester);
+    await tester.tap(find.byTooltip('대화 설정'));
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    await tester.tap(find.text('자유대화 AI 고르기'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    // 스토리 방에서 열면 자유대화 스위치는 꺼져 있음 (켜면 자유대화 방으로)
+    expect(tester.widget<SwitchListTile>(find.byKey(const ValueKey('ai_free_switch'))).value, isFalse);
+    await tester.tap(find.text('이 대화만'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('ai_provider_claude')));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('ai_model_claude-haiku-5-5')));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final here = container.read(roomByokProvider(dohaId));
+    expect(here.provider.name, 'claude');
+    expect(here.model, 'claude-haiku-5-5');
+    // 모든 대화 기본(다른 방)은 그대로 Gemini
+    expect(container.read(byokSettingsProvider).provider.name, 'gemini');
+    expect(container.read(roomByokProvider('other_room')).model, 'gemini-3.8-flash');
+
+    // 모든 대화 기본으로 바꾸면 지금 고른 AI가 기본이 되고, 이 방의 따로 설정은 지워짐
+    await tester.tap(find.text('모든 대화 기본으로'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(container.read(roomAiChoiceProvider(dohaId)), isNull);
+    expect(container.read(byokSettingsProvider).provider.name, 'claude');
+    expect(container.read(byokSettingsProvider).model, 'claude-haiku-5-5');
   });
 }

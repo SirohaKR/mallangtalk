@@ -129,3 +129,21 @@ final chatNicknameProvider = Provider.family<String, String>((ref, characterId) 
 final chatPersonaProvider = Provider.family<String, String>((ref, characterId) {
   return ref.watch(chatPrefsProvider(characterId)).persona ?? ref.watch(userProfileProvider).persona;
 });
+
+/// 서비스 말랑이에게 알려 준 내 정보 (띠·생일 등, 캐릭터마다 따로·연동). 페르소나 대신 씀
+class ServiceUserInfoNotifier extends FamilyNotifier<Map<String, String>, String> {
+  @override
+  Map<String, String> build(String characterId) => ref.watch(localStoreProvider).serviceUserInfo(characterId);
+
+  Future<void> save(Map<String, String> info) async {
+    final clean = {
+      for (final e in info.entries)
+        if (e.value.trim().isNotEmpty) e.key.trim(): e.value.trim()
+    };
+    state = clean;
+    await ref.read(localStoreProvider).saveServiceUserInfo(arg, clean);
+  }
+}
+
+final serviceUserInfoProvider =
+    NotifierProvider.family<ServiceUserInfoNotifier, Map<String, String>, String>(ServiceUserInfoNotifier.new);

@@ -5,6 +5,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
+import '../../shared/widgets/character_sheet_view.dart';
 
 /// 갤러리 카드: 썸네일 + 이름 + 한줄 소개 + 만든 사람 + 태그
 /// 만든 사람 이름을 누르면 그 사람의 말랑이 모아 보기(/creator/이름)로 가요.
@@ -36,6 +37,8 @@ class GalleryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 대표색을 정한 말랑이는 카드 테두리도 대표색 (와이어프레임 5-2)
+    final themed = character.themeColor.trim().isNotEmpty;
     return InkWell(
       borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
       onTap: onTap,
@@ -43,7 +46,9 @@ class GalleryCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surfaceWhite,
           borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-          border: Border.all(color: AppColors.borderLight),
+          border: themed
+              ? Border.all(color: Color.lerp(AppColors.borderLight, characterThemeColor(character), 0.7)!, width: 1.5)
+              : Border.all(color: AppColors.borderLight),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(

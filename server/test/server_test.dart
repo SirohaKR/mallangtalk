@@ -157,7 +157,13 @@ USE_SERVER_AI_KEYS=true
 
     Map<String, dynamic> bundle(String id, {String avatar = '', String cover = ''}) => {
           'format': 'mallangtalk-scenario-v1',
-          'character': {'id': id, 'name': '카이엔', 'avatar_url': avatar, if (cover.isNotEmpty) 'cover_url': cover},
+          'character': {
+            'id': id,
+            'name': '카이엔',
+            'avatar_url': avatar,
+            if (cover.isNotEmpty) 'cover_url': cover,
+            if (cover.isNotEmpty) 'chat_background_image': cover,
+          },
           'events': [],
           'script_nodes': [],
           'images': {'p1': 'data:image/jpeg;base64,${base64Encode([1, 2, 3])}'},
@@ -200,6 +206,7 @@ USE_SERVER_AI_KEYS=true
       expect(url, startsWith('/api/images/'));
       expect((saved['character'] as Map)['avatar_url'], startsWith('/api/images/'));
       expect((saved['character'] as Map)['cover_url'], startsWith('/api/images/'));
+      expect((saved['character'] as Map)['chat_background_image'], startsWith('/api/images/'));
       expect(jsonEncode(saved), isNot(contains('base64')));
 
       final image = await handler(shelf.Request('GET', Uri.parse('http://localhost$url')));

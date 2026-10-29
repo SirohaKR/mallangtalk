@@ -7,6 +7,7 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../library/character_library.dart';
 import '../settings/user_profile.dart';
 import 'chat_notifier.dart';
+import 'service_messages.dart';
 import '../../shared/utils/korean.dart';
 
 /// [초보자 노트] 캐릭터와의 대화방을 엽니다.
@@ -45,13 +46,14 @@ Future<_ChatProfile?> _askProfile(
   required bool isFirstTime,
 }) async {
   final container = ProviderScope.containerOf(context, listen: false);
-  final current = container.read(chatPrefsProvider(character.id)).nickname ??
-      container.read(userProfileProvider).nickname;
+  final current =
+      container.read(chatPrefsProvider(character.id)).nickname ?? container.read(userProfileProvider).nickname;
   final chooseMode = isFirstTime && !character.isService;
   final dialog = _NicknameDialog(
     character: character,
     initial: current,
     initialPersona: container.read(chatPersonaProvider(character.id)),
+    initialInfo: container.read(serviceUserInfoProvider(character.id)),
     isFirstTime: isFirstTime,
     chooseMode: chooseMode,
   );
@@ -69,12 +71,17 @@ Future<_ChatProfile?> _askProfile(
   if (result == null) return null;
   final prefs = container.read(chatPrefsProvider(character.id).notifier);
   await prefs.setNickname(result.nickname);
+  if (character.isService) {
+    // 서비스 말랑이는 페르소나 대신 봇이 쓸 내 정보(띠·생일 등)만 받음
+    await container.read(serviceUserInfoProvider(character.id).notifier).save(result.info);
+    return result;
+  }
   await prefs.setPersona(result.persona);
   if (result.saveAsDefault) await container.read(userProfileProvider.notifier).savePersona(result.persona);
   return result;
 }
 
-typedef _ChatProfile = ({String nickname, String persona, bool saveAsDefault, bool free});
+typedef _ChatProfile = ({String nickname, String persona, bool saveAsDefault, bool free, Map<String, String> info});
 
 /// 캐릭터별 대화 속도 고르기
 Future<void> pickChatTempo(BuildContext context, CharacterModel character) {
@@ -110,9 +117,7 @@ Future<void> pickChatTempo(BuildContext context, CharacterModel character) {
                       Navigator.pop(sheetContext);
                     },
                     leading: Icon(
-                      tempo == option.tempo
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_off_rounded,
+                      tempo == option.tempo ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
                       color: tempo == option.tempo ? AppColors.primaryPink : AppColors.textMuted,
                     ),
                     title: Text(option.label),
@@ -133,6 +138,7 @@ class _NicknameDialog extends StatefulWidget {
     required this.character,
     required this.initial,
     required this.initialPersona,
+    this.initialInfo = const {},
     required this.isFirstTime,
     this.chooseMode = false,
   });
@@ -140,6 +146,7 @@ class _NicknameDialog extends StatefulWidget {
   final CharacterModel character;
   final String initial;
   final String initialPersona;
+  final Map<String, String> initialInfo;
   final bool isFirstTime;
 
   /// 스토리/자유대화 고르는 카드를 보일지 (처음 대화 + 이야기 말랑이)
@@ -156,17 +163,84 @@ class _NicknameDialogState extends State<_NicknameDialog> {
   bool _free = false;
   String? _error;
 
+  /// 서비스 말랑이가 물어보는 정보 (칸 이름 → 값)
+  late final Map<String, String> _info = {...widget.initialInfo};
+  late final _infoText = {
+    for (final f in _askFields)
+      if (serviceAskChoices(widget.character.service!, f).isEmpty)
+        f: TextEditingController(text: widget.initialInfo[f] ?? ''),
+  };
+
+  List<String> get _askFields => [
+        for (final f in widget.character.service?.ask ?? const <String>[])
+          if (f.trim().isNotEmpty) f.trim()
+      ];
+
   @override
   void dispose() {
     _controller.dispose();
     _persona.dispose();
+    for (final c in _infoText.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   void _submit() {
     final text = _controller.text.trim();
     if (text.isEmpty) return setState(() => _error = '별명을 적어 주세요');
-    Navigator.pop<_ChatProfile>(context, (nickname: text, persona: _persona.text.trim(), saveAsDefault: _saveAsDefault, free: _free));
+    for (final e in _infoText.entries) {
+      _info[e.key] = e.value.text.trim();
+    }
+    Navigator.pop<_ChatProfile>(context, (
+      nickname: text,
+      persona: _persona.text.trim(),
+      saveAsDefault: _saveAsDefault,
+      free: _free,
+      info: {for (final f in _askFields) f: _info[f] ?? ''},
+    ));
+  }
+
+  /// 서비스 말랑이: 페르소나 대신 봇이 쓸 내 정보 칸들
+  List<Widget> _serviceFields() {
+    final name = widget.character.name;
+    final config = widget.character.service!;
+    final fields = _askFields;
+    if (fields.isEmpty) return const [];
+    return [
+      const SizedBox(height: 4),
+      Text('${josa(name, '이', '가')} 톡을 보낼 때 쓰는 내 정보예요. 맞는 걸 골라 주세요.', style: AppTextStyles.systemNotice),
+      for (final f in fields) ...[
+        const SizedBox(height: 12),
+        if (serviceAskChoices(config, f) case final choices when choices.isNotEmpty) ...[
+          Text(f, style: AppTextStyles.speakerName),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final c in choices)
+                ChoiceChip(
+                  key: ValueKey('ask_${f}_$c'),
+                  label: Text(c),
+                  selected: _info[f] == c,
+                  showCheckmark: false,
+                  selectedColor: Color.lerp(AppColors.surfaceWhite, AppColors.primaryPink, 0.2),
+                  onSelected: (on) => setState(() => _info[f] = on ? c : ''),
+                ),
+            ],
+          ),
+        ] else
+          TextField(
+            key: ValueKey('ask_$f'),
+            controller: _infoText[f],
+            maxLength: 40,
+            decoration: InputDecoration(labelText: f, hintText: f.contains('생일') ? '예: 3월 2일' : null),
+          ),
+      ],
+      const SizedBox(height: 6),
+      const Text('나중에 대화방 메뉴의 \'내 별명·정보\'에서 바꿀 수 있어요', style: AppTextStyles.messageTime),
+    ];
   }
 
   @override
@@ -185,35 +259,40 @@ class _NicknameDialogState extends State<_NicknameDialog> {
         decoration: InputDecoration(labelText: '내 별명', errorText: _error),
         onSubmitted: (_) => _submit(),
       ),
-      const SizedBox(height: 4),
-      TextField(
-        key: const ValueKey('persona_field'),
-        controller: _persona,
-        minLines: widget.chooseMode ? 2 : 3,
-        maxLines: 6,
-        maxLength: 400,
-        decoration: InputDecoration(
-          labelText: '내 설정 (페르소나)',
-          alignLabelWithHint: true,
-          hintText: '예: 24살, 같은 과 동기. 무뚝뚝한데 정이 많음. ${josa(name, '과', '와')}는 1년째 친구',
-          hintMaxLines: 3,
+      if (widget.character.isService)
+        ..._serviceFields()
+      else ...[
+        const SizedBox(height: 4),
+        TextField(
+          key: const ValueKey('persona_field'),
+          controller: _persona,
+          minLines: widget.chooseMode ? 2 : 3,
+          maxLines: 6,
+          maxLength: 400,
+          decoration: InputDecoration(
+            labelText: '내 설정 (페르소나)',
+            alignLabelWithHint: true,
+            hintText: '예: 24살, 같은 과 동기. 무뚝뚝한데 정이 많음. ${josa(name, '과', '와')}는 1년째 친구',
+            hintMaxLines: 3,
+          ),
         ),
-      ),
-      const Text('안 적어도 돼요. AI 자유대화에서 캐릭터가 이 설정을 알고 대화해요', style: AppTextStyles.systemNotice),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        dense: true,
-        value: _saveAsDefault,
-        onChanged: (v) => setState(() => _saveAsDefault = v ?? false),
-        title: const Text('다른 캐릭터에도 기본으로 쓰기'),
-      ),
+        const Text('안 적어도 돼요. AI 자유대화에서 캐릭터가 이 설정을 알고 대화해요', style: AppTextStyles.systemNotice),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: _saveAsDefault,
+          onChanged: (v) => setState(() => _saveAsDefault = v ?? false),
+          title: const Text('다른 캐릭터에도 기본으로 쓰기'),
+        ),
+      ],
     ];
 
     if (!widget.chooseMode) {
       return AlertDialog(
         title: Text(widget.isFirstTime ? '${josa(name, '과', '와')} 대화 시작' : '이 대화에서 나'),
         content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: fields),
+          child:
+              Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: fields),
         ),
         actions: [
           TextButton(
@@ -264,8 +343,7 @@ class _NicknameDialogState extends State<_NicknameDialog> {
               onTap: () => setState(() => _free = true),
             ),
             const SizedBox(height: 6),
-            const Text('두 대화방은 따로 이어지고, 다른 쪽은 나중에 대화방 메뉴에서 시작할 수 있어요',
-                style: AppTextStyles.messageTime),
+            const Text('두 대화방은 따로 이어지고, 다른 쪽은 나중에 대화방 메뉴에서 시작할 수 있어요', style: AppTextStyles.messageTime),
             const SizedBox(height: 14),
             ...fields,
             const SizedBox(height: 8),

@@ -34,6 +34,35 @@ typedef ReplayableEvent = ({
   bool missed
 });
 
+/// 공략 뒤 '못 받은 사진 모으기'의 한 줄: [choiceLabel]을 골랐다면 받을 수 있는 사진 [photos]장.
+/// [choiceLabel]이 null이면 아직 안 나온(못 받은) 대화 전체
+typedef MissedBranch = ({
+  ScenarioEventModel event,
+  String? choiceLabel,
+  int photos
+});
+
+/// 공략 후 이야기 한 개의 상태: 봤음 / 다음에 올 차례 / 앞 이야기를 기다리는 중
+enum EpilogueStatus { seen, next, waiting }
+
+typedef EpilogueItem = ({
+  ScenarioEventModel event,
+  EpilogueStatus status,
+  int photos
+});
+
+/// 앨범의 '이 톡으로 가기': 대화방이 이 사진 톡으로 스크롤해 주길 바라는 요청 (방 ID, 사진 설명)
+class ChatJumpRequest extends Notifier<({String roomId, String label})?> {
+  @override
+  ({String roomId, String label})? build() => null;
+
+  void request(String roomId, String label) => state = (roomId: roomId, label: label.trim());
+
+  void clear() => state = null;
+}
+
+final chatJumpProvider = NotifierProvider<ChatJumpRequest, ({String roomId, String label})?>(ChatJumpRequest.new);
+
 /// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
 const _freeSuffix = '#free';
 String freeRoomId(String characterId) => '$characterId$_freeSuffix';
@@ -302,6 +331,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     ref.onDispose(() {
       _disposed = true;
       _userBurstReplyTimer?.cancel();
+      _scriptedReplyTimer?.cancel();
       _serviceTimer?.cancel();
       _runId++; // 대화방이 닫히면(캐릭터 삭제·로그아웃 등) 돌던 연출을 멈춤
     });
@@ -929,7 +959,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       ServiceConfig config, DateTime when, Set<String> used,
       {bool loud = false}) async {
     if (config.mode == 'ai') {
-      final byok = ref.read(byokSettingsProvider);
+      final byok = ref.read(roomByokProvider(_roomId));
       if (!byok.canUseAi) {
         if (loud)
           _addSystemNotice('AI 키를 넣으면 ${state.character.name}의 톡을 AI가 새로 써요');
@@ -944,6 +974,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
               character: state.character,
               prompt: config.aiPrompt,
               userName: _nickname,
+              userInfo: serviceUserInfoLine(ref.read(serviceUserInfoProvider(_characterId))),
               now: when,
             );
       } on ClaudeChatException catch (e) {
@@ -963,6 +994,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       now: when,
       random: ref.read(storyRandomProvider),
       used: used,
+      userInfo: ref.read(serviceUserInfoProvider(_characterId)),
     );
     if (msg == null) return null;
     used.add(msg.key);
@@ -1011,6 +1043,100 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           .add((event: e, unseenChoices: unseen, missed: missed));
     }
     return [...out, ...specials];
+  }
+
+  /// 공략 뒤 '못 받은 사진 모으기' 목록: 안 고른 선택지마다 그쪽으로 가면 받을 수 있는 (아직 없는) 사진 수.
+  /// 아직 안 나온 일상 대화·못 받은 특별한 톡은 대화 전체로 셈. 공략 후 이야기는 [epilogueItems]에서 따로
+  List<MissedBranch> get missedBranches {
+    if (_aiRoom) return const [];
+    final received = state.receivedPhotos.toSet();
+    final seenSpecials = _store.loadSeenSpecials(_bundle.character.id).toSet();
+    final out = <MissedBranch>[];
+    final events = [..._bundle.events]
+      ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
+    for (final e in events) {
+      if (e.isAfterEnding) continue;
+      final unseenWhole = e.isSpecial
+          ? !seenSpecials.contains(e.id)
+          : e.isDaily && !_seenScripts.contains(e.id);
+      if (unseenWhole) {
+        final n = _photosFrom(e, _bundle.firstNodeOf(e.id), received);
+        if (n > 0) out.add((event: e, choiceLabel: null, photos: n));
+        continue;
+      }
+      if (!e.isSpecial && !_seenScripts.contains(e.id)) continue;
+      final nodes = _bundle.nodes.values.where((n) => n.eventId == e.id).toList()
+        ..sort((a, b) => a.stepOrder.compareTo(b.stepOrder));
+      for (final node in nodes) {
+        for (final c in node.choices) {
+          if (_chosen.contains(c.id)) continue;
+          final next = c.nextNodeId == null ? null : _bundle.nodes[c.nextNodeId];
+          final n = _photosFrom(e, next, received);
+          if (n > 0) out.add((event: e, choiceLabel: c.buttonLabel, photos: n));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// [start] 노드부터 이 대화 끝까지 갈 수 있는 길에 나오는, 아직 안 받은 사진 수 (사진 말풍선 + 컷씬)
+  int _photosFrom(ScenarioEventModel event, ScriptNodeModel? start, Set<String> received) {
+    final found = <String>{};
+    final visited = <String>{};
+    final queue = [if (start != null) start];
+    while (queue.isNotEmpty) {
+      final node = queue.removeLast();
+      if (!visited.add(node.id)) continue;
+      for (final b in node.characterBubbles) {
+        if (b.hasPhoto) found.add(b.photoLabel!.trim());
+      }
+      if (event.cutsceneTriggerStep == node.stepOrder) {
+        final t = event.cutscenePhotoTitle?.trim() ?? '';
+        if (t.isNotEmpty) found.add(t);
+      }
+      for (final c in node.choices) {
+        final next = c.nextNodeId == null ? null : _bundle.nodes[c.nextNodeId];
+        if (next != null) queue.add(next);
+      }
+    }
+    return found.where((p) => p.isNotEmpty && !received.contains(p)).length;
+  }
+
+  /// 공략 후 이야기 목록 (이야기 순서대로): 본 것, 다음에 올 것, 그 뒤를 기다리는 것
+  List<EpilogueItem> get epilogueItems {
+    if (_aiRoom) return const [];
+    final received = state.receivedPhotos.toSet();
+    final events = _bundle.events.where((e) => e.isAfterEnding).toList()
+      ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
+    var nextGiven = false;
+    return [
+      for (final e in events)
+        (
+          event: e,
+          status: _seenScripts.contains(e.id) || state.completedEventIds.contains(e.id)
+              ? EpilogueStatus.seen
+              : !nextGiven &&
+                      state.progress == StoryProgress.cleared &&
+                      (e.followsEventId == null || state.completedEventIds.contains(e.followsEventId)) &&
+                      e.requiredFlags.every(state.acquiredFlags.contains) &&
+                      (nextGiven = true)
+                  ? EpilogueStatus.next
+                  : EpilogueStatus.waiting,
+          photos: _photosFrom(e, _bundle.firstNodeOf(e.id), received),
+        ),
+    ];
+  }
+
+  /// 공략 뒤 아직 안 본 공략 후 이야기를 지금 받기 (대화가 멈춰 있을 때만)
+  Future<void> playNextEpilogue() async {
+    if (state.progress != StoryProgress.cleared ||
+        state.isCharacterTyping ||
+        state.currentChoices.isNotEmpty ||
+        _scriptDepth > 0 ||
+        _replaySnapshot != null) return;
+    final next = epilogueItems.where((i) => i.status == EpilogueStatus.next).firstOrNull;
+    if (next == null) return;
+    await _playEvent(next.event, _runId);
   }
 
   /// 공략 뒤 '안 본 갈래 다시 보기': 대화를 처음부터 다시 보되 호감도·진행은 끝나면 그대로 돌려놓음.
@@ -1266,7 +1392,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final trimmed = text.trim();
     if (trimmed.isEmpty && (photoLabel == null || photoLabel.isEmpty))
       return false;
-    if (!ref.read(byokSettingsProvider).canUseAi) {
+    if (repliesWithAi && !ref.read(roomByokProvider(_roomId)).canUseAi) {
       _addSystemNotice('자유대화를 하려면 API 키를 등록해 주세요.');
       return false;
     }
@@ -1310,6 +1436,14 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       timestamp: now,
     );
 
+    if (!repliesWithAi) {
+      // 서비스 말랑이가 AI 없이 답하는 방식: 정해 둔 답 랜덤 / 읽씹
+      state = state.copyWith(messages: [...state.messages, myMsg]);
+      _saveRun(keepCurrentNode: true);
+      _scheduleScriptedReply();
+      return true;
+    }
+
     _pendingUserBurstTexts.add(
       '${replyTo == null ? '' : '[답장 대상: ${replyTo.speakerName}: ${replyTo.text}] '}${photoLabel != null ? '[사진 전송: $photoLabel] ${dialogueInputForAi(trimmed)}' : dialogueInputForAi(trimmed)}',
     );
@@ -1321,6 +1455,37 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     // 내가 추가로 더 칠 수 있으므로 대기 타이머를 새로고침합니다.
     _scheduleBurstReply();
     return true;
+  }
+
+  /// 내가 보낸 톡에 AI가 답하는지 (서비스 말랑이가 '정해 둔 답'·'읽씹'이면 false라 AI 키가 없어도 보낼 수 있음)
+  bool get repliesWithAi => !_service || (_bundle.character.service?.reply ?? 'ai') == 'ai';
+
+  Timer? _scriptedReplyTimer;
+
+  /// 서비스 말랑이 답장 (AI 없이): 조금 뒤 읽고, '정해 둔 답'이면 그중 하나를 쳐서 보냄. 연달아 보내면 마지막 뒤에 한 번만
+  void _scheduleScriptedReply() {
+    _scriptedReplyTimer?.cancel();
+    final config = _bundle.character.service;
+    if (config == null) return;
+    final runId = _runId;
+    _scriptedReplyTimer = Timer(const Duration(milliseconds: 1800), () async {
+      if (_disposed || runId != _runId) return;
+      _markAllUserMessagesRead();
+      final lines = [
+        for (final l in config.replyLines)
+          if (l.trim().isNotEmpty) l.trim()
+      ];
+      if (config.reply != 'list' || lines.isEmpty) {
+        _saveRun(keepCurrentNode: true);
+        return;
+      }
+      final random = ref.read(storyRandomProvider);
+      final text = fillServiceTemplate(lines[random.nextInt(lines.length)],
+          ref.read(serviceUserInfoProvider(_characterId)),
+          userName: _nickname, charName: state.character.name, now: ref.read(clockProvider)(), random: random);
+      await _typeOut(ScriptBubblePiece(text: text), () => !_disposed && runId == _runId);
+      if (!_disposed) _saveRun(keepCurrentNode: true);
+    });
   }
 
   /// End only the current free-chat scene; keep history and relationship memory.
@@ -1367,7 +1532,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
   /// 내가 연속으로 보낸 여러 마디를 한꺼번에 읽고('1' 제거), 현실적으로 끊어서 답장합니다.
   Future<void> _processCombinedUserBurstReply() async {
     if (_pendingUserBurstTexts.isEmpty) return;
-    if (!ref.read(byokSettingsProvider).canUseAi) {
+    if (!ref.read(roomByokProvider(_roomId)).canUseAi) {
       state = state.copyWith(isCharacterTyping: false, canRetryFreeTalk: true);
       _addSystemNotice('자유대화를 하려면 API 키를 등록해 주세요.');
       return;
@@ -1407,7 +1572,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     var affectionDelta = 0;
     var ends = false;
     var memory = '';
-    final byok = ref.read(byokSettingsProvider);
+    final byok = ref.read(roomByokProvider(_roomId));
     if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
       _awaitingAiReply = true;

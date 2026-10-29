@@ -136,4 +136,46 @@ void main() {
     await tester.pumpAndSettle();
     await close(tester);
   });
+
+  testWidgets('새로 만들기 첫 화면: 이야기/서비스 → AI로/직접 고르고, 키보드가 뜨면 이전/다음을 숨김', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    appRouter.go('/create');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    expect(find.text('어떤 말랑이를 만들까요?'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('create_story')));
+    await tester.pumpAndSettle();
+    expect(find.text('어떻게 만들어 볼까요?'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('create_ai')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('studio_ai_path_note')), findsOneWidget);
+    expect(find.byKey(const ValueKey('studio_bottom_bar')), findsOneWidget);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('studio_bottom_bar')), findsNothing);
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('studio_bottom_bar')), findsOneWidget);
+
+    // 새로 만들기 → 다시 첫 화면, 서비스 말랑이는 바로 4단계 편집으로
+    await tester.tap(find.byTooltip('더 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('새로 만들기').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '새로 만들기').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('create_service')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    await close(tester);
+  });
 }
