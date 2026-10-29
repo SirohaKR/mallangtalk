@@ -18,6 +18,8 @@ import '../chat/chat_ai_sheet.dart';
 import '../chat/chat_notifier.dart';
 import '../chat/chat_theme.dart';
 import '../chat/service_messages.dart';
+import '../help/create_help.dart';
+import '../help/help_guide.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
@@ -107,7 +109,20 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
     if (widget.initial == null) {
       _autosave = Timer.periodic(const Duration(seconds: 3), (_) => _saveDraftNow());
     }
+    // 처음 만들기 화면에 들어오면 만들기 안내 고르기 (한 번, 다시 보려면 오른쪽 위 '?')
+    if (_choosing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && shouldShowHelp(ref, HelpGuide.create)) showCreateHelp(context);
+      });
+    }
   }
+
+  Widget _helpButton() => IconButton(
+        key: const ValueKey('studio_help'),
+        tooltip: '만들기 도움말',
+        onPressed: () => showCreateHelp(context),
+        icon: const Icon(Icons.help_outline_rounded),
+      );
 
   @override
   void dispose() {
@@ -887,6 +902,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
       appBar: AppBar(
         title: Text(_editing ? '${widget.initial!.character.name} 고치기' : '새 말랑이 만들기'),
         actions: [
+          _helpButton(),
           TextButton(
             onPressed: _generating ? null : _save,
             style: TextButton.styleFrom(foregroundColor: const Color(0xFF8E2E52)),
@@ -1045,6 +1061,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
     return Scaffold(
       appBar: AppBar(
         title: const Text('새 말랑이 만들기'),
+        actions: [_helpButton(), const SizedBox(width: 4)],
         leading: _choosePage == 1
             ? IconButton(
                 tooltip: '뒤로',

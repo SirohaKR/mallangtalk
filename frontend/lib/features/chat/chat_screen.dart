@@ -9,6 +9,7 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/photo_viewer.dart';
 import '../../shared/utils/file_io.dart';
+import '../help/help_guide.dart';
 import '../home/friends_screen.dart';
 import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
@@ -85,6 +86,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   double _lastBottomInset = 0;
   ChatMessageLog? _replyTarget;
 
+  // 처음 안내에서 밝게 비출 자리
+  final _avatarKey = GlobalKey();
+  final _albumKey = GlobalKey();
+  final _menuKey = GlobalKey();
+  final _aiPillKey = GlobalKey();
+
   @override
   void didUpdateWidget(covariant ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -103,7 +110,76 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final notifier = ref.read(chatRoomProvider(widget.roomId).notifier);
       notifier.markSeen();
       notifier.checkSpecialEvents(); // 이야기가 멈춰 있어도 특별한 시간이면 톡이 옴
+      _maybeShowHelp();
     });
+  }
+
+  /// 처음 안내 5단계: 대화방 둘러보기 (스토리·자유대화·서비스 방마다 처음 한 번)
+  Future<void> _maybeShowHelp() async {
+    final free = isFreeRoom(widget.roomId);
+    final service =
+        ref.read(chatRoomProvider(widget.roomId)).character.isService;
+    final id = service
+        ? HelpGuide.roomService
+        : free
+            ? HelpGuide.roomFree
+            : HelpGuide.room;
+    if (!shouldShowHelp(ref, id)) return;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+    final result = await showCoach(
+      context,
+      title: service
+          ? '서비스 말랑이 방이야!'
+          : free
+              ? '자유대화 방이야!'
+              : '대화방은 이렇게 생겼어!',
+      say: service
+          ? '정해진 때가 되면 먼저 톡이 와. 답장하면 만든 사람이 정해 둔 방식대로 답해 줘.'
+          : free
+              ? '하고 싶은 말을 아래 칸에 직접 써. (괄호) 안에 행동이나 상황을 쓸 수도 있어.'
+              : '톡이 오면 읽고, 선택지가 뜨면 골라서 답해.',
+      items: service
+          ? [
+              CoachItem('프로필 사진을 누르면 이 말랑이 소개를 볼 수 있어',
+                  target: _avatarKey),
+              const CoachItem('문구가 마음에 안 들면 **한 번 더 뽑기**로 다시 받아'),
+              CoachItem('**메뉴**에서 내 별명·정보를 바꾸거나 대화를 비울 수 있어',
+                  target: _menuKey),
+            ]
+          : free
+              ? [
+                  CoachItem('프로필 사진을 누르면 캐릭터 프로필을 볼 수 있어',
+                      target: _avatarKey),
+                  CoachItem(
+                      '이름 아래를 누르면 **쓰는 AI**를 바꿔. 이 대화만 다른 AI로 할 수도 있어',
+                      target: _aiPillKey),
+                  CoachItem('어울리는 순간엔 사진도 보내고, 받은 사진은 **앨범**에 모여',
+                      target: _albumKey),
+                  CoachItem(
+                      '**메뉴**에서 로맨스 분위기, 대화 끝 구분선, 스토리 대화방으로 가기를 할 수 있어',
+                      target: _menuKey),
+                ]
+              : [
+                  CoachItem(
+                      '프로필 사진을 누르면 지금 사이가 얼마나 가까운지 **말랑이가 차오르는 걸**로 보여 줘',
+                      target: _avatarKey),
+                  CoachItem(
+                      '받은 사진은 전부 **앨범**에 모여. 사진을 누르면 크게 보고 저장할 수 있어',
+                      target: _albumKey),
+                  const CoachItem(
+                      '선택지에 따라 이야기와 호감도가 달라져. 고른 답은 내가 직접 치는 것처럼 보내져'),
+                  CoachItem(
+                      '**메뉴**에서 내 별명·설정, 대화 속도, 자유대화 방 열기, 처음부터 다시를 할 수 있어',
+                      target: _menuKey),
+                ],
+      tourIndex: free || service ? null : 4,
+      neverAgain: true,
+      doneLabel: '다 봤어요',
+    );
+    if (result == 'done') {
+      await ref.read(helpSeenProvider.notifier).mark([id]);
+    }
   }
 
   @override
@@ -632,6 +708,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           children: [
             // 사진을 누르면 캐릭터 프로필
             GestureDetector(
+              key: _avatarKey,
               onTap: () {
                 final entry =
                     ref.read(characterLibraryProvider.notifier).byId(id);
@@ -664,7 +741,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   // 자유대화 방이면 상태 메시지 대신 지금 쓰는 AI (누르면 바꾸기)
                   if (free ||
                       (service && chatState.character.service?.mode == 'ai'))
-                    GestureDetector(
+                    KeyedSubtree(
+                      key: _aiPillKey,
+                      child: GestureDetector(
                       key: const ValueKey('chat_ai_pill'),
                       onTap: () => _openAiSheet(theme, chatState.character),
                       child: Container(
@@ -686,7 +765,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                       ),
-                    )
+                    ))
                   else
                     Text(
                       CharacterModel.fillUserName(
@@ -703,11 +782,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         actions: [
           if (!service)
             IconButton(
+              key: _albumKey,
               tooltip: '앨범',
               onPressed: () => context.push('/chat/$id/album'),
               icon: const Icon(Icons.photo_library_outlined),
             ),
           PopupMenuButton<String>(
+            key: _menuKey,
             tooltip: '대화 설정',
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) {

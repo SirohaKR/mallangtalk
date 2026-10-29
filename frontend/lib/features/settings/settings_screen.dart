@@ -11,6 +11,7 @@ import '../../shared/utils/file_io.dart';
 import '../home/friends_screen.dart';
 import '../auth/auth_state.dart';
 import '../chat/chat_ai_sheet.dart';
+import '../help/help_again.dart';
 import 'byok_settings.dart';
 import 'user_profile.dart';
 
@@ -75,6 +76,14 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => context.push('/settings/ai'),
+              ),
+              ListTile(
+                key: const ValueKey('settings_help'),
+                leading: const Icon(Icons.help_outline_rounded),
+                title: const Text('도움말 다시 보기'),
+                subtitle: const Text('처음 안내, 대화방 안내, 말랑이 만들기 안내', style: AppTextStyles.systemNotice),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => showHelpAgain(context),
               ),
               const Divider(),
               const Padding(
@@ -399,8 +408,7 @@ class _AiConnectScreenState extends ConsumerState<AiConnectScreen> {
             ),
           ],
         ),
-        if (viaServer)
-          const Text('서버 키로 불러서 내 키는 안 넣어도 돼요', style: AppTextStyles.messageTime),
+        if (viaServer) const Text('서버 키로 불러서 내 키는 안 넣어도 돼요', style: AppTextStyles.messageTime),
         if (saved.hasKey)
           Row(
             children: [
