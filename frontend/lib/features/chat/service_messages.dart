@@ -198,14 +198,47 @@ String fillServiceTemplate(
   return CharacterModel.fillUserName(filled, userName, charName: charName);
 }
 
-/// 엑셀·시트에서 복사한 표(탭) 또는 CSV(쉼표)를 칸 이름 + 줄들로. 첫 줄이 칸 이름
+/// 엑셀·시트에서 복사한 표(탭) 또는 CSV(쉼표)를 칸 이름 + 줄들로. 첫 줄이 칸 이름.
+/// CSV는 "따옴표로 감싼 칸"(안에 쉼표·줄바꿈·"" 가능)도 읽음
 ({List<String> columns, List<List<String>> rows}) parseServiceTable(String text) {
-  final lines = [
-    for (final l in text.split(RegExp(r'\r?\n')))
-      if (l.trim().isNotEmpty) l
-  ];
-  if (lines.isEmpty) return (columns: const <String>[], rows: const <List<String>>[]);
-  final sep = lines.first.contains('\t') ? '\t' : ',';
-  List<String> cells(String l) => [for (final c in l.split(sep)) c.trim()];
-  return (columns: cells(lines.first), rows: [for (final l in lines.skip(1)) cells(l)]);
+  if (text.startsWith('\uFEFF')) text = text.substring(1); // 엑셀 CSV 맨 앞 BOM
+  final firstLine = text.split(RegExp(r'\r?\n')).firstWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+  final sep = firstLine.contains('\t') ? '\t' : ',';
+  final records = <List<String>>[];
+  var row = <String>[];
+  final cell = StringBuffer();
+  var quoted = false;
+  for (var i = 0; i < text.length; i++) {
+    final ch = text[i];
+    if (quoted) {
+      if (ch == '"') {
+        if (i + 1 < text.length && text[i + 1] == '"') {
+          cell.write('"');
+          i++;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell.write(ch);
+      }
+    } else if (ch == '"' && cell.toString().trim().isEmpty) {
+      cell.clear();
+      quoted = true;
+    } else if (ch == sep) {
+      row.add(cell.toString().trim());
+      cell.clear();
+    } else if (ch == '\n' || ch == '\r') {
+      if (ch == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++;
+      row.add(cell.toString().trim());
+      cell.clear();
+      if (row.any((c) => c.isNotEmpty)) records.add(row);
+      row = <String>[];
+    } else {
+      cell.write(ch);
+    }
+  }
+  row.add(cell.toString().trim());
+  if (row.any((c) => c.isNotEmpty)) records.add(row);
+  if (records.isEmpty) return (columns: const <String>[], rows: const <List<String>>[]);
+  return (columns: records.first, rows: records.skip(1).toList());
 }

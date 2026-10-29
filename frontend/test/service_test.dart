@@ -78,6 +78,13 @@ void main() {
       ['소띠', '쉬는 날'],
     ]);
     expect(parseServiceTable('a,b\n1,2').rows.single, ['1', '2']);
+    // 엑셀 CSV: 맨 앞 BOM, 따옴표 안의 쉼표·줄바꿈·""
+    final csv = parseServiceTable('﻿띠,운세\r\n쥐띠,"작은 친절이, 큰 행운으로"\r\n소띠,"쉬어 가요\n""천천히"""\r\n');
+    expect(csv.columns, ['띠', '운세']);
+    expect(csv.rows, [
+      ['쥐띠', '작은 친절이, 큰 행운으로'],
+      ['소띠', '쉬어 가요\n"천천히"'],
+    ]);
   });
 
   test('서비스 말랑이는 초안을 거쳐도 그대로, 이야기·호감도 단계 없이 저장됨', () {

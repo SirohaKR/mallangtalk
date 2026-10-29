@@ -1384,6 +1384,29 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
   }
 
   /// 2단계: 대표색 고르기 + 톡방 꾸미기 + 미리보기
+  /// 서비스 말랑이 데이터 표를 CSV(또는 탭으로 나눈) 파일에서 불러오기
+  Future<void> _importServiceCsv() async {
+    final file = await FileIO.pick(extensions: ['csv', 'tsv', 'txt']);
+    if (file == null || !mounted) return;
+    final String text;
+    try {
+      text = utf8.decode(file.bytes);
+    } on FormatException {
+      _toast('글자를 읽지 못했어요. UTF-8로 저장한 CSV인지 확인해 주세요');
+      return;
+    }
+    final t = parseServiceTable(text);
+    if (t.columns.isEmpty) {
+      _toast('표가 비어 있어요');
+      return;
+    }
+    setState(() {
+      _draft.service = _draft.service.copyWith(columns: t.columns, rows: t.rows);
+      _version++;
+    });
+    _toast('${t.rows.length}줄을 불러왔어요');
+  }
+
   /// 톡방 배경 사진 고르기 (폰 화면처럼 세로로 길게 잘라 씀)
   Future<void> _pickChatBackground() async {
     final picked = await pickPhoto(context);
@@ -1928,8 +1951,24 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
               set(s.copyWith(columns: t.columns, rows: t.rows));
             },
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const ValueKey('studio_csv_import'),
+              onPressed: _importServiceCsv,
+              icon: const Icon(Icons.upload_file_rounded, size: 18),
+              label: const Text('CSV 파일 불러오기'),
+            ),
+          ),
           if (s.columns.isNotEmpty) ...[
             Text('${s.rows.length}줄 · ${s.columns.length}칸', style: AppTextStyles.messageTime),
+            Text(
+              switch ([for (final a in s.ask) if (s.columns.any((c) => c.trim() == a)) a]) {
+                [] => '고르는 방법: 랜덤 (대화 시작 때 물어볼 정보와 같은 이름의 칸이 있으면 그 값에 맞는 줄)',
+                final matched => "고르는 방법: 대화 시작 때 받은 ${matched.map((m) => "'$m'").join('·')}와 맞는 줄 · 없으면 랜덤",
+              },
+              style: AppTextStyles.messageTime,
+            ),
             const SizedBox(height: 4),
             Table(
               border: TableBorder.all(color: AppColors.borderLight),
