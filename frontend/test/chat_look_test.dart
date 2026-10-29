@@ -142,6 +142,8 @@ void main() {
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
+    // 스토리 방에서 열면 자유대화 스위치는 꺼져 있음 (켜면 자유대화 방으로)
+    expect(tester.widget<SwitchListTile>(find.byKey(const ValueKey('ai_free_switch'))).value, isFalse);
     await tester.tap(find.text('이 대화만'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('ai_provider_claude')));

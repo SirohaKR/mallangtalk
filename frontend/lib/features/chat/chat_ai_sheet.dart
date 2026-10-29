@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shared/utils/korean.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/network/ai_provider.dart';
@@ -7,7 +8,9 @@ import '../../core/theme/app_text_styles.dart';
 import '../settings/byok_settings.dart';
 
 /// 대화방에서 자유대화 AI(회사·모델)를 바로 고르는 시트
-Future<void> showChatAiSheet(BuildContext context, {required Color accent, String? roomId}) {
+/// [freeTalk]: 스토리/자유대화 방이 있는 대화방에서 열면 '자유대화' 켜고 끄기 (켜면 자유대화 방, 끄면 스토리 방으로)
+Future<void> showChatAiSheet(BuildContext context,
+    {required Color accent, String? roomId, ({bool on, String name, VoidCallback toggle})? freeTalk}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -15,7 +18,7 @@ Future<void> showChatAiSheet(BuildContext context, {required Color accent, Strin
     useSafeArea: true,
     backgroundColor: AppColors.surfaceWhite,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-    builder: (_) => _ChatAiSheet(accent: accent, roomId: roomId),
+    builder: (_) => _ChatAiSheet(accent: accent, roomId: roomId, freeTalk: freeTalk),
   );
 }
 
@@ -24,9 +27,12 @@ Future<void> showChatAiSheet(BuildContext context, {required Color accent, Strin
 /// 대화방에서 열면 '이 대화만 / 모든 대화 기본으로' 중 어디에 쓸지 고를 수 있어요.
 /// 모든 대화 기본은 설정 > AI 연결과 같은 값이에요.
 class _ChatAiSheet extends ConsumerStatefulWidget {
-  const _ChatAiSheet({required this.accent, this.roomId});
+  const _ChatAiSheet({required this.accent, this.roomId, this.freeTalk});
 
   final Color accent;
+
+  /// 자유대화 켜고 끄기 (지금 자유대화 방인지, 캐릭터 이름, 다른 방으로 가기)
+  final ({bool on, String name, VoidCallback toggle})? freeTalk;
 
   /// 대화방에서 열었으면 그 방 (없으면 모든 대화 기본만 바꿈)
   final String? roomId;
@@ -137,6 +143,25 @@ class _ChatAiSheetState extends ConsumerState<_ChatAiSheet> {
                         ? 'AI가 캐릭터가 되어 자유롭게 답해요. 고른 AI는 이 대화방에만 쓰여요.'
                         : 'AI가 캐릭터가 되어 자유롭게 답해요. 고른 AI는 따로 정하지 않은 모든 대화에 쓰여요.',
                 style: AppTextStyles.systemNotice),
+            if (widget.freeTalk case final ft?) ...[
+              const SizedBox(height: 8),
+              SwitchListTile(
+                key: const ValueKey('ai_free_switch'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('자유대화', style: AppTextStyles.choiceButton),
+                subtitle: Text(
+                    ft.on
+                        ? 'AI가 ${ft.name}${josa(ft.name, '이', '가').substring(ft.name.length)} 되어 자유롭게 답해요. 끄면 스토리 대화방으로 가요'
+                        : '켜면 자유대화 방으로 가요. 스토리 방과 따로 이어져요',
+                    style: AppTextStyles.messageTime),
+                value: ft.on,
+                activeTrackColor: widget.accent,
+                onChanged: (_) {
+                  Navigator.pop(context);
+                  ft.toggle();
+                },
+              ),
+            ],
             if (_room != null) ...[
               const SizedBox(height: 12),
               const Text('적용할 곳', style: AppTextStyles.speakerName),

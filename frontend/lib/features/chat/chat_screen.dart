@@ -125,6 +125,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // 입력칸 쪽으로 밀 수 있다. 기존 포커스는 TextFieldTapRegion으로 유지한다.
   }
 
+  /// 스토리 방 ↔ 자유대화 방 (지금 방은 닫고 다른 방으로)
+  void _switchRoom() {
+    final id = characterIdOfRoom(widget.roomId);
+    final free = isFreeRoom(widget.roomId);
+    final nextRoom = free ? id : freeRoomId(id);
+    ref.read(chatRoomsProvider.notifier).open(nextRoom);
+    if (widget.embedded && widget.onSwitchRoom != null) {
+      widget.onSwitchRoom!(nextRoom);
+    } else {
+      context.pushReplacement(free ? '/chat/$id' : '/free/$id');
+    }
+  }
+
+  /// AI 고르기 창 (스토리 말랑이 방이면 자유대화 켜고 끄기도)
+  Future<void> _openAiSheet(ChatTheme theme, CharacterModel character) => showChatAiSheet(
+        context,
+        accent: theme.accent,
+        roomId: widget.roomId,
+        freeTalk: character.isService
+            ? null
+            : (on: isFreeRoom(widget.roomId), name: character.name, toggle: _switchRoom),
+      );
+
   /// 사진 톡 줄 (사진 크게 보기·앨범의 '이 톡으로 가기'에서 그 톡을 찾아 스크롤)
   final Map<String, GlobalKey> _photoKeys = {};
 
@@ -535,7 +558,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               if (chatState.isByokAiModeEnabled && !hasApiKey)
                 GestureDetector(
-                  onTap: () => showChatAiSheet(context, accent: theme.accent, roomId: roomId),
+                  onTap: () => _openAiSheet(theme, chatState.character),
                   child: const Padding(
                     padding: EdgeInsets.only(bottom: 6),
                     child: Text(
@@ -643,8 +666,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       (service && chatState.character.service?.mode == 'ai'))
                     GestureDetector(
                       key: const ValueKey('chat_ai_pill'),
-                      onTap: () =>
-                          showChatAiSheet(context, accent: theme.accent, roomId: roomId),
+                      onTap: () => _openAiSheet(theme, chatState.character),
                       child: Container(
                         margin: const EdgeInsets.only(top: 2),
                         padding: const EdgeInsets.symmetric(
@@ -695,21 +717,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 case 'tempo':
                   pickChatTempo(context, chatState.character);
                 case 'ai':
-                  showChatAiSheet(context, accent: theme.accent, roomId: roomId);
+                  _openAiSheet(theme, chatState.character);
                 case 'end_scene':
                   notifier.endConversation();
                   setState(() => _replyTarget = null);
                 case 'romance':
                   showRomanceSettings(context, chatState.character);
                 case 'switch':
-                  final nextRoom = free ? id : freeRoomId(id);
-                  ref.read(chatRoomsProvider.notifier).open(nextRoom);
-                  if (widget.embedded && widget.onSwitchRoom != null) {
-                    widget.onSwitchRoom!(nextRoom);
-                  } else {
-                    // 스토리 방 ↔ 자유대화 방 (지금 방은 닫고 다른 방으로)
-                    context.pushReplacement(free ? '/chat/$id' : '/free/$id');
-                  }
+                  _switchRoom();
                 case 'restart':
                   notifier.restart();
               }
