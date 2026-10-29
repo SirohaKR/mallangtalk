@@ -155,9 +155,9 @@ USE_SERVER_AI_KEYS=true
       return (response.statusCode, text.startsWith('{') ? jsonDecode(text) as Map<String, dynamic> : <String, dynamic>{});
     }
 
-    Map<String, dynamic> bundle(String id, {String avatar = ''}) => {
+    Map<String, dynamic> bundle(String id, {String avatar = '', String cover = ''}) => {
           'format': 'mallangtalk-scenario-v1',
-          'character': {'id': id, 'name': '카이엔', 'avatar_url': avatar},
+          'character': {'id': id, 'name': '카이엔', 'avatar_url': avatar, if (cover.isNotEmpty) 'cover_url': cover},
           'events': [],
           'script_nodes': [],
           'images': {'p1': 'data:image/jpeg;base64,${base64Encode([1, 2, 3])}'},
@@ -193,12 +193,13 @@ USE_SERVER_AI_KEYS=true
       expect((await call('PUT', '/api/characters/char_1', body: {'bundle': bundle('char_1')})).$1, 401);
       expect((await call('PUT', '/api/characters/char_1', body: {'bundle': bundle('other')}, token: a)).$1, 400);
       final avatar = 'data:image/png;base64,${base64Encode([9, 9])}';
-      var (status, body) = await call('PUT', '/api/characters/char_1', body: {'bundle': bundle('char_1', avatar: avatar)}, token: a);
+      var (status, body) = await call('PUT', '/api/characters/char_1', body: {'bundle': bundle('char_1', avatar: avatar, cover: avatar)}, token: a);
       expect(status, 200);
       final saved = body['bundle'] as Map<String, dynamic>;
       final url = (saved['images'] as Map)['p1'] as String;
       expect(url, startsWith('/api/images/'));
       expect((saved['character'] as Map)['avatar_url'], startsWith('/api/images/'));
+      expect((saved['character'] as Map)['cover_url'], startsWith('/api/images/'));
       expect(jsonEncode(saved), isNot(contains('base64')));
 
       final image = await handler(shelf.Request('GET', Uri.parse('http://localhost$url')));

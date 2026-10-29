@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/storage/local_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -322,7 +323,7 @@ class _PickCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    CharacterImage(character: c, fontSize: 64),
+                    CharacterImage(character: c, fontSize: 64, cover: true),
                     const DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -405,7 +406,47 @@ class _Empty extends StatelessWidget {
   }
 }
 
-/// [초보자 노트] 검색 화면 (/search). 이름·한줄 소개·태그·만든 사람에 글자가 들어 있으면 보여요.
+/// 검색 정렬: 정확도(이름이 맞을수록 위)·최신·인기
+enum SearchSort { relevance, latest, popular }
+
+/// 검색어와 얼마나 잘 맞는지. 0이면 안 맞음 (이름 > 태그 > 한줄 소개 > 만든 사람)
+int searchScore(GalleryItem g, String query) {
+  final q = query.trim().toLowerCase().replaceFirst('#', '');
+  if (q.isEmpty) return 1;
+  final c = g.character;
+  final name = c.name.toLowerCase();
+  if (name == q) return 100;
+  if (name.startsWith(q)) return 80;
+  if (name.contains(q)) return 60;
+  if (c.tags.any((t) => t.toLowerCase() == q)) return 50;
+  if (c.tags.any((t) => t.toLowerCase().contains(q))) return 40;
+  if (c.tagline.toLowerCase().contains(q) || c.statusMessage.toLowerCase().contains(q)) return 20;
+  if ((g.creator ?? '').toLowerCase().contains(q)) return 10;
+  return 0;
+}
+
+/// 검색어에 맞는 제작자: (이름, 프로필 사진, 말랑이 수, 친구 수)
+List<({String name, String avatar, int count, int friends})> creatorsMatching(List<GalleryItem> all, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return const [];
+  final byName = <String, List<GalleryItem>>{};
+  for (final g in all) {
+    final name = g.creator;
+    if (name != null && name.toLowerCase().contains(q)) (byName[name] ??= []).add(g);
+  }
+  return [
+    for (final e in byName.entries)
+      (
+        name: e.key,
+        avatar: e.value.map((g) => g.creatorAvatar).firstWhere((a) => a.isNotEmpty, orElse: () => ''),
+        count: e.value.length,
+        friends: e.value.fold(0, (sum, g) => sum + g.friends),
+      ),
+  ]..sort((a, b) => b.friends.compareTo(a.friends));
+}
+
+/// [초보자 노트] 검색 화면 (/search). 위에 말랑이/제작자 탭, 말랑이 탭엔 정확도·최신·인기 정렬.
+/// 검색어가 비어 있으면 최근 검색어(이 기기에만 저장)와 많이 쓰인 태그를 보여 줘요.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -415,6 +456,8 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _query = TextEditingController();
+  bool _creators = false;
+  SearchSort _sort = SearchSort.relevance;
 
   @override
   void dispose() {
@@ -422,11 +465,139 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
+  /// 최근 검색어에 넣기 (같은 말은 맨 앞으로, 10개까지)
+  void _remember(String word) {
+    final w = word.trim();
+    if (w.isEmpty) return;
+    final store = ref.read(localStoreProvider);
+    store.saveRecentSearches([w, ...store.recentSearches.where((x) => x != w)].take(10).toList());
+  }
+
+  void _search(String word) => setState(() => _query.text = word);
+
   @override
   Widget build(BuildContext context) {
     final all = ref.watch(galleryProvider).valueOrNull ?? const <GalleryItem>[];
+    final store = ref.watch(localStoreProvider);
     final q = _query.text.trim();
-    final results = q.isEmpty ? const <GalleryItem>[] : all.where((g) => g.matches(q)).toList();
+    final scored = q.isEmpty ? const <(GalleryItem, int)>[] : [for (final g in all) (g, searchScore(g, q))];
+    final results = [for (final (g, score) in scored) if (score > 0) g];
+    final score = {for (final (g, s) in scored) g: s};
+    results.sort(switch (_sort) {
+      SearchSort.relevance => (a, b) {
+          final byScore = score[b]!.compareTo(score[a]!);
+          return byScore != 0 ? byScore : _byPopular(a, b);
+        },
+      SearchSort.latest => _byLatest,
+      SearchSort.popular => _byPopular,
+    });
+    final creators = creatorsMatching(all, q);
+    final recent = store.recentSearches;
+
+    Widget body;
+    if (q.isEmpty) {
+      body = ListView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: [
+          if (recent.isNotEmpty) ...[
+            Row(
+              children: [
+                const Expanded(child: Text('최근 검색', style: AppTextStyles.speakerName)),
+                TextButton(
+                  onPressed: () {
+                    store.saveRecentSearches(const []);
+                    setState(() {});
+                  },
+                  child: const Text('모두 지우기'),
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final w in recent)
+                  InputChip(
+                    key: ValueKey('recent_$w'),
+                    label: Text(w),
+                    onPressed: () => _search(w),
+                    deleteButtonTooltipMessage: '지우기',
+                    onDeleted: () {
+                      store.saveRecentSearches(recent.where((x) => x != w).toList());
+                      setState(() {});
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          const Text('많이 쓰인 태그', style: AppTextStyles.speakerName),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final t in topTagsOf(all, count: 16)) ActionChip(label: Text('#$t'), onPressed: () => _search('#$t')),
+            ],
+          ),
+        ],
+      );
+    } else if (_creators) {
+      body = creators.isEmpty
+          ? Center(child: Text("'$q'에 맞는 제작자가 없어요", style: AppTextStyles.systemNotice))
+          : ListView(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              children: [
+                for (final c in creators)
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
+                    leading: CreatorAvatar(name: c.name, avatarUrl: c.avatar, size: 48),
+                    title: Text(c.name, style: AppTextStyles.appBarTitle.copyWith(fontSize: 15)),
+                    subtitle: Text('말랑이 ${c.count} · 친구 ${c.friends}', style: AppTextStyles.messageTime),
+                    onTap: () {
+                      _remember(q);
+                      context.push('/creator/${Uri.encodeComponent(c.name)}');
+                    },
+                  ),
+              ],
+            );
+    } else {
+      body = Column(
+        children: [
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 8, AppSpacing.lg, 4),
+              children: [
+                for (final (value, label) in const [
+                  (SearchSort.relevance, '정확도'),
+                  (SearchSort.latest, '최신'),
+                  (SearchSort.popular, '인기'),
+                ])
+                  _TagChip(
+                    key: ValueKey('search_sort_${value.name}'),
+                    label: label,
+                    plain: true,
+                    selected: _sort == value,
+                    onTap: () => setState(() => _sort = value),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: results.isEmpty
+                ? Center(child: Text("'$q'에 맞는 말랑이가 없어요", style: AppTextStyles.systemNotice))
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    itemCount: results.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 88),
+                    itemBuilder: (context, i) => GalleryRow(item: results[i], onOpen: () => _remember(q)),
+                  ),
+          ),
+        ],
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -436,6 +607,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           autofocus: true,
           textInputAction: TextInputAction.search,
           onChanged: (_) => setState(() {}),
+          onSubmitted: _remember,
           decoration: InputDecoration(
             hintText: '이름, #태그, 만든 사람',
             isDense: true,
@@ -448,37 +620,65 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
           ),
         ),
+        bottom: q.isEmpty
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(46),
+                child: Row(
+                  children: [
+                    _SearchTab(
+                      key: const ValueKey('search_tab_mallang'),
+                      label: '말랑이 ${results.length}',
+                      on: !_creators,
+                      onTap: () => setState(() => _creators = false),
+                    ),
+                    _SearchTab(
+                      key: const ValueKey('search_tab_creator'),
+                      label: '제작자 ${creators.length}',
+                      on: _creators,
+                      onTap: () => setState(() => _creators = true),
+                    ),
+                  ],
+                ),
+              ),
       ),
       body: Center(
         child: ConstrainedBox(
           constraints: AppSpacing.pageConstraints(context, maxDesktop: 840),
-          child: q.isEmpty
-              ? ListView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  children: [
-                    const Text('많이 쓰인 태그', style: AppTextStyles.speakerName),
-                    const SizedBox(height: AppSpacing.sm),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final t in topTagsOf(all, count: 16))
-                          ActionChip(
-                            label: Text('#$t'),
-                            onPressed: () => setState(() => _query.text = '#$t'),
-                          ),
-                      ],
-                    ),
-                  ],
-                )
-              : results.isEmpty
-                  ? Center(child: Text("'$q'에 맞는 말랑이가 없어요", style: AppTextStyles.systemNotice))
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                      itemCount: results.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 88),
-                      itemBuilder: (context, i) => GalleryRow(item: results[i]),
-                    ),
+          child: body,
+        ),
+      ),
+    );
+  }
+}
+
+/// 검색 결과 위 말랑이/제작자 탭 한 칸
+class _SearchTab extends StatelessWidget {
+  const _SearchTab({super.key, required this.label, required this.on, required this.onTap});
+
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: on ? AppColors.primaryPink : AppColors.borderLight, width: on ? 2 : 1)),
+          ),
+          child: Text(
+            label,
+            style: AppTextStyles.chatBubbleBody.copyWith(
+              fontSize: 14,
+              fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+              color: on ? AppColors.textPrimary : AppColors.textSecondary,
+            ),
+          ),
         ),
       ),
     );
@@ -487,16 +687,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
 /// 검색·제작자 화면의 한 줄 (사진 + 이름 + 한줄 소개 + 만든 사람)
 class GalleryRow extends StatelessWidget {
-  const GalleryRow({super.key, required this.item, this.showCreator = true});
+  const GalleryRow({super.key, required this.item, this.showCreator = true, this.onOpen});
 
   final GalleryItem item;
   final bool showCreator;
+
+  /// 누르기 직전에 할 일 (검색어 기억하기 등)
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
     final c = item.character;
     return InkWell(
-      onTap: () => context.push('/gallery/${c.id}'),
+      onTap: () {
+        onOpen?.call();
+        context.push('/gallery/${c.id}');
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 10),
         child: Row(
@@ -533,58 +739,113 @@ class GalleryRow extends StatelessWidget {
   }
 }
 
-/// [초보자 노트] 제작자 프로필 (/creator/닉네임): 그 사람이 올린 말랑이를 모아 봐요.
-class CreatorScreen extends ConsumerWidget {
+/// [초보자 노트] 제작자 프로필 (/creator/닉네임): 그 사람이 올린 말랑이를 2열 카드로 모아 봐요 (최신·인기 정렬).
+class CreatorScreen extends ConsumerStatefulWidget {
   const CreatorScreen({super.key, required this.creator});
 
   final String creator;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CreatorScreen> createState() => _CreatorScreenState();
+}
+
+class _CreatorScreenState extends ConsumerState<CreatorScreen> {
+  GallerySort _sort = GallerySort.latest;
+
+  @override
+  Widget build(BuildContext context) {
+    final creator = widget.creator;
     final all = ref.watch(galleryProvider).valueOrNull ?? const <GalleryItem>[];
-    final items = all.where((g) => g.creator == creator).toList()..sort(_byLatest);
+    final friendIds = ref.watch(characterLibraryProvider).map((e) => e.id).toSet();
+    final items = all.where((g) => g.creator == creator).toList()
+      ..sort(_sort == GallerySort.latest ? _byLatest : _byPopular);
     final friends = items.fold(0, (sum, g) => sum + g.friends);
     // 사진·소개는 그 사람의 계정 프로필을 그대로 따라와요 (어느 말랑이에 실려 와도 같은 값)
     final avatar = items.map((g) => g.creatorAvatar).firstWhere((a) => a.isNotEmpty, orElse: () => '');
     final intro = items.map((g) => g.creatorIntro).firstWhere((a) => a.isNotEmpty, orElse: () => '');
+    final width = MediaQuery.sizeOf(context).width;
+    final columns = width >= 980
+        ? 4
+        : width >= 680
+            ? 3
+            : 2;
 
     return Scaffold(
       appBar: AppBar(title: const Text('제작자')),
       body: Center(
         child: ConstrainedBox(
           constraints: AppSpacing.pageConstraints(context, maxDesktop: 840),
-          child: ListView(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Row(
-                  children: [
-                    CreatorAvatar(name: creator, avatarUrl: avatar, size: 64),
-                    const SizedBox(width: AppSpacing.lg),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(creator, style: AppTextStyles.appBarTitle.copyWith(fontSize: 20)),
-                          const SizedBox(height: 4),
-                          Text('말랑이 ${items.length} · 친구 $friends', style: AppTextStyles.systemNotice),
-                          if (intro.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(intro, style: AppTextStyles.systemNotice.copyWith(color: AppColors.textSecondary)),
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Row(
+                    children: [
+                      CreatorAvatar(name: creator, avatarUrl: avatar, size: 64),
+                      const SizedBox(width: AppSpacing.lg),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(creator, style: AppTextStyles.appBarTitle.copyWith(fontSize: 20)),
+                            if (intro.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(intro, style: AppTextStyles.systemNotice.copyWith(color: AppColors.textSecondary)),
+                            ],
+                            const SizedBox(height: 4),
+                            Text('만든 말랑이 ${items.length} · 받은 친구 추가 $friends', style: AppTextStyles.messageTime),
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-              const Divider(height: 1),
-              if (items.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(AppSpacing.xl),
-                  child: Center(child: Text('공개한 말랑이가 없어요', style: AppTextStyles.systemNotice)),
+              _SectionTitle(
+                '만든 말랑이',
+                trailing: SegmentedButton<GallerySort>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  segments: const [
+                    ButtonSegment(value: GallerySort.latest, label: Text('최신')),
+                    ButtonSegment(value: GallerySort.popular, label: Text('인기')),
+                  ],
+                  selected: {_sort},
+                  onSelectionChanged: (s) => setState(() => _sort = s.first),
                 ),
-              for (final item in items) GalleryRow(item: item, showCreator: false),
+              ),
+              if (items.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(AppSpacing.xl),
+                    child: Center(child: Text('공개한 말랑이가 없어요', style: AppTextStyles.systemNotice)),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
+                  sliver: SliverGrid.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: AppSpacing.md,
+                      crossAxisSpacing: AppSpacing.md,
+                      childAspectRatio: width >= 680 ? 0.66 : 0.62,
+                    ),
+                    itemCount: items.length,
+                    itemBuilder: (context, i) {
+                      final item = items[i];
+                      return GalleryCard(
+                        character: item.character,
+                        mine: item.mine,
+                        isFriend: friendIds.contains(item.character.id),
+                        friends: item.friends,
+                        onTap: () => context.push('/gallery/${item.character.id}'),
+                      );
+                    },
+                  ),
+                ),
             ],
           ),
         ),

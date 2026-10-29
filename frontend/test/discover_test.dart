@@ -173,4 +173,60 @@ void main() {
     appRouter.go('/my'); // 만들기 화면을 닫아 자동 저장 타이머 정리
     await tester.pumpAndSettle();
   });
+
+  test('검색 정확도: 이름이 맞는 말랑이가 태그·한줄 소개보다 위, 제작자는 이름으로 묶임', () {
+    final items = [
+      item('a', '로판 좋아', tagline: '그냥 소개'),
+      item('b', '카이엔', tags: ['로판']),
+      item('c', '시온', tagline: '로판 아카데미', creator: '말랑작가'),
+      item('d', '세레나', creator: '말랑작가', friends: 3),
+    ];
+    final scored = [for (final g in items) (g.character.id, searchScore(g, '로판'))]..sort((x, y) => y.$2.compareTo(x.$2));
+    expect(scored.where((e) => e.$2 > 0).map((e) => e.$1), ['a', 'b', 'c']);
+    final makers = creatorsMatching(items, '말랑');
+    expect(makers.single.name, '말랑작가');
+    expect(makers.single.count, 2);
+    expect(makers.single.friends, 3);
+  });
+
+  test('대표 사진은 캐릭터 파일에 cover_url로 저장되고, 없으면 프로필 사진이 커버', () {
+    final c = loadSampleBundle().character.copyWith(avatarUrl: 'assets/a.png');
+    expect(c.coverOrAvatar, 'assets/a.png');
+    final withCover = CharacterModel.fromJson(c.copyWith(coverUrl: 'assets/cover.png').toJson());
+    expect(withCover.coverUrl, 'assets/cover.png');
+    expect(withCover.coverOrAvatar, 'assets/cover.png');
+    expect(c.toJson().containsKey('cover_url'), isFalse);
+  });
+
+  testWidgets('검색: 말랑이/제작자 탭, 최근 검색어가 남음', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    appRouter.go('/search');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => []),
+        galleryProvider.overrideWith((ref) async => [
+              item('a', '카이엔', creator: '말랑작가', tags: ['로판']),
+              item('b', '시온', creator: '쨋뀨', tags: ['로판']),
+            ]),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '말랑');
+    await tester.pump();
+    expect(find.text('말랑이 1'), findsOneWidget); // 만든 사람 이름에 '말랑'이 들어간 카이엔
+    expect(find.text('제작자 1'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('search_tab_creator')));
+    await tester.pump();
+    expect(find.text('말랑이 1 · 친구 0'), findsOneWidget);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pump();
+    expect(find.text('최근 검색'), findsOneWidget);
+    expect(find.byKey(const ValueKey('recent_말랑')), findsOneWidget);
+  });
 }

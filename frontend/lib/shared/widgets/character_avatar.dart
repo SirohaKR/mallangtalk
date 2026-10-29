@@ -12,11 +12,15 @@ class CharacterImage extends StatelessWidget {
       {super.key,
       required this.character,
       this.borderRadius = 0,
-      this.fontSize = 40});
+      this.fontSize = 40,
+      this.cover = false});
 
   final CharacterModel character;
   final double borderRadius;
   final double fontSize;
+
+  /// 대표(커버) 사진을 먼저 씀 (말랑이 찾기 카드·상세 화면 맨 위)
+  final bool cover;
 
   static const _palette = [
     [Color(0xFFFFD6E4), Color(0xFFFFEFF4)],
@@ -40,7 +44,7 @@ class CharacterImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = providerFor(character.avatarUrl);
+    final provider = providerFor(cover ? character.coverOrAvatar : character.avatarUrl);
     final fallback = _Fallback(character: character, fontSize: fontSize);
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),

@@ -47,16 +47,25 @@ Future<_ChatProfile?> _askProfile(
   final container = ProviderScope.containerOf(context, listen: false);
   final current = container.read(chatPrefsProvider(character.id)).nickname ??
       container.read(userProfileProvider).nickname;
-  final result = await showDialog<_ChatProfile>(
-    context: context,
-    builder: (_) => _NicknameDialog(
-      character: character,
-      initial: current,
-      initialPersona: container.read(chatPersonaProvider(character.id)),
-      isFirstTime: isFirstTime,
-      chooseMode: isFirstTime && !character.isService,
-    ),
+  final chooseMode = isFirstTime && !character.isService;
+  final dialog = _NicknameDialog(
+    character: character,
+    initial: current,
+    initialPersona: container.read(chatPersonaProvider(character.id)),
+    isFirstTime: isFirstTime,
+    chooseMode: chooseMode,
   );
+  // 처음 대화(이야기 말랑이)는 아래에서 올라오는 시트에서 스토리/자유대화를 고름. 별명만 바꿀 땐 작은 창
+  final result = chooseMode
+      ? await showModalBottomSheet<_ChatProfile>(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          backgroundColor: AppColors.surfaceWhite,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+          builder: (_) => dialog,
+        )
+      : await showDialog<_ChatProfile>(context: context, builder: (_) => dialog);
   if (result == null) return null;
   final prefs = container.read(chatPrefsProvider(character.id).notifier);
   await prefs.setNickname(result.nickname);
@@ -163,91 +172,116 @@ class _NicknameDialogState extends State<_NicknameDialog> {
   @override
   Widget build(BuildContext context) {
     final name = widget.character.name;
-    return AlertDialog(
-      title: Text(widget.isFirstTime ? '${josa(name, '과', '와')} 대화 시작' : '이 대화에서 나'),
-      content: SingleChildScrollView(
+    final fields = <Widget>[
+      Text(
+        '${josa(name, '이', '가')} 나를 이렇게 불러요. 설정의 기본 별명이 들어가 있고, 이 대화에서만 바꿀 수 있어요.',
+        style: AppTextStyles.systemNotice,
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _controller,
+        autofocus: !widget.chooseMode,
+        maxLength: 12,
+        decoration: InputDecoration(labelText: '내 별명', errorText: _error),
+        onSubmitted: (_) => _submit(),
+      ),
+      const SizedBox(height: 4),
+      TextField(
+        key: const ValueKey('persona_field'),
+        controller: _persona,
+        minLines: widget.chooseMode ? 2 : 3,
+        maxLines: 6,
+        maxLength: 400,
+        decoration: InputDecoration(
+          labelText: '내 설정 (페르소나)',
+          alignLabelWithHint: true,
+          hintText: '예: 24살, 같은 과 동기. 무뚝뚝한데 정이 많음. ${josa(name, '과', '와')}는 1년째 친구',
+          hintMaxLines: 3,
+        ),
+      ),
+      const Text('안 적어도 돼요. AI 자유대화에서 캐릭터가 이 설정을 알고 대화해요', style: AppTextStyles.systemNotice),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        value: _saveAsDefault,
+        onChanged: (v) => setState(() => _saveAsDefault = v ?? false),
+        title: const Text('다른 캐릭터에도 기본으로 쓰기'),
+      ),
+    ];
+
+    if (!widget.chooseMode) {
+      return AlertDialog(
+        title: Text(widget.isFirstTime ? '${josa(name, '과', '와')} 대화 시작' : '이 대화에서 나'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: fields),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(onPressed: _submit, child: Text(widget.isFirstTime ? '대화 시작' : '저장')),
+        ],
+      );
+    }
+
+    // 처음 대화: 스토리/자유대화 카드 + 내 별명·설정 + 시작 버튼 (와이어프레임 7-1)
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.chooseMode) ...[
-              IntrinsicHeight(
-                child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _ModeCard(
-                      key: const ValueKey('start_mode_story'),
-                      icon: Icons.auto_stories_rounded,
-                      title: '스토리',
-                      note: '선택지로 가까워지고 사진을 모아요',
-                      on: !_free,
-                      onTap: () => setState(() => _free = false),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _ModeCard(
-                      key: const ValueKey('start_mode_free'),
-                      icon: Icons.forum_rounded,
-                      title: '자유대화',
-                      note: '이야기 없이 AI와 마음대로 톡해요',
-                      on: _free,
-                      onTap: () => setState(() => _free = true),
-                    ),
-                  ),
-                ],
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: AppColors.borderLight, borderRadius: BorderRadius.circular(2)),
               ),
-              ),
-              const SizedBox(height: 6),
-              const Text('두 대화방은 따로 이어지고, 대화방 메뉴에서 다른 방도 열 수 있어요',
-                  style: AppTextStyles.messageTime),
-              const SizedBox(height: 14),
-            ],
-            Text(
-              '${josa(name, '이', '가')} 나를 이렇게 불러요. 설정의 기본 별명이 들어가 있고, 이 대화에서만 바꿀 수 있어요.',
-              style: AppTextStyles.systemNotice,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              maxLength: 12,
-              decoration: InputDecoration(labelText: '내 별명', errorText: _error),
-              onSubmitted: (_) => _submit(),
+            Text('${josa(name, '과', '와')} 어떻게 대화할까요?', style: AppTextStyles.appBarTitle.copyWith(fontSize: 18)),
+            const SizedBox(height: 12),
+            _ModeCard(
+              key: const ValueKey('start_mode_story'),
+              icon: Icons.auto_stories_rounded,
+              title: '스토리',
+              note: '제작자가 쓴 이야기를 따라가요. 선택지로 가까워지고 사진을 모으고 엔딩이 있어요.',
+              chips: const ['키 없어도 돼요'],
+              on: !_free,
+              onTap: () => setState(() => _free = false),
             ),
-            const SizedBox(height: 4),
-            TextField(
-              key: const ValueKey('persona_field'),
-              controller: _persona,
-              minLines: 3,
-              maxLines: 6,
-              maxLength: 400,
-              decoration: InputDecoration(
-                labelText: '내 설정 (페르소나)',
-                alignLabelWithHint: true,
-                hintText: '예: 24살, 같은 과 동기. 무뚝뚝한데 정이 많음. ${josa(name, '과', '와')}는 1년째 친구',
-                hintMaxLines: 3,
+            const SizedBox(height: 8),
+            _ModeCard(
+              key: const ValueKey('start_mode_free'),
+              icon: Icons.forum_rounded,
+              title: '자유대화',
+              note: '아무 말이나 해요. ${josa(name, '이', '가')} AI로 답하고 어울리는 순간엔 사진도 보내요. 호감도와 엔딩은 없어요.',
+              chips: const ['AI 키 필요'],
+              on: _free,
+              onTap: () => setState(() => _free = true),
+            ),
+            const SizedBox(height: 6),
+            const Text('두 대화방은 따로 이어지고, 다른 쪽은 나중에 대화방 메뉴에서 시작할 수 있어요',
+                style: AppTextStyles.messageTime),
+            const SizedBox(height: 14),
+            ...fields,
+            const SizedBox(height: 8),
+            FilledButton(
+              key: const ValueKey('start_submit'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryPink,
+                minimumSize: const Size.fromHeight(50),
+                textStyle: AppTextStyles.choiceButton,
               ),
-            ),
-            const Text('안 적어도 돼요. AI 자유대화에서 캐릭터가 이 설정을 알고 대화해요', style: AppTextStyles.systemNotice),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: _saveAsDefault,
-              onChanged: (v) => setState(() => _saveAsDefault = v ?? false),
-              title: const Text('다른 캐릭터에도 기본으로 쓰기'),
+              onPressed: _submit,
+              child: Text(_free ? '자유대화 시작하기' : '스토리 시작하기'),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('취소', style: TextStyle(color: AppColors.textSecondary)),
-        ),
-        TextButton(onPressed: _submit, child: Text(widget.isFirstTime ? '대화 시작' : '저장')),
-      ],
     );
   }
 }
@@ -261,35 +295,70 @@ class _ModeCard extends StatelessWidget {
     required this.note,
     required this.on,
     required this.onTap,
+    this.chips = const [],
   });
 
   final IconData icon;
   final String title;
   final String note;
+  final List<String> chips;
   final bool on;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: on ? Color.lerp(AppColors.surfaceWhite, AppColors.primaryPink, 0.08) : AppColors.surfaceWhite,
-          borderRadius: BorderRadius.circular(14),
+          color: on ? Color.lerp(AppColors.surfaceWhite, AppColors.primaryPink, 0.06) : AppColors.surfaceWhite,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: on ? AppColors.primaryPink : AppColors.borderLight, width: on ? 2 : 1),
         ),
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: on ? AppColors.primaryPink : AppColors.textSecondary),
-            const SizedBox(height: 4),
-            Text(title, style: AppTextStyles.choiceButton.copyWith(color: AppColors.textPrimary)),
-            const SizedBox(height: 2),
-            Text(note,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Color.lerp(AppColors.surfaceWhite, AppColors.primaryPink, on ? 0.16 : 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: on ? AppColors.primaryPink : AppColors.textSecondary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTextStyles.choiceButton.copyWith(color: AppColors.textPrimary, fontSize: 16)),
+                  const SizedBox(height: 3),
+                  Text(note, style: const TextStyle(fontSize: 12, height: 1.5, color: AppColors.textSecondary)),
+                  if (chips.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 4,
+                      children: [
+                        for (final c in chips)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Color.lerp(AppColors.surfaceWhite, AppColors.primaryPink, 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(c,
+                                style: const TextStyle(
+                                    fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),

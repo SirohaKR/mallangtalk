@@ -17,6 +17,7 @@ class GalleryCard extends StatelessWidget {
     this.mine = false,
     required this.isFriend,
     required this.onTap,
+    this.friends,
   });
 
   final CharacterModel character;
@@ -29,6 +30,9 @@ class GalleryCard extends StatelessWidget {
   final bool mine;
   final bool isFriend;
   final VoidCallback onTap;
+
+  /// 친구 수 (제작자 화면처럼 만든 사람 줄 대신 보여 줄 때)
+  final int? friends;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +53,7 @@ class GalleryCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CharacterImage(character: character, fontSize: 52),
+                  CharacterImage(character: character, fontSize: 52, cover: true),
                   if (isFriend) const Positioned(top: 8, right: 8, child: _Badge('친구')),
                 ],
               ),
@@ -91,6 +95,10 @@ class GalleryCard extends StatelessWidget {
                   if (creator != null) ...[
                     const SizedBox(height: 6),
                     CreatorLine(creator: creator!, avatarUrl: creatorAvatar, mine: mine),
+                  ],
+                  if (friends != null) ...[
+                    const SizedBox(height: 4),
+                    Text('친구 $friends', style: AppTextStyles.messageTime),
                   ],
                   if (character.tags.isNotEmpty) ...[
                     const SizedBox(height: 4),
