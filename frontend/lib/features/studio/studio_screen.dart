@@ -22,6 +22,7 @@ import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
 import 'character_import.dart';
+import 'color_picker_sheet.dart';
 import 'photo_box.dart';
 import 'scenario_draft.dart';
 import 'studio_widgets.dart';
@@ -1205,6 +1206,19 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   child: current == hex ? const Icon(Icons.check_rounded, size: 16, color: Colors.white) : null,
                 ),
               ),
+            // 무지개: 끌어서 아무 색이나 고르기
+            RainbowColorButton(
+              key: const ValueKey('studio_color_rainbow'),
+              selected: presets.contains(current) ? null : colorFromHex(current),
+              onTap: () async {
+                final picked = await showColorPickerSheet(context, initial: d.themeColor);
+                if (picked == null || !mounted) return;
+                setState(() {
+                  d.themeColor = picked;
+                  _version++;
+                });
+              },
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -1212,7 +1226,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           fieldKey: _k(d, 'color'),
           value: d.themeColor,
           label: '직접 고르기',
-          hint: '#RRGGBB (예: #3B4A8C)',
+          hint: '#RRGGBB (예: #3B4A8C) · 무지개를 누르면 끌어서 골라요',
           dense: true,
           onChanged: (v) => setState(() => d.themeColor = v.trim()),
         ),

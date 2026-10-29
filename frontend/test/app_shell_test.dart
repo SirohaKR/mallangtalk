@@ -393,6 +393,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2 / 8'), findsOneWidget);
     expect(find.byKey(const ValueKey('studio_color_preview')), findsOneWidget);
+    // 무지개 버튼 → 끌어서 색 고르기 → 직접 고르기 칸에 들어감
+    await tester.tap(find.byKey(const ValueKey('studio_color_rainbow')));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byKey(const ValueKey('color_picker_hue')), const Offset(80, 0));
+    await tester.drag(find.byKey(const ValueKey('color_picker_area')), const Offset(-40, 30));
+    await tester.pump();
+    final picked = tester.widget<Text>(find.byKey(const ValueKey('color_picker_hex'))).data!;
+    expect(RegExp(r'^#[0-9A-F]{6}$').hasMatch(picked), isTrue);
+    await tester.tap(find.byKey(const ValueKey('color_picker_done')));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, picked), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('studio_next')));
     await tester.pumpAndSettle();
     expect(find.text('3 / 8'), findsOneWidget);
