@@ -266,6 +266,9 @@ class CharacterModel {
   /// 프로필·썸네일 이미지 (앱 안 이미지 경로, 인터넷 주소, 또는 직접 올린 사진의 data: 주소). 비우면 이름 첫 글자 카드
   final String avatarUrl;
 
+  /// 대표 사진: 말랑이 찾기 카드와 상세 화면 맨 위 커버. 비우면 프로필 사진을 씀
+  final String coverUrl;
+
   /// 받아오기 갤러리에 보이는 한줄 소개
   final String tagline;
 
@@ -334,6 +337,7 @@ class CharacterModel {
     required this.name,
     required this.statusMessage,
     required this.avatarUrl,
+    this.coverUrl = '',
     this.tagline = '',
     this.tags = const [],
     required this.worldviewPrompt,
@@ -365,6 +369,7 @@ class CharacterModel {
       name: json['name'] as String,
       statusMessage: json['status_message'] as String? ?? '',
       avatarUrl: json['avatar_url'] as String? ?? '',
+      coverUrl: json['cover_url'] as String? ?? '',
       tagline: json['tagline'] as String? ?? '',
       tags: [for (final t in json['tags'] as List? ?? const []) t as String],
       worldviewPrompt: json['worldview_prompt'] as String? ?? '',
@@ -415,6 +420,7 @@ class CharacterModel {
         'name': name,
         'status_message': statusMessage,
         'avatar_url': avatarUrl,
+        if (coverUrl.isNotEmpty) 'cover_url': coverUrl,
         if (tagline.isNotEmpty) 'tagline': tagline,
         if (tags.isNotEmpty) 'tags': tags,
         'worldview_prompt': worldviewPrompt,
@@ -448,6 +454,7 @@ class CharacterModel {
     String? id,
     String? name,
     String? avatarUrl,
+    String? coverUrl,
     String? tagline,
     List<String>? tags,
     String? quote,
@@ -470,6 +477,7 @@ class CharacterModel {
       name: name ?? this.name,
       statusMessage: statusMessage,
       avatarUrl: avatarUrl ?? this.avatarUrl,
+      coverUrl: coverUrl ?? this.coverUrl,
       tagline: tagline ?? this.tagline,
       tags: tags ?? this.tags,
       worldviewPrompt: worldviewPrompt,
@@ -494,6 +502,9 @@ class CharacterModel {
       isPublished: isPublished,
     );
   }
+
+  /// 커버로 쓸 사진: 대표 사진, 없으면 프로필 사진
+  String get coverOrAvatar => coverUrl.isNotEmpty ? coverUrl : avatarUrl;
 
   /// 서비스 말랑이인지 (호감도 처음부터 100, 단계·엔딩 없음)
   bool get isService => kind == serviceKind;

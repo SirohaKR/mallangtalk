@@ -749,23 +749,71 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               style: AppTextStyles.messageTime,
             ),
             const SizedBox(height: AppSpacing.md),
+            // 프로필 사진(동그라미)과 대표 사진(찾기 카드·상세 커버)을 따로 올림
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CharacterAvatar(character: preview, radius: 34),
+                Column(
+                  children: [
+                    InkWell(
+                      key: const ValueKey('studio_avatar'),
+                      customBorder: const CircleBorder(),
+                      onTap: () async {
+                        final image = await pickProfileImage(context);
+                        if (image != null) setState(() => d.avatarUrl = image);
+                      },
+                      child: CharacterAvatar(character: preview, radius: 42),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(d.avatarUrl.isEmpty ? '프로필 고르기' : '프로필', style: AppTextStyles.messageTime),
+                  ],
+                ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                        label: Text(d.avatarUrl.isEmpty ? '프로필 사진 고르기' : '사진 바꾸기'),
-                        onPressed: () async {
-                          final image = await pickProfileImage(context);
-                          if (image != null) setState(() => d.avatarUrl = image);
+                      InkWell(
+                        key: const ValueKey('studio_cover'),
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () async {
+                          final image = await pickPhoto(context);
+                          if (image != null) setState(() => d.coverUrl = image);
                         },
+                        child: Container(
+                          height: 112,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: d.coverUrl.isEmpty ? Border.all(color: AppColors.borderLight) : null,
+                            color: AppColors.surfaceWhite,
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: d.coverUrl.isEmpty
+                              ? const Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add_photo_alternate_outlined, color: AppColors.textSecondary),
+                                    SizedBox(height: 4),
+                                    Text('대표 사진 올리기', style: AppTextStyles.messageTime),
+                                  ],
+                                )
+                              : CharacterImage(character: preview, cover: true),
+                        ),
                       ),
-                      const Text('대표 사진 · 말랑이 찾기 카드와 상세 커버', style: AppTextStyles.messageTime),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text('대표 사진 · 말랑이 찾기 카드와 상세 커버. 비우면 프로필 사진을 써요',
+                                style: AppTextStyles.messageTime),
+                          ),
+                          if (d.coverUrl.isNotEmpty)
+                            TextButton(
+                              onPressed: () => setState(() => d.coverUrl = ''),
+                              child: const Text('빼기'),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

@@ -196,6 +196,9 @@ class ScenarioDraft {
   String tagline = '';
   String tags = '';
   String avatarUrl = '';
+
+  /// 대표(커버) 사진. 비우면 프로필 사진이 커버로 보여요
+  String coverUrl = '';
   String setting = '';
   String world = '';
   String userRole = '';
@@ -255,6 +258,7 @@ class ScenarioDraft {
       ..tagline = c.tagline
       ..tags = c.tags.join(', ')
       ..avatarUrl = c.avatarUrl
+      ..coverUrl = c.coverUrl
       ..setting = c.worldviewPrompt
       ..world = c.worldSetting
       ..userRole = c.userRole
@@ -390,6 +394,7 @@ class ScenarioDraft {
         name: name.trim(),
         statusMessage: statusMessage.trim(),
         avatarUrl: avatarUrl,
+        coverUrl: coverUrl,
         tagline: tagline.trim(),
         tags: [
           for (final t in tags.split(RegExp(r'[,#\s]+')))

@@ -176,7 +176,7 @@ void main() {
     expect(find.text('다른유저'), findsWidgets); // 카드마다 만든 사람
     appRouter.go('/creator/${Uri.encodeComponent('다른유저')}');
     await settle(tester);
-    expect(find.text('말랑이 1 · 친구 0'), findsOneWidget);
+    expect(find.text('만든 말랑이 1 · 받은 친구 추가 0'), findsOneWidget);
 
     await library.remove('char_mine');
     expect(server.deleted, ['char_mine']);

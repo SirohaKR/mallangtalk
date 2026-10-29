@@ -25,7 +25,7 @@ Future<String> storeImage(String value, int ownerId, Repository store) async {
   return '/api/images/${await store.saveImage(ownerId, mime, bytes)}';
 }
 
-/// 캐릭터 파일 안의 data: 사진(사진 표·프로필 사진)을 DB 사진으로 옮기고 주소만 남김
+/// 캐릭터 파일 안의 data: 사진(사진 표·프로필 사진·대표 사진)을 DB 사진으로 옮기고 주소만 남김
 Future<Map<String, dynamic>> moveImagesToStore(
     Map<String, dynamic> bundle, int ownerId, Repository store) async {
   Future<String> moved(String value) => storeImage(value, ownerId, store);
@@ -33,8 +33,10 @@ Future<Map<String, dynamic>> moveImagesToStore(
   final images = bundle['images'];
   final character =
       Map<String, dynamic>.of(bundle['character'] as Map<String, dynamic>);
-  if (character['avatar_url'] is String)
-    character['avatar_url'] = await moved(character['avatar_url'] as String);
+  for (final key in const ['avatar_url', 'cover_url']) {
+    if (character[key] is String)
+      character[key] = await moved(character[key] as String);
+  }
   return {
     ...bundle,
     'character': character,

@@ -558,4 +558,10 @@ class LocalStore {
 
   Future<void> saveChatPersona(String characterId, String persona) =>
       _write('persona_$characterId', persona);
+
+  /// 말랑이 찾기 최근 검색어 (최근 것이 앞, 이 기기에만)
+  List<String> get recentSearches => _getStringList('recent_search_v1') ?? const [];
+
+  Future<void> saveRecentSearches(List<String> words) =>
+      _write('recent_search_v1', List<String>.of(words));
 }

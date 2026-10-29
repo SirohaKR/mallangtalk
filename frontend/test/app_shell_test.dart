@@ -166,15 +166,26 @@ void main() {
     await tester.tap(find.text('서이준').last);
     await settle(tester);
 
-    // 상세: 캐릭터 정보·캐릭터 설정·세계관 설정·나는 이 이야기에서·주변 인물만, 비밀과 제작용 정보는 안 보임
-    for (final title in ['캐릭터 정보', '캐릭터 설정', '세계관 설정', '나는 이 이야기에서', '주변 인물']) {
+    // 상세: 소개 탭엔 캐릭터 정보·캐릭터 설정, 나머지는 세계관·나는 이 이야기에서·주변 인물 탭. 비밀과 제작용 정보는 안 보임
+    for (final title in ['캐릭터 정보', '캐릭터 설정']) {
       expect(find.text(title), findsOneWidget, reason: title);
     }
     expect(find.text('시각디자인과 4학년'), findsOneWidget);
-    expect(find.textContaining('대학 사진 동아리'), findsOneWidget);
-    expect(find.text('말랑 · 사진 동아리에 새로 들어온 후배'), findsOneWidget);
     expect(find.textContaining('몰래 저장해 둠'), findsNothing);
-    for (final hidden in ['관계 단계', '이야기 분량', '타자 스타일', '성격', '찍을 거 없으면 너라도 찍지 뭐.']) {
+    await tester.tap(find.text('세계관'));
+    await settle(tester);
+    expect(find.text('세계관 설정'), findsOneWidget);
+    expect(find.textContaining('대학 사진 동아리'), findsOneWidget);
+    await tester.tap(find.text('나는 이 이야기에서'));
+    await settle(tester);
+    expect(find.text('말랑 · 사진 동아리에 새로 들어온 후배'), findsOneWidget);
+    await tester.tap(find.text('주변 인물'));
+    await settle(tester);
+    expect(find.text('주변 인물'), findsNWidgets(2)); // 탭 이름 + 카드 제목
+    expect(find.textContaining('몰래 저장해 둠'), findsNothing);
+    // 대표 대사는 만들기 화면 안내대로 상세 화면 위쪽에 보임
+    expect(find.textContaining('찍을 거 없으면 너라도 찍지 뭐.'), findsOneWidget);
+    for (final hidden in ['관계 단계', '이야기 분량', '타자 스타일', '성격']) {
       expect(find.textContaining(hidden), findsNothing, reason: hidden);
     }
 
@@ -186,10 +197,11 @@ void main() {
         contains('char_example_seo_ijun'));
     // 별명을 정하고 대화를 시작하기 전엔 톡이 오지 않음
     expect(container.read(chatRoomProvider('char_example_seo_ijun')).messages, isEmpty);
-    expect(find.text('서이준과 대화 시작'), findsOneWidget);
+    expect(find.text('서이준과 어떻게 대화할까요?'), findsOneWidget);
     expect(find.widgetWithText(TextField, '말랑'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, '후배님');
-    await tester.tap(find.text('대화 시작'));
+    await tester.ensureVisible(find.text('스토리 시작하기'));
+    await tester.tap(find.text('스토리 시작하기'));
     await settle(tester);
 
     expect(find.byType(ChatScreen), findsOneWidget);
@@ -216,12 +228,14 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('1:1 채팅'));
     await settle(tester);
-    expect(find.text('윤도하와 대화 시작'), findsOneWidget);
+    expect(find.text('윤도하와 어떻게 대화할까요?'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, '말랑');
     // 별명과 함께 내 설정(페르소나)도 정하고, 다른 캐릭터에도 기본으로
     await tester.enterText(find.byKey(const ValueKey('persona_field')), '24살 대학원생, 밤에 러닝함');
+    await tester.ensureVisible(find.text('다른 캐릭터에도 기본으로 쓰기'));
     await tester.tap(find.text('다른 캐릭터에도 기본으로 쓰기'));
-    await tester.tap(find.text('대화 시작'));
+    await tester.ensureVisible(find.text('스토리 시작하기'));
+    await tester.tap(find.text('스토리 시작하기'));
     await settle(tester);
     expect(find.byType(ChatScreen), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();

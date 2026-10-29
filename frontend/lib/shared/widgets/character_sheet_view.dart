@@ -16,10 +16,23 @@ Color characterThemeColor(CharacterModel c) {
 /// 캐릭터 정보 · 캐릭터 설정 · 세계관 설정 · 나는 이 이야기에서 · 주변 인물만 보여 줍니다.
 /// 호감도 단계, 성격 막대, 대사 예시, 비밀처럼 제작자·AI만 쓰는 내용은 만들기 화면에만 있어요.
 class CharacterSheetView extends StatelessWidget {
-  const CharacterSheetView({super.key, required this.character, this.nickname = '너'});
+  const CharacterSheetView({super.key, required this.character, this.nickname = '너', this.sections = SheetSection.values});
 
   final CharacterModel character;
   final String nickname;
+
+  /// 보여 줄 묶음 (상세 화면은 탭마다 일부만)
+  final List<SheetSection> sections;
+
+  /// 이 묶음에 보여 줄 내용이 있는지 (빈 탭을 숨기려고)
+  static bool hasContent(CharacterModel c, SheetSection section) => switch (section) {
+        SheetSection.info => c.profileFields.any((f) => !f.isSecret && f.value.trim().isNotEmpty),
+        SheetSection.setting => c.worldviewPrompt.trim().isNotEmpty,
+        SheetSection.world => c.worldSetting.trim().isNotEmpty,
+        SheetSection.role => c.userRole.trim().isNotEmpty,
+        SheetSection.cast => c.extraCast.isNotEmpty,
+        SheetSection.comment => c.authorComment.trim().isNotEmpty,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +44,7 @@ class CharacterSheetView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (fields.isNotEmpty)
+        if (fields.isNotEmpty && sections.contains(SheetSection.info))
           _Card(
             title: '캐릭터 정보',
             child: Column(
@@ -50,10 +63,10 @@ class CharacterSheetView extends StatelessWidget {
               ],
             ),
           ),
-        if (c.worldviewPrompt.trim().isNotEmpty) _Card(title: '캐릭터 설정', child: body(c.worldviewPrompt)),
-        if (c.worldSetting.trim().isNotEmpty) _Card(title: '세계관 설정', child: body(c.worldSetting)),
-        if (c.userRole.trim().isNotEmpty) _Card(title: '나는 이 이야기에서', child: body(c.userRole)),
-        if (c.extraCast.isNotEmpty)
+        if (c.worldviewPrompt.trim().isNotEmpty && sections.contains(SheetSection.setting)) _Card(title: '캐릭터 설정', child: body(c.worldviewPrompt)),
+        if (c.worldSetting.trim().isNotEmpty && sections.contains(SheetSection.world)) _Card(title: '세계관 설정', child: body(c.worldSetting)),
+        if (c.userRole.trim().isNotEmpty && sections.contains(SheetSection.role)) _Card(title: '나는 이 이야기에서', child: body(c.userRole)),
+        if (c.extraCast.isNotEmpty && sections.contains(SheetSection.cast))
           _Card(
             title: '주변 인물',
             child: Column(
@@ -78,11 +91,14 @@ class CharacterSheetView extends StatelessWidget {
               ],
             ),
           ),
-        if (c.authorComment.trim().isNotEmpty) _Card(title: '작가 코멘트', child: body(c.authorComment)),
+        if (c.authorComment.trim().isNotEmpty && sections.contains(SheetSection.comment)) _Card(title: '작가 코멘트', child: body(c.authorComment)),
       ],
     );
   }
 }
+
+/// 캐릭터 설정 카드 묶음 하나
+enum SheetSection { info, setting, world, role, cast, comment }
 
 class _Card extends StatelessWidget {
   const _Card({required this.title, required this.child});
