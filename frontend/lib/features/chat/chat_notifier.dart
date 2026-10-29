@@ -34,6 +34,23 @@ typedef ReplayableEvent = ({
   bool missed
 });
 
+/// 공략 뒤 '못 받은 사진 모으기'의 한 줄: [choiceLabel]을 골랐다면 받을 수 있는 사진 [photos]장.
+/// [choiceLabel]이 null이면 아직 안 나온(못 받은) 대화 전체
+typedef MissedBranch = ({
+  ScenarioEventModel event,
+  String? choiceLabel,
+  int photos
+});
+
+/// 공략 후 이야기 한 개의 상태: 봤음 / 다음에 올 차례 / 앞 이야기를 기다리는 중
+enum EpilogueStatus { seen, next, waiting }
+
+typedef EpilogueItem = ({
+  ScenarioEventModel event,
+  EpilogueStatus status,
+  int photos
+});
+
 /// 대화방 이름: 스토리 방은 캐릭터 ID 그대로, 자유대화 방은 뒤에 #free
 const _freeSuffix = '#free';
 String freeRoomId(String characterId) => '$characterId$_freeSuffix';
@@ -1013,6 +1030,100 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           .add((event: e, unseenChoices: unseen, missed: missed));
     }
     return [...out, ...specials];
+  }
+
+  /// 공략 뒤 '못 받은 사진 모으기' 목록: 안 고른 선택지마다 그쪽으로 가면 받을 수 있는 (아직 없는) 사진 수.
+  /// 아직 안 나온 일상 대화·못 받은 특별한 톡은 대화 전체로 셈. 공략 후 이야기는 [epilogueItems]에서 따로
+  List<MissedBranch> get missedBranches {
+    if (_aiRoom) return const [];
+    final received = state.receivedPhotos.toSet();
+    final seenSpecials = _store.loadSeenSpecials(_bundle.character.id).toSet();
+    final out = <MissedBranch>[];
+    final events = [..._bundle.events]
+      ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
+    for (final e in events) {
+      if (e.isAfterEnding) continue;
+      final unseenWhole = e.isSpecial
+          ? !seenSpecials.contains(e.id)
+          : e.isDaily && !_seenScripts.contains(e.id);
+      if (unseenWhole) {
+        final n = _photosFrom(e, _bundle.firstNodeOf(e.id), received);
+        if (n > 0) out.add((event: e, choiceLabel: null, photos: n));
+        continue;
+      }
+      if (!e.isSpecial && !_seenScripts.contains(e.id)) continue;
+      final nodes = _bundle.nodes.values.where((n) => n.eventId == e.id).toList()
+        ..sort((a, b) => a.stepOrder.compareTo(b.stepOrder));
+      for (final node in nodes) {
+        for (final c in node.choices) {
+          if (_chosen.contains(c.id)) continue;
+          final next = c.nextNodeId == null ? null : _bundle.nodes[c.nextNodeId];
+          final n = _photosFrom(e, next, received);
+          if (n > 0) out.add((event: e, choiceLabel: c.buttonLabel, photos: n));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// [start] 노드부터 이 대화 끝까지 갈 수 있는 길에 나오는, 아직 안 받은 사진 수 (사진 말풍선 + 컷씬)
+  int _photosFrom(ScenarioEventModel event, ScriptNodeModel? start, Set<String> received) {
+    final found = <String>{};
+    final visited = <String>{};
+    final queue = [if (start != null) start];
+    while (queue.isNotEmpty) {
+      final node = queue.removeLast();
+      if (!visited.add(node.id)) continue;
+      for (final b in node.characterBubbles) {
+        if (b.hasPhoto) found.add(b.photoLabel!.trim());
+      }
+      if (event.cutsceneTriggerStep == node.stepOrder) {
+        final t = event.cutscenePhotoTitle?.trim() ?? '';
+        if (t.isNotEmpty) found.add(t);
+      }
+      for (final c in node.choices) {
+        final next = c.nextNodeId == null ? null : _bundle.nodes[c.nextNodeId];
+        if (next != null) queue.add(next);
+      }
+    }
+    return found.where((p) => p.isNotEmpty && !received.contains(p)).length;
+  }
+
+  /// 공략 후 이야기 목록 (이야기 순서대로): 본 것, 다음에 올 것, 그 뒤를 기다리는 것
+  List<EpilogueItem> get epilogueItems {
+    if (_aiRoom) return const [];
+    final received = state.receivedPhotos.toSet();
+    final events = _bundle.events.where((e) => e.isAfterEnding).toList()
+      ..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
+    var nextGiven = false;
+    return [
+      for (final e in events)
+        (
+          event: e,
+          status: _seenScripts.contains(e.id) || state.completedEventIds.contains(e.id)
+              ? EpilogueStatus.seen
+              : !nextGiven &&
+                      state.progress == StoryProgress.cleared &&
+                      (e.followsEventId == null || state.completedEventIds.contains(e.followsEventId)) &&
+                      e.requiredFlags.every(state.acquiredFlags.contains) &&
+                      (nextGiven = true)
+                  ? EpilogueStatus.next
+                  : EpilogueStatus.waiting,
+          photos: _photosFrom(e, _bundle.firstNodeOf(e.id), received),
+        ),
+    ];
+  }
+
+  /// 공략 뒤 아직 안 본 공략 후 이야기를 지금 받기 (대화가 멈춰 있을 때만)
+  Future<void> playNextEpilogue() async {
+    if (state.progress != StoryProgress.cleared ||
+        state.isCharacterTyping ||
+        state.currentChoices.isNotEmpty ||
+        _scriptDepth > 0 ||
+        _replaySnapshot != null) return;
+    final next = epilogueItems.where((i) => i.status == EpilogueStatus.next).firstOrNull;
+    if (next == null) return;
+    await _playEvent(next.event, _runId);
   }
 
   /// 공략 뒤 '안 본 갈래 다시 보기': 대화를 처음부터 다시 보되 호감도·진행은 끝나면 그대로 돌려놓음.

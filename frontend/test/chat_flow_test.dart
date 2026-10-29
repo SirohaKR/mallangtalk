@@ -83,6 +83,11 @@ void main() {
     final replayable = notifier.replayableEvents.map((r) => r.event.id);
     expect(replayable, contains('evt_gig_tickets'));
     expect(find.byKey(const ValueKey('replay_button')), findsOneWidget);
+    // 공략 완료 패널: 호감도 이벤트 수·앨범 수·엔딩 다시 보기
+    expect(find.text('호감도 이벤트'), findsOneWidget);
+    expect(find.text('앨범 사진'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ending_replay')), findsOneWidget);
+    expect(find.textContaining('${notifier.missedPhotoCount}장'), findsWidgets);
 
     // 다시 보기: 안 고른 선택지에 반짝이, 사진은 모이고 진행은 그대로
     final affection = state().internalAffection;
@@ -91,7 +96,14 @@ void main() {
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
-    await tester.tap(find.byKey(const ValueKey('replay_evt_gig_tickets')));
+    // 못 받은 사진 모으기: 갈래마다 '…를 골랐다면 · 사진 N장'
+    final branches = notifier.missedBranches;
+    final gig = branches.indexWhere((b) => b.event.id == 'evt_gig_tickets' && b.choiceLabel == '좋다고, 무슨 밴드냐고 묻기');
+    expect(gig, isNot(-1));
+    expect(branches[gig].photos, greaterThan(0));
+    final row = find.byKey(ValueKey('missed_evt_gig_tickets_$gig'));
+    expect(find.descendant(of: row, matching: find.textContaining('"좋다고, 무슨 밴드냐고 묻기"를 골랐다면')), findsOneWidget);
+    await tester.tap(find.descendant(of: row, matching: find.text('다시 보기')));
     await settle(tester);
     expect(state().isReplaying, isTrue);
     expect(find.byKey(const ValueKey('replay_button')), findsNothing);
@@ -177,6 +189,16 @@ void main() {
     await skipDailyTalks(tester);
     expect(container.read(chatRoomProvider(dohaId)).completedEventIds, contains('daily_weird_dream'));
     await settle(tester);
+    // 공략 완료 패널의 '공략 후 이야기 열림' → 목록에서 본 이야기는 다시 보기
+    final notifier = container.read(chatRoomProvider(dohaId).notifier);
+    expect(notifier.epilogueItems.single.status, EpilogueStatus.seen);
+    expect(find.byKey(const ValueKey('epilogue_button')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('epilogue_button')));
+    await settle(tester);
+    final epilogue = find.byKey(const ValueKey('epilogue_daily_weird_dream'));
+    await tester.scrollUntilVisible(epilogue, 200, scrollable: find.byType(Scrollable).last);
+    expect(find.descendant(of: epilogue, matching: find.text('다시 보기')),
+        findsOneWidget);
   });
 
   testWidgets('계속 무심하게 답하면 연락이 끊김', (tester) async {

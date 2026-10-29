@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/utils/korean.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/photo_viewer.dart';
@@ -396,16 +397,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   !chatState.isCharacterTyping)
                 _RunEndPanel(
                   progress: chatState.progress,
-                  endingTitle: bundle?.events
-                      .where((e) => e.isEnding)
-                      .firstOrNull
-                      ?.title,
+                  ending: bundle?.events.where((e) => e.isEnding).firstOrNull,
+                  eventsDone: bundle?.events
+                          .where((e) =>
+                              e.isAffectionEvent &&
+                              chatState.completedEventIds.contains(e.id))
+                          .length ??
+                      0,
+                  eventsTotal: bundle?.events
+                          .where((e) => e.isAffectionEvent)
+                          .length ??
+                      0,
                   received: (bundle?.albumPhotos.length ?? 0) -
                       notifier.missedPhotoCount,
                   totalPhotos: bundle?.albumPhotos.length ?? 0,
                   replayable: notifier.replayableEvents,
+                  missed: notifier.missedBranches,
+                  epilogues: notifier.epilogueItems,
                   accent: theme.accent,
                   onReplay: notifier.replayEvent,
+                  onEpilogue: notifier.playNextEpilogue,
                   onRestart: notifier.restart,
                 ),
               if (chatState.currentChoices.isNotEmpty) ...[
@@ -991,115 +1002,331 @@ class _SystemNoticeRow extends StatelessWidget {
   }
 }
 
-/// 한 회차가 끝났을 때 하단에 뜨는 결과 패널 (공략 완료 / 놓친 컷씬 / 진행 막힘)
+/// 한 회차가 끝났을 때 하단에 뜨는 결과 패널 (공략 완료 / 진행 막힘)
+/// 공략 완료면 호감도 이벤트·앨범 수, 못 받은 사진 모으기, 공략 후 이야기, 엔딩 다시 보기 (와이어프레임 6-1)
 class _RunEndPanel extends StatelessWidget {
   final StoryProgress progress;
-  final String? endingTitle;
+  final ScenarioEventModel? ending;
+  final int eventsDone;
+  final int eventsTotal;
   final int received;
   final int totalPhotos;
   final List<ReplayableEvent> replayable;
+  final List<MissedBranch> missed;
+  final List<EpilogueItem> epilogues;
   final Color accent;
   final ValueChanged<String> onReplay;
+  final VoidCallback onEpilogue;
   final VoidCallback onRestart;
 
   const _RunEndPanel({
     required this.progress,
-    required this.endingTitle,
+    required this.ending,
+    required this.eventsDone,
+    required this.eventsTotal,
     required this.received,
     required this.totalPhotos,
     required this.replayable,
+    required this.missed,
+    required this.epilogues,
     required this.accent,
     required this.onReplay,
+    required this.onEpilogue,
     required this.onRestart,
   });
 
-  /// 안 본 갈래가 남은 대화 고르기
-  void _pickReplay(BuildContext context) {
+  int get _missedPhotos => totalPhotos - received;
+
+  /// 못 받은 사진 모으기 (와이어프레임 6-2): 안 본 갈래 · 공략 후 이야기 · 다시 볼 수 있는 대화
+  void _openMissed(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       backgroundColor: AppColors.surfaceWhite,
       constraints: const BoxConstraints(maxWidth: 560),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.7),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-            children: [
-              const Text('안 본 갈래 다시 보기', style: AppTextStyles.appBarTitle),
-              const SizedBox(height: 4),
-              const Text('고른 대화를 처음부터 다시 봐요. 안 고른 선택지는 ✨로 보이고, 끝나면 진행은 그대로예요.',
-                  style: AppTextStyles.systemNotice),
-              const SizedBox(height: 10),
-              for (final r in replayable)
-                ListTile(
-                  key: ValueKey('replay_${r.event.id}'),
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.auto_awesome_rounded, color: accent),
-                  title: Text(r.event.title,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(
-                      [
-                        if (r.missed) '특별한 시간 톡 · 아직 못 받음'
-                        else if (r.event.isSpecial) '특별한 시간 톡',
-                        if (r.unseenChoices > 0) '안 고른 선택지 ${r.unseenChoices}개',
-                      ].join(' · '),
-                      style: AppTextStyles.messageTime),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    onReplay(r.event.id);
-                  },
+      builder: (sheetContext) {
+        void replay(String id) {
+          Navigator.pop(sheetContext);
+          onReplay(id);
+        }
+
+        final missedTotal = missed.fold<int>(0, (n, m) => n + m.photos);
+        final epiloguePhotos = epilogues.fold<int>(0, (n, e) => n + e.photos);
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                        child: Text('못 받은 사진 모으기',
+                            style: AppTextStyles.appBarTitle)),
+                    if (totalPhotos > 0)
+                      Text('$received / $totalPhotos',
+                          style: AppTextStyles.choiceButton
+                              .copyWith(color: accent)),
+                  ],
                 ),
-            ],
+                const SizedBox(height: 4),
+                const Text(
+                    '안 고른 선택지 쪽 대화만 다시 봐요. 진행이나 호감도는 그대로고, 받은 사진만 앨범에 들어가요.',
+                    style: AppTextStyles.systemNotice),
+                if (missed.isNotEmpty) ...[
+                  _sectionTitle('안 본 갈래 · $missedTotal장'),
+                  for (final (i, m) in missed.indexed)
+                    _row(
+                      key: ValueKey('missed_${m.event.id}_$i'),
+                      title: m.event.title,
+                      subtitle: m.choiceLabel != null
+                          ? '"${m.choiceLabel}"${josa(m.choiceLabel!, '을', '를').substring(m.choiceLabel!.length)} 골랐다면 · 사진 ${m.photos}장'
+                          : '아직 안 나온 대화예요 · 사진 ${m.photos}장',
+                      action: m.choiceLabel != null ? '다시 보기' : '보기',
+                      onTap: () => replay(m.event.id),
+                    ),
+                ],
+                if (epilogues.isNotEmpty) ...[
+                  _sectionTitle('공략 후 이야기${epiloguePhotos > 0 ? ' · $epiloguePhotos장' : ''}'),
+                  for (final (i, e) in epilogues.indexed)
+                    _row(
+                      key: ValueKey('epilogue_${e.event.id}'),
+                      title: e.event.title,
+                      subtitle: [
+                        switch (e.status) {
+                          EpilogueStatus.seen => '봤어요',
+                          EpilogueStatus.next => '공략 완료로 열렸어요',
+                          EpilogueStatus.waiting => i > 0
+                              ? '${epilogues[i - 1].event.title} 다음에 와요'
+                              : '조건이 맞으면 와요',
+                        },
+                        if (e.photos > 0) '사진 ${e.photos}장',
+                      ].join(' · '),
+                      action: switch (e.status) {
+                        EpilogueStatus.seen => '다시 보기',
+                        EpilogueStatus.next => '톡 오기',
+                        EpilogueStatus.waiting => '대기',
+                      },
+                      onTap: switch (e.status) {
+                        EpilogueStatus.seen => () => replay(e.event.id),
+                        EpilogueStatus.next => () {
+                            Navigator.pop(sheetContext);
+                            onEpilogue();
+                          },
+                        EpilogueStatus.waiting => null,
+                      },
+                    ),
+                ],
+                if (replayable.isNotEmpty) ...[
+                  _sectionTitle('다시 볼 수 있는 대화'),
+                  const Text('고른 대화를 처음부터 다시 봐요. 안 고른 선택지는 ✨로 보여요.',
+                      style: AppTextStyles.messageTime),
+                  for (final r in replayable)
+                    ListTile(
+                      key: ValueKey('replay_${r.event.id}'),
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.auto_awesome_rounded, color: accent),
+                      title: Text(r.event.title,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                          [
+                            if (r.missed) '특별한 시간 톡 · 아직 못 받음'
+                            else if (r.event.isSpecial) '특별한 시간 톡',
+                            if (r.unseenChoices > 0) '안 고른 선택지 ${r.unseenChoices}개',
+                          ].join(' · '),
+                          style: AppTextStyles.messageTime),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => replay(r.event.id),
+                    ),
+                ],
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    onRestart();
+                  },
+                  icon: const Icon(Icons.replay_rounded, size: 18),
+                  label: const Text('처음부터 다시 하기 (안 본 선택지에 반짝이)'),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 4),
+        child: Text(text, style: AppTextStyles.speakerName),
+      );
+
+  Widget _row({
+    required Key key,
+    required String title,
+    required String subtitle,
+    required String action,
+    required VoidCallback? onTap,
+  }) =>
+      Padding(
+        key: key,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.choiceButton
+                          .copyWith(color: AppColors.textPrimary)),
+                  Text(subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.messageTime),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            onTap == null
+                ? Text(action, style: AppTextStyles.messageTime)
+                : FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: accent,
+                        backgroundColor:
+                            Color.lerp(AppColors.surfaceWhite, accent, 0.12)),
+                    onPressed: onTap,
+                    child: Text(action),
+                  ),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final cleared = progress == StoryProgress.cleared;
-    final message = switch (progress) {
-      StoryProgress.cleared =>
-        '${endingTitle == null || endingTitle!.isEmpty ? '공략 완료' : '공략 완료 · $endingTitle'}'
-            '${totalPhotos > 0 ? '\n받은 사진 $received / $totalPhotos장' : ''}',
-      StoryProgress.stuck => '다른 선택을 해 보면 이야기가 이어질지도 몰라요',
-      StoryProgress.playing => '',
-    };
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    if (progress != StoryProgress.cleared) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('다른 선택을 해 보면 이야기가 이어질지도 몰라요',
+                textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: onRestart,
+              icon: const Icon(Icons.replay_rounded, size: 18),
+              label: const Text('처음부터 다시 하기'),
+            ),
+          ],
+        ),
+      );
+    }
+    final endingTitle = ending?.title.trim() ?? '';
+    final opened = epilogues.where((e) => e.status != EpilogueStatus.waiting).length;
+    final epiloguePhotos = epilogues.fold<int>(0, (n, e) => n + e.photos);
+    final canCollect = replayable.isNotEmpty || missed.isNotEmpty;
+    Widget stat(String value, String label) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: Color.lerp(AppColors.surfaceWhite, accent, 0.07),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Text(value,
+                    style: AppTextStyles.choiceButton
+                        .copyWith(color: AppColors.textPrimary, fontSize: 16)),
+                Text(label, style: AppTextStyles.messageTime),
+              ],
+            ),
+          ),
+        );
+    Widget line(Key key, IconData icon, String title, String trailing,
+            VoidCallback onTap) =>
+        InkWell(
+          key: key,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: accent),
+                const SizedBox(width: 8),
+                Expanded(child: Text(title, style: AppTextStyles.choiceButton.copyWith(color: AppColors.textPrimary))),
+                Text(trailing, style: AppTextStyles.messageTime),
+                const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.textMuted),
+              ],
+            ),
+          ),
+        );
+    return Container(
+      key: const ValueKey('run_end_panel'),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceWhite,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Color.lerp(AppColors.surfaceWhite, accent, 0.35)!),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.systemNotice,
-          ),
+          Text('공략 완료', textAlign: TextAlign.center, style: AppTextStyles.messageTime.copyWith(color: accent, fontWeight: FontWeight.w700)),
+          if (endingTitle.isNotEmpty)
+            Text(endingTitle,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.appBarTitle.copyWith(fontSize: 17)),
           const SizedBox(height: 8),
-          if (cleared && replayable.isNotEmpty) ...[
-            OutlinedButton.icon(
-              key: const ValueKey('replay_button'),
-              style: OutlinedButton.styleFrom(
-                  foregroundColor: accent, side: BorderSide(color: accent)),
-              onPressed: () => _pickReplay(context),
-              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-              label: Text(received < totalPhotos
-                  ? '못 받은 사진 모으기 (안 본 갈래 다시 보기)'
-                  : '안 본 갈래 다시 보기'),
+          Row(
+            children: [
+              stat('$eventsDone / $eventsTotal', '호감도 이벤트'),
+              if (totalPhotos > 0) ...[
+                const SizedBox(width: 8),
+                stat('$received / $totalPhotos', '앨범 사진'),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (canCollect)
+            line(
+              const ValueKey('replay_button'),
+              Icons.auto_awesome_rounded,
+              _missedPhotos > 0 ? '못 받은 사진 모으기' : '안 본 갈래 다시 보기',
+              _missedPhotos > 0 ? '$_missedPhotos장' : '',
+              () => _openMissed(context),
             ),
-            const SizedBox(height: 6),
-          ],
-          ElevatedButton.icon(
+          if (epilogues.isNotEmpty)
+            line(
+              const ValueKey('epilogue_button'),
+              Icons.mark_chat_unread_outlined,
+              '공략 후 이야기 열림',
+              '$opened개${epiloguePhotos > 0 ? ' · 사진 $epiloguePhotos장' : ''}',
+              () => _openMissed(context),
+            ),
+          if (ending != null)
+            line(
+              const ValueKey('ending_replay'),
+              Icons.favorite_border_rounded,
+              '엔딩 다시 보기',
+              '',
+              () => onReplay(ending!.id),
+            ),
+          TextButton.icon(
             onPressed: onRestart,
             icon: const Icon(Icons.replay_rounded, size: 18),
-            label: Text(cleared ? '처음부터 다시 하기 (안 본 선택지는 ✨)' : '처음부터 다시 하기'),
+            label: const Text('처음부터 다시 하기 (안 본 선택지는 ✨)'),
           ),
         ],
       ),
