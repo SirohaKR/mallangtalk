@@ -443,7 +443,8 @@ void main() {
     // 1x1 PNG
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
     final draft = ScenarioDraft.fromBundle(templateScenario());
-    final event = draft.events.first..photos.add(png);
+    final event = draft.events.first;
+    draft.addPhoto(png);
     // 사진함엔 사진 1장, 빈 자리 2곳(설명이 서로 다름) → 자동으로 못 붙임
     event.scenes.last.lines.addAll([LineDraft(photo: '필름 카메라 셀카'), LineDraft(photo: '노을 진 옥상')]);
     event.cutscene = '';
@@ -463,20 +464,21 @@ void main() {
     // 7단계 대화 카드에 사진 꼬리표
     await tester.tap(find.byKey(const ValueKey('studio_step_6')));
     await tester.pumpAndSettle();
-    expect(find.text('사진함 1장'), findsOneWidget);
     expect(find.text('사진 말풍선 0/2'), findsOneWidget);
 
     await tester.tap(find.text('저장'));
     await tester.pumpAndSettle();
     expect(find.text('사진을 안 고른 곳이 있어요'), findsOneWidget);
     expect(find.textContaining('"필름 카메라 셀카"'), findsOneWidget);
-    expect(find.text('수정하러 가기'), findsNWidgets(2));
+    // 사진함에 안 쓴 사진이 있으면 다른 대화의 빈 컷씬도 알려 줌
+    expect(find.text('수정하러 가기'), findsNWidgets(4));
 
-    await tester.tap(find.text('수정하러 가기').last);
+    await tester.tap(find.text('수정하러 가기').at(1));
     await tester.pumpAndSettle();
     expect(find.text('사진을 안 고른 곳이 있어요'), findsNothing);
     // 대사 탭에서 그 대화가 열리고, 고를 말풍선이 화면에 보임
     expect(find.text('이 대화의 사진'), findsOneWidget);
+    expect(find.text('사진함 열기'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '노을 진 옥상'), findsOneWidget);
     expect(find.text('사진 말풍선 · 사진함에 사진이 있는데 아직 안 골랐어요'), findsNWidgets(2));
     final target = tester.getRect(find.widgetWithText(TextFormField, '노을 진 옥상'));

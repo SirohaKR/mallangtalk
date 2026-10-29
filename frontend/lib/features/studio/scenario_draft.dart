@@ -92,12 +92,8 @@ class EventDraft {
   String synopsis;
   /// 컷씬(앨범 장면) 설명. 설명과 사진이 둘 다 비면 컷씬 없음
   String cutscene;
-  /// 컷씬으로 보여 줄 진짜 사진 (data: 주소, photos 중 하나). 비우면 설명 카드
+  /// 컷씬으로 보여 줄 진짜 사진 (data: 주소, 캐릭터 사진함 사진 중 하나). 비우면 설명 카드
   String cutsceneImage;
-  /// 이 이벤트에 올려 둔 사진들 (data: 주소). 컷씬과 사진 말풍선이 여기서 골라 씀
-  final List<String> photos;
-  /// 사진함 사진별 '보낼 때' (사진 주소 → 감정·상황·키워드). 자유대화에서 AI가 맞을 때 골라 보냄
-  final Map<String, PhotoTrigger> photoTriggers;
   int fromHour;
   int toHour;
   String date;
@@ -125,28 +121,7 @@ class EventDraft {
     this.keptMin = 0,
     this.keptStage = '',
     List<SceneDraft>? scenes,
-    List<String>? photos,
-    Map<String, PhotoTrigger>? photoTriggers,
-  })  : scenes = scenes ?? [SceneDraft()],
-        photos = photos ?? [],
-        photoTriggers = photoTriggers ?? {};
-
-  /// 사진을 사진함에 넣음 (이미 있으면 그대로)
-  void addPhoto(String image) {
-    if (image.isNotEmpty && !photos.contains(image)) photos.add(image);
-  }
-
-  /// 사진함에서 빼고, 그 사진을 쓰던 컷씬·말풍선도 비움
-  void removePhoto(String image) {
-    photos.remove(image);
-    photoTriggers.remove(image);
-    if (cutsceneImage == image) cutsceneImage = '';
-    for (final s in scenes) {
-      for (final l in s.lines) {
-        if (l.photoImage == image) l.photoImage = '';
-      }
-    }
-  }
+  }) : scenes = scenes ?? [SceneDraft()];
 
   /// 설명이나 사진이 있으면 컷씬 (일상 대화는 컷씬 없음)
   bool get hasCutscene =>
@@ -162,12 +137,6 @@ class EventDraft {
           for (final l in scenes[i].lines)
             if (l.isPhoto) PhotoSlot(this, line: l, sceneIndex: i),
       ];
-
-  /// 사진함에 있지만 컷씬·말풍선 어디에도 안 쓴 사진
-  List<String> get unusedPhotos {
-    final used = {for (final s in photoSlots) s.image};
-    return [for (final p in photos) if (!used.contains(p)) p];
-  }
 }
 
 /// 사진이 들어갈 자리 하나: 컷씬(line이 null)이거나 사진 말풍선
@@ -222,6 +191,12 @@ class ScenarioDraft {
   final List<StageDraft> stages = [];
   final List<EventDraft> events = [];
 
+  /// 캐릭터 사진함: 이 캐릭터에 올린 사진 전부 (data: 주소). 컷씬과 사진 말풍선이 여기서 골라 씀
+  final List<String> photos = [];
+
+  /// 사진함 사진별 설명·'보낼 때' (사진 주소 → 설명·감정·상황·키워드)
+  final Map<String, PhotoTrigger> photoTriggers = {};
+
   ScenarioDraft({String? id}) : id = id ?? 'char_${DateTime.now().millisecondsSinceEpoch}';
 
   /// 빈 초안 (단계 3개, 첫 이벤트 하나)
@@ -247,6 +222,44 @@ class ScenarioDraft {
   }
 
   List<String> get stageNames => [for (final s in stages) if (s.name.trim().isNotEmpty) s.name.trim()];
+
+  // ───────────────────────── 사진함 ─────────────────────────
+
+  /// 사진을 사진함에 넣음 (이미 있으면 그대로)
+  void addPhoto(String image) {
+    if (image.isNotEmpty && !photos.contains(image)) photos.add(image);
+  }
+
+  /// 사진함에서 빼고, 그 사진을 쓰던 컷씬·말풍선도 비움
+  void removePhoto(String image) {
+    photos.remove(image);
+    photoTriggers.remove(image);
+    for (final s in photoSlots) {
+      if (s.image == image) s.image = '';
+    }
+  }
+
+  /// 사진이 들어갈 자리 전부 (대화 순서대로)
+  List<PhotoSlot> get photoSlots => [for (final e in events) ...e.photoSlots];
+
+  /// 이 사진을 쓰는 자리
+  List<PhotoSlot> slotsUsing(String image) => [for (final s in photoSlots) if (s.image == image) s];
+
+  /// 사진함에 있지만 컷씬·말풍선 어디에도 안 쓴 사진
+  List<String> get unusedPhotos {
+    final used = {for (final s in photoSlots) s.image};
+    return [for (final p in photos) if (!used.contains(p)) p];
+  }
+
+  /// 사진 설명: 적어 둔 설명, 없으면 이 사진을 쓰는 첫 자리의 설명
+  String captionOf(String image) {
+    final own = photoTriggers[image]?.caption.trim() ?? '';
+    if (own.isNotEmpty) return own;
+    for (final s in slotsUsing(image)) {
+      if (s.hasOwnLabel) return s.label;
+    }
+    return '';
+  }
 
   // ───────────────────────── 시나리오 → 초안 ─────────────────────────
 
@@ -281,6 +294,16 @@ class ScenarioDraft {
     final events = [...bundle.events]..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     for (final e in events) {
       d.events.add(eventFromBundle(bundle, e));
+    }
+    // 사진함: 캐릭터 사진함 + 예전 파일의 이벤트별 사진함 + 컷씬·말풍선이 쓰던 사진을 한곳에
+    for (final ref in [...bundle.photoRefs, for (final e in events) ...e.photoRefs]) {
+      if (bundle.resolveImage(ref) case final image?) d.addPhoto(image);
+    }
+    for (final s in d.photoSlots) {
+      d.addPhoto(s.image);
+    }
+    for (final entry in [...bundle.photoTriggers.entries, for (final e in events) ...e.photoTriggers.entries]) {
+      if (bundle.resolveImage(entry.key) case final image?) d.photoTriggers.putIfAbsent(image, () => entry.value);
     }
     return d;
   }
@@ -326,20 +349,6 @@ class ScenarioDraft {
         bundle.character.stageFor(e.requiredAffection)?.stageLabel ??
         '';
     final cutsceneImage = bundle.cutsceneImageFor(e) ?? '';
-    // 사진함: 이벤트에 올려 둔 사진 + 컷씬·말풍선이 쓰던 사진 (예전 파일은 사진함이 없음)
-    final photos = <String>[
-      for (final ref in e.photoRefs)
-        if (bundle.resolveImage(ref) case final image?) image,
-    ];
-    void keep(String image) {
-      if (image.isNotEmpty && !photos.contains(image)) photos.add(image);
-    }
-    keep(cutsceneImage);
-    for (final scene in scenes.values) {
-      for (final l in scene.lines) {
-        keep(l.photoImage);
-      }
-    }
     return EventDraft(
       id: e.id,
       kind: e.isEnding
@@ -357,11 +366,6 @@ class ScenarioDraft {
       synopsis: e.synopsis,
       cutscene: e.cutscenePhotoTitle ?? '',
       cutsceneImage: cutsceneImage,
-      photos: photos,
-      photoTriggers: {
-        for (final entry in e.photoTriggers.entries)
-          if (bundle.resolveImage(entry.key) case final image?) image: entry.value,
-      },
       fromHour: e.realTime?.fromHour ?? 22,
       toHour: e.realTime?.toHour ?? 2,
       date: e.realTime?.date ?? '',
@@ -460,15 +464,6 @@ class ScenarioDraft {
       cutsceneImageUrl: hasCutscene ? imageRef(e.cutsceneImage) : null,
       // 컷씬 장면을 안 골랐으면 첫 장면에서
       cutsceneTriggerStep: hasCutscene ? (cutsceneIndex < 0 ? 0 : cutsceneIndex) + 1 : null,
-      photoRefs: [
-        for (final p in e.photos)
-          if (imageRef(p) case final ref?) ref,
-      ],
-      photoTriggers: {
-        for (final entry in e.photoTriggers.entries)
-          if (entry.value.isSet && e.photos.contains(entry.key))
-            if (imageRef(entry.key) case final ref?) ref: entry.value,
-      },
       realTime: e.kind == DraftKind.special
           ? RealTimeWindow(fromHour: e.fromHour, toHour: e.toHour, date: e.date.trim().isEmpty ? null : e.date.trim())
           : null,
@@ -541,7 +536,21 @@ class ScenarioDraft {
         nodes[n.id] = n;
       }
     }
-    return ScenarioBundle(character: buildCharacter(), events: events, nodes: nodes, images: collectImages());
+    return ScenarioBundle(
+      character: buildCharacter(),
+      events: events,
+      nodes: nodes,
+      images: collectImages(),
+      photoRefs: [
+        for (final p in photos)
+          if (imageRef(p) case final ref?) ref,
+      ],
+      photoTriggers: {
+        for (final entry in photoTriggers.entries)
+          if (entry.value.hasData && photos.contains(entry.key))
+            if (imageRef(entry.key) case final ref?) ref: entry.value,
+      },
+    );
   }
 
   /// 올린 사진(data: 주소)을 캐릭터 파일 안의 'img:번호'로. 같은 사진은 같은 번호라 한 번만 저장됨.
@@ -563,10 +572,10 @@ class ScenarioDraft {
 
   /// 초안에 올린 사진을 모두 모아 번호 → 사진 표로
   Map<String, String> collectImages() => {
+        for (final p in photos)
+          if (p.startsWith('data:')) imageId(p): p,
         for (final e in events) ...{
           if (e.hasCutscene && e.cutsceneImage.startsWith('data:')) imageId(e.cutsceneImage): e.cutsceneImage,
-          for (final p in e.photos)
-            if (p.startsWith('data:')) imageId(p): p,
           for (final scene in e.scenes)
             for (final l in scene.lines)
               if (l.photoImage.startsWith('data:')) imageId(l.photoImage): l.photoImage,
@@ -629,13 +638,15 @@ class ScenarioDraft {
     return out;
   }
 
-  /// 설명 → 사진. 플레이할 때도 설명이 같은 컷씬·사진 말풍선은 사진을 같이 씀 (ScenarioBundle.photoFor)
+  /// 설명 → 사진. 플레이할 때도 설명이 같은 컷씬·사진 말풍선·사진함 사진은 사진을 같이 씀 (ScenarioBundle.photoFor)
   Map<String, String> _photosByLabel() {
     final map = <String, String>{};
-    for (final e in events) {
-      for (final s in e.photoSlots) {
-        if (s.filled && s.hasOwnLabel) map.putIfAbsent(s.label, () => s.image);
-      }
+    for (final s in photoSlots) {
+      if (s.filled && s.hasOwnLabel) map.putIfAbsent(s.label, () => s.image);
+    }
+    for (final p in photos) {
+      final caption = photoTriggers[p]?.caption.trim() ?? '';
+      if (caption.isNotEmpty) map.putIfAbsent(caption, () => p);
     }
     return map;
   }
@@ -657,41 +668,38 @@ class ScenarioDraft {
   }
 
   /// 저장하기 전에 빈 사진 자리를 채워 줌. 채운 자리 수를 돌려줌
-  /// 1) 설명이 같은 컷씬·사진 말풍선의 사진
-  /// 2) 이벤트 사진함에 안 쓴 사진이 1장 남고 빈 자리(같은 설명끼리는 한 자리)도 1곳이면 그 사진
+  /// 1) 설명이 같은 컷씬·사진 말풍선·사진함 사진의 사진
+  /// 2) 사진함에 안 쓴 사진이 1장 남고 빈 자리(같은 설명끼리는 한 자리)도 1곳이면 그 사진
   int autoLinkPhotos() {
     var linked = 0;
     final byLabel = _photosByLabel();
-    for (final e in events) {
-      for (final s in e.photoSlots) {
-        if (s.filled || !s.hasOwnLabel) continue;
-        final shared = byLabel[s.label];
-        if (shared == null) continue;
-        s.image = shared;
-        e.addPhoto(shared);
-        linked++;
-      }
-      final empty = [for (final s in e.photoSlots) if (!s.filled) s];
-      final unused = e.unusedPhotos;
-      if (empty.isEmpty || unused.length != 1) continue;
-      final groups = {for (final s in empty) s.hasOwnLabel ? s.label : identityHashCode(s)};
-      if (groups.length != 1) continue;
-      for (final s in empty) {
-        s.image = unused.single;
-        linked++;
-      }
+    for (final s in photoSlots) {
+      if (s.filled || !s.hasOwnLabel) continue;
+      final shared = byLabel[s.label];
+      if (shared == null) continue;
+      s.image = shared;
+      addPhoto(shared);
+      linked++;
+    }
+    final empty = [for (final s in photoSlots) if (!s.filled) s];
+    final unused = unusedPhotos;
+    if (empty.isEmpty || unused.length != 1) return linked;
+    final groups = {for (final s in empty) s.hasOwnLabel ? s.label : identityHashCode(s)};
+    if (groups.length != 1) return linked;
+    for (final s in empty) {
+      s.image = unused.single;
+      linked++;
     }
     return linked;
   }
 
-  /// 이벤트 사진함에 사진을 올려 놓고 아직 사진을 안 고른 컷씬·사진 말풍선 (플레이 때 설명 카드로 나옴)
+  /// 사진함에 안 쓴 사진이 있는데 아직 사진을 안 고른 컷씬·사진 말풍선 (플레이 때 설명 카드로 나옴)
   List<PhotoSlot> missingPhotos() {
+    if (unusedPhotos.isEmpty) return const [];
     final byLabel = _photosByLabel();
     return [
-      for (final e in events)
-        if (e.photos.isNotEmpty)
-          for (final s in e.photoSlots)
-            if (!s.filled && !(s.hasOwnLabel && byLabel.containsKey(s.label))) s,
+      for (final s in photoSlots)
+        if (!s.filled && !(s.hasOwnLabel && byLabel.containsKey(s.label))) s,
     ];
   }
 

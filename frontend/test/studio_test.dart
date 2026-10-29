@@ -121,42 +121,57 @@ void main() {
       expect(back.events.single.scenes.first.lines[1].photoImage, photo);
     });
 
-    test('저장할 때 사진 자리 맞추기: 같은 설명·남은 사진 1장은 자동 연결, 못 맞춘 곳은 알려 줌', () {
+    test('저장할 때 사진 자리 맞추기: 같은 설명(사진함 설명 포함)은 자동 연결, 못 맞춘 곳은 알려 줌', () {
       const p1 = 'data:image/png;base64,AAAA';
       const p2 = 'data:image/png;base64,BBBB';
       const p3 = 'data:image/png;base64,CCCC';
       final d = ScenarioDraft.blank()..name = '한결';
+      d
+        ..addPhoto(p1)
+        ..addPhoto(p2)
+        ..addPhoto(p3);
+      d.photoTriggers[p2] = const PhotoTrigger(caption: '두부 셀카');
       final first = d.events.single
         ..title = '첫 라떼'
         ..cutscene = '창가 자리의 라떼'
-        ..cutsceneImage = p1
-        ..photos.addAll([p1, p2]);
+        ..cutsceneImage = p1;
       final sameAsCut = LineDraft(photo: '창가 자리의 라떼');
       final selfie = LineDraft(photo: '두부 셀카');
       first.scenes.first.lines.addAll([sameAsCut, selfie]);
-      // 사진함에 사진 2장, 빈 자리 2곳이라 어느 게 맞는지 몰라서 못 붙임
-      final second = EventDraft(id: d.newEventId(), title: '야경', photos: [p2, p3], scenes: [
-        SceneDraft(lines: [LineDraft(photo: '한강 야경'), LineDraft(photo: '편의점 앞')]),
+      // 다른 대화에서도 같은 설명이면 붙음, 설명이 다른 빈 자리는 어느 사진인지 몰라서 못 붙임
+      final second = EventDraft(id: d.newEventId(), title: '야경', scenes: [
+        SceneDraft(lines: [LineDraft(photo: '한강 야경'), LineDraft(photo: '편의점 앞'), LineDraft(photo: '두부 셀카')]),
       ]);
-      // 사진함에 사진은 없으면 설명 카드로 두는 거라 안 알려 줌
-      final third = EventDraft(id: d.newEventId(), title: '설명만', scenes: [
-        SceneDraft(lines: [LineDraft(photo: '그냥 카드')]),
-      ]);
-      d.events.addAll([second, third]);
+      d.events.add(second);
 
       expect(d.sharedPhotoFor(first.photoSlots[1]), p1); // 같은 설명이라 플레이 땐 컷씬 사진이 나옴
-      expect(d.autoLinkPhotos(), 2);
+      expect(d.sharedPhotoFor(first.photoSlots[2]), p2); // 사진함에 단 설명
+      expect(d.autoLinkPhotos(), 3);
       expect(sameAsCut.photoImage, p1);
-      expect(selfie.photoImage, p2); // 남은 사진 1장, 빈 자리 1곳
+      expect(selfie.photoImage, p2);
+      expect(second.scenes.first.lines[2].photoImage, p2);
       final missing = d.missingPhotos();
       expect(missing.map((s) => s.label), ['한강 야경', '편의점 앞']);
       expect(missing.first.event, second);
       expect(missing.first.sceneIndex, 0);
       expect(missing.first.where, contains('장면 1'));
-      expect(first.unusedPhotos, isEmpty);
+      expect(d.unusedPhotos, [p3]);
+      expect(d.captionOf(p1), '창가 자리의 라떼');
 
       // 한 번 더 해도 그대로
       expect(d.autoLinkPhotos(), 0);
+
+      // 남은 사진 1장, 빈 자리(같은 설명끼리) 1곳이면 그 사진
+      second.scenes.first.lines.removeAt(1);
+      expect(d.autoLinkPhotos(), 1);
+      expect(second.scenes.first.lines.first.photoImage, p3);
+      expect(d.missingPhotos(), isEmpty);
+    });
+
+    test('사진함에 사진이 없으면 빈 자리는 설명 카드라 안 알려 줌', () {
+      final d = ScenarioDraft.blank()..name = '한결';
+      d.events.single.scenes.first.lines.add(LineDraft(photo: '그냥 카드'));
+      expect(d.missingPhotos(), isEmpty);
     });
 
     test('저장 전에 고칠 곳을 알려 줌', () {
@@ -242,22 +257,51 @@ void main() {
       expect(back.events.firstWhere((e) => e.id == 'daily_rain').follows, 'evt_dubu_missing');
     });
 
-    test('사진함 사진의 자유대화 보낼 때(감정·상황·키워드)도 사진 번호로 저장되고 다시 열림', () {
+    test('캐릭터 사진함 사진의 설명·보낼 때도 사진 번호로 저장되고 다시 열림', () {
       const image = 'data:image/png;base64,iVBORw0KGgo=';
+      const story = 'data:image/png;base64,c3Rvcnk=';
       final draft = ScenarioDraft.fromBundle(loadSampleBundle());
-      final event = draft.events.first;
-      event.addPhoto(image);
-      event.photoTriggers[image] = const PhotoTrigger(mood: '설렘', situation: '보고 싶다고 할 때', keywords: ['셀카']);
+      draft
+        ..addPhoto(image)
+        ..addPhoto(story);
+      draft.photoTriggers[image] = const PhotoTrigger(mood: '설렘', situation: '보고 싶다고 할 때', keywords: ['셀카']);
+      // 스토리에만: 감정을 적어 둬도 자유대화에서는 안 보냄, 설명은 남음
+      draft.photoTriggers[story] = const PhotoTrigger(caption: '비 오는 창가', mood: '서운함', storyOnly: true);
       final bundle = ScenarioBundle.fromJson(jsonDecode(jsonEncode(draft.toBundle().toJson())) as Map<String, dynamic>);
-      final saved = bundle.events.firstWhere((e) => e.id == event.id);
-      final ref = saved.photoTriggers.keys.single;
+      expect(bundle.photoRefs, hasLength(2));
+      expect(bundle.events.every((e) => e.photoRefs.isEmpty), isTrue);
+      final ref = bundle.photoRefs.first;
       expect(ref, startsWith(ScenarioBundle.imagePrefix));
-      expect(saved.photoTriggers[ref]!.keywords, ['셀카']);
+      expect(bundle.photoTriggers[ref]!.keywords, ['셀카']);
       expect(bundle.freeTalkPhotos.single.trigger.mood, '설렘');
-      final back = ScenarioDraft.fromBundle(bundle).events.firstWhere((e) => e.id == event.id);
+      expect(bundle.freeTalkPhotos.single.event, isNull);
+      expect(bundle.photoFor(null, '비 오는 창가'), story); // 같은 설명의 말풍선에 저절로 나옴
+      final back = ScenarioDraft.fromBundle(bundle);
       expect(back.photoTriggers[image]?.situation, '보고 싶다고 할 때');
+      expect(back.photoTriggers[story]?.storyOnly, isTrue);
       back.removePhoto(image);
-      expect(back.photoTriggers, isEmpty);
+      expect(back.photoTriggers.containsKey(image), isFalse);
+    });
+
+    test('예전 파일의 이벤트별 사진함은 캐릭터 사진함으로 합쳐짐', () {
+      const image = 'data:image/png;base64,iVBORw0KGgo=';
+      final draft = ScenarioDraft.fromBundle(loadSampleBundle())..addPhoto(image);
+      draft.photoTriggers[image] = const PhotoTrigger(mood: '설렘');
+      final json = draft.toBundle().toJson();
+      // 예전 모양: 사진함이 첫 이벤트 안에 있음
+      final events = json['events'] as List;
+      (events.first as Map<String, dynamic>)
+        ..['photos'] = json.remove('photos')
+        ..['photo_triggers'] = json.remove('photo_triggers');
+      final old = ScenarioBundle.fromJson(jsonDecode(jsonEncode(json)) as Map<String, dynamic>);
+      expect(old.photoRefs, isEmpty);
+      expect(old.freeTalkPhotos.single.event?.id, old.events.first.id);
+      final back = ScenarioDraft.fromBundle(old);
+      expect(back.photos, contains(image));
+      expect(back.photoTriggers[image]?.mood, '설렘');
+      final saved = back.toBundle();
+      expect(saved.photoRefs, hasLength(1));
+      expect(saved.events.every((e) => e.photoTriggers.isEmpty), isTrue);
     });
 
     test('AI에게 넘기는 설정에는 세계관·비밀·유저 설정까지 들어감', () {
