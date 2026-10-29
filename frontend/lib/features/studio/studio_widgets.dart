@@ -33,8 +33,11 @@ class EditField extends StatelessWidget {
     final field = TextFormField(
       key: ValueKey(fieldKey),
       initialValue: value,
+      // 글이 길어지면 칸이 아래로 늘어남. 한 줄 칸은 줄바꿈 없이 감싸서 보여 주고 엔터는 '완료'
       minLines: lines,
-      maxLines: lines == 1 ? 1 : lines + 6,
+      maxLines: null,
+      keyboardType: lines == 1 ? TextInputType.text : TextInputType.multiline,
+      textInputAction: lines == 1 ? TextInputAction.done : TextInputAction.newline,
       maxLength: maxLength,
       onChanged: onChanged,
       decoration: InputDecoration(
@@ -327,11 +330,7 @@ class PhotoTag extends StatelessWidget {
 
 /// 오류·주의 목록 카드
 class ProblemList extends StatelessWidget {
-  const ProblemList(
-      {super.key,
-      required this.title,
-      required this.items,
-      this.isError = false});
+  const ProblemList({super.key, required this.title, required this.items, this.isError = false});
 
   final String title;
   final List<String> items;
@@ -351,18 +350,14 @@ class ProblemList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: AppTextStyles.speakerName
-                  .copyWith(color: AppColors.textPrimary)),
+          Text(title, style: AppTextStyles.speakerName.copyWith(color: AppColors.textPrimary)),
           const SizedBox(height: 4),
           for (final item in items.take(12))
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text('• $item', style: AppTextStyles.systemNotice),
             ),
-          if (items.length > 12)
-            Text('그 외 ${items.length - 12}개',
-                style: AppTextStyles.systemNotice),
+          if (items.length > 12) Text('그 외 ${items.length - 12}개', style: AppTextStyles.systemNotice),
         ],
       ),
     );

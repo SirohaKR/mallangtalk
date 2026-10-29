@@ -821,6 +821,10 @@ class _InputBar extends StatelessWidget {
                   focusNode: focusNode,
                   autofocus: autofocus,
                   scrollPadding: EdgeInsets.zero,
+                  // 긴 메시지는 칸이 5줄까지 늘어나고, 엔터는 그대로 보내기
+                  minLines: 1,
+                  maxLines: 5,
+                  keyboardType: TextInputType.text,
                   onChanged: onChanged,
                   textInputAction: TextInputAction.send,
                   decoration: const InputDecoration(

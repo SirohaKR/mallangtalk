@@ -177,7 +177,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('create_manual')));
     await tester.pumpAndSettle();
-    expect(find.text('1 / 8'), findsOneWidget);
+    expect(find.text('1 / 9'), findsOneWidget);
     appRouter.go('/my'); // 만들기 화면을 닫아 자동 저장 타이머 정리
     await tester.pumpAndSettle();
   });

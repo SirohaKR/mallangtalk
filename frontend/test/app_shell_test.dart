@@ -381,13 +381,13 @@ void main() {
       child: const MallangTalkApp(),
     ));
     await settle(tester);
-    expect(find.text('1 / 8'), findsOneWidget);
+    expect(find.text('1 / 9'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '서이준'), findsOneWidget);
 
     // 한 화면에 한 단계씩 '다음'으로 넘김: 기본 → 대표색 → 프로필 … 이야기(넓은 칸 + 글자 수)
     await tester.tap(find.byKey(const ValueKey('studio_next')));
     await tester.pumpAndSettle();
-    expect(find.text('2 / 8'), findsOneWidget);
+    expect(find.text('2 / 9'), findsOneWidget);
     expect(find.byKey(const ValueKey('studio_color_preview')), findsOneWidget);
     // 무지개 버튼 → 끌어서 색 고르기 → 직접 고르기 칸에 들어감
     await tester.tap(find.byKey(const ValueKey('studio_color_rainbow')));
@@ -402,13 +402,13 @@ void main() {
     expect(find.widgetWithText(TextFormField, picked), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('studio_next')));
     await tester.pumpAndSettle();
-    expect(find.text('3 / 8'), findsOneWidget);
+    expect(find.text('3 / 9'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '시각디자인과 4학년'), findsOneWidget);
     await tester.tap(find.text('여성'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('studio_step_4')));
     await tester.pumpAndSettle();
-    expect(find.text('5 / 8'), findsOneWidget);
+    expect(find.text('5 / 9'), findsOneWidget);
     final setting = templateScenario().character.worldviewPrompt;
     expect(find.text('${setting.characters.length}자'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, setting), '$setting 커피는 늘 블랙.');

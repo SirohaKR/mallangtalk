@@ -100,6 +100,33 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('작가 코멘트·공개 여부는 사진함 다음 마지막 단계에 따로, 긴 글은 칸이 늘어남', (tester) async {
+    final draft = ScenarioDraft.fromBundle(templateScenario());
+    await openStudio(tester, draft);
+    // 8단계 사진함엔 없음
+    await tester.tap(find.byKey(const ValueKey('studio_step_7')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('studio_publish')), findsNothing);
+    expect(find.text('다음: 공개'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('studio_next')));
+    await tester.pumpAndSettle();
+    expect(find.text('9 / 9'), findsOneWidget);
+    expect(find.byKey(const ValueKey('studio_publish')), findsOneWidget);
+    final comment = find.descendant(
+        of: find.ancestor(of: find.text('작가 코멘트 · 상세 화면 맨 아래'), matching: find.byType(Column)).first,
+        matching: find.byType(TextFormField));
+    final before = tester.getSize(comment).height;
+    await tester.enterText(comment, List.filled(14, '긴 코멘트 한 줄').join('\n'));
+    await tester.pump();
+    expect(tester.getSize(comment).height, greaterThan(before * 2));
+    await tester.tap(find.byKey(const ValueKey('studio_publish')));
+    await tester.pump();
+    final saved = await savedDraft(tester);
+    expect(saved.authorComment, startsWith('긴 코멘트 한 줄'));
+    expect(saved.unlisted, isTrue);
+    await close(tester);
+  });
+
   testWidgets('7단계 AI로 생성하기: 빈 대화만 / 전부 새로 / 골라서와 예상 호출 수를 보여 줌', (tester) async {
     final draft = ScenarioDraft.fromBundle(templateScenario());
     draft.events.add(EventDraft(id: draft.newEventId(), title: '빈 대화', stage: draft.stageNames.first));
