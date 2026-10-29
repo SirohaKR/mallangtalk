@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:mallangtalk/app.dart';
 import 'package:mallangtalk/core/router/app_router.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
+import 'package:mallangtalk/features/chat/chat_screen.dart';
 import 'package:mallangtalk/features/discover/discover_screen.dart';
 import 'package:mallangtalk/features/discover/gallery_card.dart';
 import 'package:mallangtalk/features/library/character_library.dart';
@@ -169,6 +172,11 @@ void main() {
     expect(find.text('새 말랑이 만들기'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('my_create')));
     await tester.pumpAndSettle();
+    expect(find.text('어떤 말랑이를 만들까요?'), findsOneWidget); // 새로 만들 땐 종류부터 고름
+    await tester.tap(find.byKey(const ValueKey('create_story')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('create_manual')));
+    await tester.pumpAndSettle();
     expect(find.text('1 / 8'), findsOneWidget);
     appRouter.go('/my'); // 만들기 화면을 닫아 자동 저장 타이머 정리
     await tester.pumpAndSettle();
@@ -228,5 +236,54 @@ void main() {
     await tester.pump();
     expect(find.text('최근 검색'), findsOneWidget);
     expect(find.byKey(const ValueKey('recent_말랑')), findsOneWidget);
+  });
+
+  testWidgets('알림(종): 안 읽은 톡이 있는 대화방을 모아 보여 주고 누르면 그 방으로', (tester) async {
+    final free = freeRoomId(dohaId);
+    final run = SavedRun(
+      affection: 0,
+      flags: const [],
+      completedEventIds: const [],
+      messages: [
+        ChatMessageLog(
+          id: 'm1',
+          isUser: false,
+          speakerCharacterId: dohaId,
+          speakerName: '윤도하',
+          text: '뭐 해?',
+          timestamp: DateTime(2026, 10, 22, 14),
+        ),
+      ],
+      seenMessageCount: 0,
+    );
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'chat_rooms_v1': [free],
+      'nickname_$dohaId': '다홍',
+      'run_$free': jsonEncode(run.toJson()),
+    });
+    appRouter.go('/discover');
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        builtinBundlesProvider.overrideWith((ref) async => [loadSampleBundle()]),
+        galleryProvider.overrideWith((ref) async => []),
+        sharedPreferencesProvider.overrideWith((ref) => SharedPreferences.getInstance()),
+        clockProvider.overrideWithValue(testNow),
+      ],
+      child: const MallangTalkApp(),
+    ));
+    await settle(tester);
+    final bell = find.byKey(const ValueKey('alert_bell'));
+    expect(find.descendant(of: bell, matching: find.text('1')), findsOneWidget);
+    await tester.tap(bell);
+    await tester.pumpAndSettle();
+    expect(find.text('윤도하 · 자유대화'), findsOneWidget);
+    expect(find.text('뭐 해?'), findsOneWidget);
+    await tester.tap(find.byKey(ValueKey('alert_$free')));
+    await settle(tester);
+    expect(find.byType(ChatScreen), findsOneWidget);
+    appRouter.go('/discover');
+    await settle(tester);
   });
 }

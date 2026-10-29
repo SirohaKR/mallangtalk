@@ -7,6 +7,8 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../library/character_library.dart';
+import '../chat/chat_notifier.dart';
+import '../chat/start_chat.dart';
 import 'gallery_card.dart';
 
 /// 새로 올라온 말랑이 정렬
@@ -86,7 +88,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             : 2;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('말랑이 찾기')),
+      appBar: AppBar(title: const Text('말랑이 찾기'), actions: const [_AlertBell(), SizedBox(width: 6)]),
       body: Center(
         child: ConstrainedBox(
           constraints: AppSpacing.pageConstraints(context),
@@ -846,6 +848,86 @@ class _CreatorScreenState extends ConsumerState<CreatorScreen> {
                     },
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 알림(종): 말랑이들이 보낸 안 읽은 톡을 모아 보여 줌. 누르면 그 대화방으로 (와이어프레임 1-1)
+class _AlertBell extends ConsumerWidget {
+  const _AlertBell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rooms = ref.watch(chatRoomsProvider);
+    final unread = [
+      for (final id in rooms)
+        if (ref.watch(chatRoomProvider(id).select((s) => s.unreadCount)) > 0) id
+    ];
+    final total = unread.fold<int>(0, (n, id) => n + ref.read(chatRoomProvider(id)).unreadCount);
+    return IconButton(
+      key: const ValueKey('alert_bell'),
+      tooltip: '알림',
+      onPressed: () => _open(context, ref, unread),
+      icon: Badge(
+        isLabelVisible: total > 0,
+        label: Text('$total'),
+        backgroundColor: AppColors.primaryPink,
+        child: Icon(total > 0 ? Icons.notifications_rounded : Icons.notifications_none_rounded),
+      ),
+    );
+  }
+
+  void _open(BuildContext context, WidgetRef ref, List<String> unread) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.surfaceWhite,
+      constraints: const BoxConstraints(maxWidth: 560),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('알림', style: AppTextStyles.appBarTitle),
+              const SizedBox(height: 8),
+              if (unread.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('새로 온 톡이 없어요', textAlign: TextAlign.center, style: AppTextStyles.systemNotice),
+                ),
+              for (final id in unread)
+                Builder(builder: (_) {
+                  final room = ref.read(chatRoomProvider(id));
+                  final last = room.lastBubble;
+                  return ListTile(
+                    key: ValueKey('alert_$id'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: CharacterAvatar(character: room.character, radius: 22),
+                    title: Text(isFreeRoom(id) ? '${room.character.name} · 자유대화' : room.character.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      last == null ? '' : (last.hasPhoto && last.text.isEmpty ? '사진' : last.text),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.messageTime,
+                    ),
+                    trailing: Badge(
+                      label: Text('${room.unreadCount}'),
+                      backgroundColor: AppColors.primaryPink,
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      openChat(context, room.character, roomId: id);
+                    },
+                  );
+                }),
             ],
           ),
         ),
