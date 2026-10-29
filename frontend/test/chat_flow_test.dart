@@ -364,6 +364,42 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('공략 뒤 대화가 이어지는 동안엔 말풍선 사이에 공략 완료 패널이 안 뜸', (tester) async {
+    final bundle = loadSampleBundle();
+    final all = [
+      for (final e in bundle.events)
+        if (e.isAffectionEvent || e.isDaily || e.isEnding) e.id,
+    ];
+    final run = SavedRun(
+      affection: 100,
+      flags: const [],
+      completedEventIds: [for (final id in all) if (id != 'daily_rain') id],
+      messages: const [],
+      cleared: true,
+    );
+    SharedPreferences.setMockInitialValues({...fastTempo, 'run_$dohaId': jsonEncode(run.toJson())});
+    final container = await openDohaChat(tester, bundle: bundle);
+    ChatRoomState state() => container.read(chatRoomProvider(dohaId));
+    final panel = find.textContaining('처음부터 다시 하기');
+
+    // 대화가 끝날 때까지 잘게 넘기며, 선택지를 기다리는 때 말고는 패널이 한 번도 안 보여야 함
+    for (var i = 0; i < 400; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      final s = state();
+      if (s.currentChoices.isNotEmpty) {
+        expect(panel, findsNothing);
+        await tester.tap(find.widgetWithText(ElevatedButton, s.currentChoices.first.buttonLabel));
+        continue;
+      }
+      if (!s.isScriptPlaying) break;
+      expect(panel, findsNothing, reason: '대화 도중 말풍선 사이에 패널이 뜸');
+    }
+    expect(state().isScriptPlaying, isFalse);
+    expect(state().completedEventIds, contains('daily_rain'));
+    await tester.pump();
+    expect(panel, findsOneWidget);
+  });
+
   testWidgets('대화가 끝나면 바로 다음 장면으로 안 넘어가고, 쉬었다가 시간 표시 → 또 잠깐 뒤 첫 톡', (tester) async {
     // 보통 대화 속도(1배)
     SharedPreferences.setMockInitialValues({...fastTempo, 'tempo_$dohaId': '1.0'});

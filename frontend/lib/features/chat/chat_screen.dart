@@ -391,6 +391,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   !service &&
                   chatState.progress != StoryProgress.playing &&
                   !chatState.isReplaying &&
+                  !chatState.isScriptPlaying &&
                   chatState.currentChoices.isEmpty &&
                   !chatState.isCharacterTyping)
                 _RunEndPanel(
