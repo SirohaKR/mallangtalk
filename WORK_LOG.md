@@ -341,3 +341,26 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
 - 검증: node --test frontend/test/web_viewport_test.mjs 5개 통과(새 테스트 2개: viewport 값, 요소 스크롤 되돌림·textarea 제외). 헤드리스 크로미움에서 viewport 값 적용 확인.
   가상 키보드는 헤드리스 브라우저로 흉내 낼 수 없어 실제 폰 확인은 못 함. flutter 빌드·테스트는 안 함(다트 코드 변경 없음, CI 웹 빌드로 확인 예정).
 - 다음: 쨋뀨가 폰에서 새 빌드로 작가 코멘트·다른 단계 입력칸·채팅 입력칸 확인. 그래도 밀리면 브라우저 종류(크롬/삼성 인터넷) 알려 주면 다음 방법 시도.
+
+## 2026-10-29 / 29. 새 버전이 나오면 앱이 알아서 바뀌게
+
+- 요청: 새로 업데이트할 때마다 사용자 앱도 자연스럽게 업데이트되어야 함(가장 급함).
+- 원인: PR #15로 앱 파일은 no-cache라 '처음부터 새로 열 때'는 새 버전을 받지만, 폰 홈 화면에 깔린 앱은 껐다 켜도 실제로는
+  메모리에 남아 있다가 이어서 열리는 일이 많아 index.html을 다시 받지 않음. 앱 안에는 새 버전이 올라왔는지 확인하는 장치가 없었음.
+  예전 Flutter 빌드가 등록한 서비스 워커·캐시가 남아 있으면 예전 파일을 보여 줄 수도 있음.
+- 변경:
+  - frontend/Dockerfile: 빌드마다 BUILD_ID(UTC 초 단위)를 정해 앱 안(--dart-define=BUILD_ID)과 `app_build.json`에 같이 넣음.
+  - deploy/nginx.conf: `/app_build.json`은 no-store.
+  - `frontend/lib/core/update/app_update.dart` AppUpdateWatcher(MaterialApp builder에서 앱 전체를 감쌈):
+    켤 때·다른 앱/탭에 갔다 돌아올 때·켜 둔 채 10분마다 서버 빌드 번호를 확인.
+    켤 때나 돌아올 때 새 버전이면 아직 안 보낸 진행 상황을 서버로 보낸 뒤(최대 3초) 바로 새로고침.
+    보는 중에 새 버전이 나오면 갑자기 바꾸지 않고 위에 '새 버전이 나왔어요 [지금 업데이트]' 안내만(닫아도 다음에 돌아올 때 바뀜).
+    새로고침했는데도 예전 버전이 뜨면 반복하지 않고 안내만 띄움(sessionStorage로 한 번만).
+    BUILD_ID가 없는 개발·테스트 실행과 claude.ai 플레이 링크에서는 확인하지 않음.
+  - frontend/web/flutter_bootstrap.js: 서비스 워커 없이 Flutter를 띄움. index.html: 예전 서비스 워커·캐시를 지우고,
+    앱이 부르는 `mallangReload`(정리 후 새로고침)를 둠.
+- 검증: 이 작업 환경에 Flutter가 없어 로컬에선 못 돌림. GitHub Actions에서 flutter analyze 통과, flutter test 132개 통과
+  (새 테스트 `frontend/test/app_update_test.dart` 5개 포함), flutter build web 통과(새 flutter_bootstrap.js 포함).
+  index.html 정리 스크립트는 node로 확인. NAS 배포·실제 폰 홈 화면 앱에서 확인은 안 함.
+- 주의: 이 버전이 처음 깔리기 전의 예전 앱에는 확인 장치가 없으니, 이번 한 번은 앱을 완전히 닫고(최근 앱 목록에서 밀어서) 다시 열어야 함. 그 뒤부터는 자동.
+- 다음: 배포 후 폰 홈 화면 앱에서 다른 앱에 갔다 왔을 때 바뀌는지 확인.
