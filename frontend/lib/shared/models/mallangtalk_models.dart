@@ -714,17 +714,42 @@ class PhotoTrigger {
   /// 대화에 나오면 보낼 만한 낱말들
   final List<String> keywords;
 
+  /// 스토리에만 쓰는 사진 (적어 둔 감정·상황이 있어도 자유대화에서는 안 보냄)
+  final bool storyOnly;
+
   const PhotoTrigger(
       {this.caption = '',
       this.mood = '',
       this.situation = '',
-      this.keywords = const []});
+      this.keywords = const [],
+      this.storyOnly = false});
 
   /// 감정·상황·키워드 중 하나라도 있으면 자유대화에서 보낼 수 있음
   bool get isSet =>
+      !storyOnly &&
+      (mood.trim().isNotEmpty ||
+          situation.trim().isNotEmpty ||
+          keywords.isNotEmpty);
+
+  /// 저장할 내용이 있는지 (설명만 있어도 남김)
+  bool get hasData =>
+      caption.trim().isNotEmpty ||
       mood.trim().isNotEmpty ||
       situation.trim().isNotEmpty ||
       keywords.isNotEmpty;
+
+  PhotoTrigger copyWith(
+          {String? caption,
+          String? mood,
+          String? situation,
+          List<String>? keywords,
+          bool? storyOnly}) =>
+      PhotoTrigger(
+          caption: caption ?? this.caption,
+          mood: mood ?? this.mood,
+          situation: situation ?? this.situation,
+          keywords: keywords ?? this.keywords,
+          storyOnly: storyOnly ?? this.storyOnly);
 
   /// AI에게 보여 주는 한 줄
   String get summary => [
@@ -740,6 +765,7 @@ class PhotoTrigger {
         keywords: [
           for (final k in json['keywords'] as List? ?? const []) k as String
         ],
+        storyOnly: json['story_only'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -747,6 +773,7 @@ class PhotoTrigger {
         if (mood.trim().isNotEmpty) 'mood': mood.trim(),
         if (situation.trim().isNotEmpty) 'situation': situation.trim(),
         if (keywords.isNotEmpty) 'keywords': keywords,
+        if (storyOnly) 'story_only': true,
       };
 }
 
@@ -1071,11 +1098,19 @@ class ScenarioBundle {
   /// 같은 사진을 대화 기록마다 또 저장하지 않으려고 한곳에 모아 둠
   final Map<String, String> images;
 
+  /// 캐릭터 사진함: 이 캐릭터에 올린 사진 전부 ('img:번호'). 컷씬·사진 말풍선이 여기서 골라 씀
+  final List<String> photoRefs;
+
+  /// 사진함 사진별 설명·'보낼 때' (사진 번호 → 설명·감정·상황·키워드)
+  final Map<String, PhotoTrigger> photoTriggers;
+
   const ScenarioBundle({
     required this.character,
     required this.events,
     required this.nodes,
     this.images = const {},
+    this.photoRefs = const [],
+    this.photoTriggers = const {},
   });
 
   static const imagePrefix = 'img:';
@@ -1110,6 +1145,13 @@ class ScenarioBundle {
             add(b.photoLabel, b.photoImage);
           }
         }
+        // 사진함에 설명을 달아 둔 사진: 같은 설명의 말풍선·컷씬에 저절로 나옴
+        for (final e in [
+          ...photoTriggers.entries,
+          for (final ev in events) ...ev.photoTriggers.entries
+        ]) {
+          add(e.value.caption, e.key);
+        }
         return map;
       }();
 
@@ -1129,19 +1171,29 @@ class ScenarioBundle {
         };
         final list = <FreeTalkPhoto>[];
         final seen = <String>{};
+        void add(MapEntry<String, PhotoTrigger> entry,
+            ScenarioEventModel? event) {
+          final t = entry.value;
+          if (!t.isSet || !seen.add(entry.key)) return;
+          final label = t.caption.trim().isNotEmpty
+              ? t.caption.trim()
+              : byRef[entry.key] ??
+                  '${event?.title ?? character.name} 사진 ${list.length + 1}';
+          list.add(FreeTalkPhoto(
+              id: 'p${list.length + 1}',
+              ref: entry.key,
+              label: label,
+              trigger: t,
+              event: event));
+        }
+
+        for (final entry in photoTriggers.entries) {
+          add(entry, null);
+        }
+        // 예전 파일: 이벤트마다 사진함이 따로 있었음
         for (final event in events) {
           for (final entry in event.photoTriggers.entries) {
-            final t = entry.value;
-            if (!t.isSet || !seen.add(entry.key)) continue;
-            final label = t.caption.trim().isNotEmpty
-                ? t.caption.trim()
-                : byRef[entry.key] ?? '${event.title} 사진 ${list.length + 1}';
-            list.add(FreeTalkPhoto(
-                id: 'p${list.length + 1}',
-                ref: entry.key,
-                label: label,
-                trigger: t,
-                event: event));
+            add(entry, event);
           }
         }
         return List<FreeTalkPhoto>.unmodifiable(list);
@@ -1209,6 +1261,14 @@ class ScenarioBundle {
         for (final entry in (json['images'] as Map? ?? const {}).entries)
           if (entry.value is String) entry.key as String: entry.value as String,
       },
+      photoRefs: [
+        for (final ref in json['photos'] as List? ?? const []) ref as String,
+      ],
+      photoTriggers: {
+        for (final entry in (json['photo_triggers'] as Map? ?? const {}).entries)
+          entry.key as String: PhotoTrigger.fromJson(
+              Map<String, dynamic>.from(entry.value as Map)),
+      },
     );
   }
 
@@ -1218,10 +1278,21 @@ class ScenarioBundle {
         'events': [for (final e in events) e.toJson()],
         'script_nodes': [for (final n in nodes.values) n.toJson()],
         if (images.isNotEmpty) 'images': images,
+        if (photoRefs.isNotEmpty) 'photos': photoRefs,
+        if (photoTriggers.values.any((t) => t.hasData))
+          'photo_triggers': {
+            for (final e in photoTriggers.entries)
+              if (e.value.hasData) e.key: e.value.toJson(),
+          },
       };
 
   ScenarioBundle copyWithCharacter(CharacterModel character) => ScenarioBundle(
-      character: character, events: events, nodes: nodes, images: images);
+      character: character,
+      events: events,
+      nodes: nodes,
+      images: images,
+      photoRefs: photoRefs,
+      photoTriggers: photoTriggers);
 
   /// 이 이벤트가 열리는 호감도 구간. 단계 이름이 있으면 그 단계 시작 점수부터 열리고,
   /// 일상 대화는 그 단계 끝 점수까지만 나옵니다.
@@ -1257,20 +1328,24 @@ class FreeTalkPhoto {
   final String ref;
   final String label;
   final PhotoTrigger trigger;
-  final ScenarioEventModel event;
+
+  /// 예전 이벤트 사진함에서 온 사진이면 그 이벤트 (캐릭터 사진함 사진은 null)
+  final ScenarioEventModel? event;
 
   const FreeTalkPhoto(
       {required this.id,
       required this.ref,
       required this.label,
       required this.trigger,
-      required this.event});
+      this.event});
 }
 
 /// 앨범 사진 한 장 (설명 = 사진을 구분하는 이름)
 class AlbumPhoto {
   final String label;
-  final ScenarioEventModel event;
+
+  /// 이 사진이 나오는 대화 (자유대화에서만 오는 캐릭터 사진함 사진은 null)
+  final ScenarioEventModel? event;
 
   /// 진짜 사진 주소 (아직 안 올렸으면 null → 설명 카드)
   final String? image;
@@ -1280,7 +1355,7 @@ class AlbumPhoto {
 
   const AlbumPhoto(
       {required this.label,
-      required this.event,
+      this.event,
       this.image,
       required this.group});
 }

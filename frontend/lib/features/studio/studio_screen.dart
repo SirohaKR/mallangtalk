@@ -13,6 +13,8 @@ import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/file_io.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../../shared/widgets/mallang_loading.dart';
+import '../../core/network/ai_provider.dart';
+import '../chat/chat_ai_sheet.dart';
 import '../chat/chat_notifier.dart';
 import '../chat/chat_theme.dart';
 import '../chat/service_messages.dart';
@@ -20,6 +22,7 @@ import '../library/character_library.dart';
 import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
 import 'character_import.dart';
+import 'photo_box.dart';
 import 'scenario_draft.dart';
 import 'studio_widgets.dart';
 
@@ -207,11 +210,36 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     return true;
   }
 
+  /// 대사가 하나도 없는 대화 (제목이 있어야 AI가 씀)
+  List<EventDraft> get _blankEvents => [
+        for (final e in _draft.events)
+          if (e.title.trim().isNotEmpty && !e.scenes.any((s) => s.lines.any((l) => l.text.trim().isNotEmpty))) e,
+      ];
+
+  /// 예상 호출 수 → '호출 N번, 약 N분 · 약 N원'. 호출 한 번에 입력 약 4천·출력 약 1천2백 토큰으로 어림
+  String _estimate(int calls) {
+    final byok = ref.read(byokSettingsProvider);
+    final minutes = (calls * 35 / 60).ceil();
+    final m = byok.modelOption;
+    var text = '예상 · 호출 $calls번, 약 $minutes분';
+    if (m != null) {
+      final won = calls * (4000 * m.inputUsdPerMTok + 1200 * m.outputUsdPerMTok) / 1e6 * 1400;
+      text += ' · 약 ${won < 10 ? '10원 안쪽' : '${(won / 10).round() * 10}원'}';
+      if (byok.provider == AiProvider.gemini && m.note.contains('무료')) text += ' (무료 한도 안이면 0원)';
+    }
+    return text;
+  }
+
   Future<void> _openAiSheet() async {
     if (!_readyForAi()) return;
+    final blank = _blankEvents;
+    var mode = blank.isNotEmpty ? 'blank' : 'all';
+    final picked = <EventDraft>{if (_scriptEvent != null && _draft.events.contains(_scriptEvent)) _scriptEvent!};
     final go = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
       backgroundColor: AppColors.surfaceWhite,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheet) {
@@ -221,59 +249,207 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
           }
 
           final total = _draft.stageNames.length * (_eventsPerStage + _dailiesPerStage) + _specials + 1;
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('AI로 생성하기', style: AppTextStyles.appBarTitle),
-                  const SizedBox(height: 6),
-                  const Text(
-                    '1~6단계 설정과 호감도 단계를 보고 대화 목차와 모든 대사를 써요. '
-                    '비어 있는 캐릭터 정보(한줄 소개·태그·세계관·프로필 항목)도 채워 줘요. '
-                    '지금 있는 대화는 새로 만든 것으로 바뀌어요.',
-                    style: AppTextStyles.systemNotice,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  StudioCounter(
-                    label: '단계마다 호감도 이벤트',
-                    value: _eventsPerStage,
-                    min: 1,
-                    max: 5,
-                    onChanged: (v) => update(() => _eventsPerStage = v),
-                  ),
-                  StudioCounter(
-                    label: '단계마다 일상 대화',
-                    value: _dailiesPerStage,
-                    min: 0,
-                    max: 6,
-                    onChanged: (v) => update(() => _dailiesPerStage = v),
-                  ),
-                  StudioCounter(
-                    label: '특별 이벤트 (실제 시간)',
-                    value: _specials,
-                    min: 0,
-                    max: 4,
-                    onChanged: (v) => update(() => _specials = v),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('대화 $total개 · 대화 수만큼 AI를 불러요 (내 키 사용)', style: AppTextStyles.messageTime),
-                  const SizedBox(height: AppSpacing.md),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                    label: const Text('만들기 시작'),
-                    onPressed: () => Navigator.pop(sheetContext, true),
-                  ),
-                ],
+          final titled = [for (final e in _draft.events) if (e.title.trim().isNotEmpty) e];
+          final calls = switch (mode) {
+            'blank' => blank.length,
+            'pick' => picked.length,
+            _ => total + 1,
+          };
+          Widget option(String value, String title, String note, {bool enabled = true}) => RadioListTile<String>(
+                key: ValueKey('ai_mode_$value'),
+                value: value,
+                enabled: enabled,
+                contentPadding: EdgeInsets.zero,
+                activeColor: const Color(0xFFB83B66),
+                title: Text(title, style: AppTextStyles.choiceButton),
+                subtitle: Text(note, style: AppTextStyles.messageTime),
+              );
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('AI로 생성하기', style: AppTextStyles.appBarTitle),
+                    const SizedBox(height: 4),
+                    const Text('무엇을 만들까요', style: AppTextStyles.speakerName),
+                    RadioGroup<String>(
+                      groupValue: mode,
+                      onChanged: (v) => setSheet(() => mode = v ?? mode),
+                      child: Column(
+                        children: [
+                          option(
+                            'blank',
+                            '비어 있는 대화만',
+                            blank.isEmpty ? '대사가 빈 대화가 없어요' : '내가 쓴 대사는 그대로 두고 빈 대화 ${blank.length}개만 써요',
+                            enabled: blank.isNotEmpty,
+                          ),
+                          option('all', '전부 새로', '호감도 단계부터 대본을 처음부터 다시 짜요. 지금 있는 대화는 바뀌어요'),
+                          option(
+                            'pick',
+                            '골라서',
+                            picked.isEmpty
+                                ? '대화를 골라 그것만 써요'
+                                : '대화를 골라 그것만 써요 (지금 ${picked.length}개${picked.length == 1 ? ': ${picked.single.title}' : ''})',
+                            enabled: titled.isNotEmpty,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (mode == 'all') ...[
+                      StudioCounter(
+                        label: '단계마다 호감도 이벤트',
+                        value: _eventsPerStage,
+                        min: 1,
+                        max: 5,
+                        onChanged: (v) => update(() => _eventsPerStage = v),
+                      ),
+                      StudioCounter(
+                        label: '단계마다 일상 대화',
+                        value: _dailiesPerStage,
+                        min: 0,
+                        max: 6,
+                        onChanged: (v) => update(() => _dailiesPerStage = v),
+                      ),
+                      StudioCounter(
+                        label: '특별 이벤트 (실제 시간)',
+                        value: _specials,
+                        min: 0,
+                        max: 4,
+                        onChanged: (v) => update(() => _specials = v),
+                      ),
+                      Text('대화 $total개 · 비어 있는 캐릭터 정보(한줄 소개·태그·세계관·프로필 항목)도 채워 줘요',
+                          style: AppTextStyles.messageTime),
+                    ],
+                    if (mode == 'pick')
+                      for (final e in titled)
+                        CheckboxListTile(
+                          key: ValueKey('ai_pick_${_draft.events.indexOf(e)}'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: picked.contains(e),
+                          activeColor: const Color(0xFFB83B66),
+                          title: Text('${_draft.events.indexOf(e) + 1}. ${e.title} · ${e.kind.label}',
+                              overflow: TextOverflow.ellipsis),
+                          onChanged: (v) => setSheet(() => v == true ? picked.add(e) : picked.remove(e)),
+                        ),
+                    const Divider(height: AppSpacing.lg),
+                    Row(
+                      children: [
+                        const Text('사용할 AI', style: AppTextStyles.speakerName),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(aiModelName(ref.read(byokSettingsProvider)),
+                              style: AppTextStyles.choiceButton, overflow: TextOverflow.ellipsis),
+                        ),
+                        TextButton(
+                          key: const ValueKey('ai_change_model'),
+                          onPressed: () async {
+                            await showChatAiSheet(sheetContext, accent: const Color(0xFFB83B66));
+                            setSheet(() {});
+                          },
+                          child: const Text('바꾸기'),
+                        ),
+                      ],
+                    ),
+                    Text(_estimate(calls), key: const ValueKey('ai_estimate'), style: AppTextStyles.messageTime),
+                    const SizedBox(height: AppSpacing.md),
+                    FilledButton.icon(
+                      key: const ValueKey('ai_start'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFB83B66),
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('생성 시작'),
+                      onPressed: calls == 0 ? null : () => Navigator.pop(sheetContext, true),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text('내 AI 키로 써요. 다 만든 뒤에도 대사는 하나하나 고칠 수 있어요.',
+                        textAlign: TextAlign.center, style: AppTextStyles.messageTime),
+                  ],
+                ),
               ),
             ),
           );
         },
       ),
     );
-    if (go == true) await _generateAll();
+    if (go != true || !mounted) return;
+    switch (mode) {
+      case 'blank':
+        await _writeMany(blank);
+      case 'pick':
+        await _writeMany([for (final e in _draft.events) if (picked.contains(e)) e]);
+      default:
+        await _generateAll();
+    }
+  }
+
+  /// 고른 대화들의 대사를 차례로 AI로 씀 (중간에 멈추면 앞에서 쓴 건 남김)
+  Future<void> _writeMany(List<EventDraft> targets) async {
+    if (targets.isEmpty) return;
+    setState(() {
+      _generating = true;
+      _progress = 0;
+      _progressText = '대사를 쓰는 중';
+    });
+    var done = 0;
+    try {
+      for (final event in targets) {
+        if (!mounted) return;
+        setState(() {
+          _progressText = '"${event.title}" 대사를 쓰는 중 (${done + 1}/${targets.length})';
+          _progress = done / targets.length;
+        });
+        await _writeScriptInto(event);
+        done++;
+      }
+      if (!mounted) return;
+      setState(() {
+        _scriptEvent = targets.length == 1 ? targets.single : null;
+        _step = 6;
+      });
+      _toast('대화 $done개의 대사를 썼어요. 고칠 곳을 고친 뒤 저장해 주세요');
+    } on ClaudeChatException catch (e) {
+      if (mounted) _toast(done > 0 ? '${e.message} (앞의 대화 $done개는 써 뒀어요)' : e.message);
+    } catch (e) {
+      if (mounted) _toast('대사를 쓰는 중 문제가 생겼어요: $e');
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  /// 대화 하나의 대사를 AI로 써서 그 대화에 넣음 (제목·줄거리 메모와 다른 대화 목차를 보고)
+  Future<void> _writeScriptInto(EventDraft event) async {
+    final byok = ref.read(byokSettingsProvider);
+    final character = _draft.buildCharacter();
+    final all = [for (var i = 0; i < _draft.events.length; i++) _draft.buildEvent(_draft.events[i], i)];
+    final model = all[_draft.events.indexOf(event)];
+    final (nodes, step) = await ref.read(claudeStudioClientProvider).writeScript(
+          provider: byok.provider,
+          apiKey: byok.apiKey ?? '',
+          relay: byok.relay,
+          model: byok.model,
+          character: character,
+          event: model,
+          outline: all,
+        );
+    if (!mounted) return;
+    final filled = ScenarioDraft.eventFromBundle(
+      ScenarioBundle(character: character, events: const [], nodes: const {}),
+      model.withCutsceneStep(model.cutscenePhotoTitle != null ? step : null),
+      nodes: nodes,
+    );
+    setState(() {
+      event.scenes
+        ..clear()
+        ..addAll(filled.scenes);
+      _version++;
+    });
   }
 
   Future<void> _generateAll() async {
@@ -304,7 +480,14 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             },
           );
       if (!mounted) return;
-      _replaceDraft(ScenarioDraft.fromBundle(bundle));
+      // 올려 둔 사진함은 그대로 (새 대본의 사진 말풍선은 설명이 같으면 저절로 붙음)
+      final old = _draft;
+      final next = ScenarioDraft.fromBundle(bundle);
+      for (final p in old.photos) {
+        next.addPhoto(p);
+      }
+      next.photoTriggers.addAll(old.photoTriggers);
+      _replaceDraft(next);
       _goStep(6);
       _toast('이벤트 ${bundle.events.length}개를 만들었어요. 고칠 곳을 고친 뒤 저장해 주세요');
     } on ClaudeChatException catch (e) {
@@ -324,36 +507,15 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     if (hasLines && !await _confirm('AI로 대사 쓰기', '"${event.title}"에 적은 대사가 새로 쓴 것으로 바뀌어요.', '새로 쓰기')) {
       return;
     }
-    final byok = ref.read(byokSettingsProvider);
     setState(() {
       _generating = true;
       _progress = null;
       _progressText = '"${event.title}" 대사를 쓰는 중';
     });
     try {
-      final character = _draft.buildCharacter();
-      final all = [for (var i = 0; i < _draft.events.length; i++) _draft.buildEvent(_draft.events[i], i)];
-      final model = all[_draft.events.indexOf(event)];
-      final (nodes, step) = await ref.read(claudeStudioClientProvider).writeScript(
-            provider: byok.provider,
-            apiKey: byok.apiKey ?? '',
-            relay: byok.relay,
-            model: byok.model,
-            character: character,
-            event: model,
-            outline: all,
-          );
+      await _writeScriptInto(event);
       if (!mounted) return;
-      final filled = ScenarioDraft.eventFromBundle(
-        ScenarioBundle(character: character, events: const [], nodes: const {}),
-        model.withCutsceneStep(model.cutscenePhotoTitle != null ? step : null),
-        nodes: nodes,
-      );
       setState(() {
-        event.scenes
-          ..clear()
-          ..addAll(filled.scenes);
-        _version++;
         _scriptEvent = event;
         _step = 6;
       });
@@ -375,7 +537,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   PhotoState _photoState(PhotoSlot slot) {
     if (slot.filled) return PhotoState.filled;
     if (_draft.sharedPhotoFor(slot) != null) return PhotoState.shared;
-    return slot.event.photos.isEmpty ? PhotoState.card : PhotoState.missing;
+    return _draft.unusedPhotos.isEmpty ? PhotoState.card : PhotoState.missing;
   }
 
   static String _photoStateText(PhotoState state) => switch (state) {
@@ -391,10 +553,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     final cut = slots.where((s) => s.isCutscene).firstOrNull;
     final lines = [for (final s in slots) if (!s.isCutscene) _photoState(s)];
     final ready = lines.where((s) => s == PhotoState.filled || s == PhotoState.shared).length;
-    final unused = slots.isEmpty ? 0 : e.unusedPhotos.length;
     return [
-      if (e.photos.isNotEmpty)
-        PhotoTag(label: '사진함 ${e.photos.length}장', state: PhotoState.filled, icon: Icons.photo_library_outlined),
       if (cut != null)
         switch (_photoState(cut)) {
           PhotoState.filled => const PhotoTag(label: '컷씬 사진 있음', state: PhotoState.filled),
@@ -411,7 +570,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   ? PhotoState.missing
                   : PhotoState.card,
         ),
-      if (unused > 0) PhotoTag(label: '안 쓴 사진 $unused장', state: PhotoState.card, icon: Icons.photo_outlined),
     ];
   }
 
@@ -447,7 +605,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             children: [
               Text(
                 '${linked > 0 ? '설명이 같은 사진 등 $linked곳은 자동으로 연결했어요. ' : ''}'
-                '아래는 이벤트 사진함에 사진이 있는데 사진을 안 골라서, 그대로 저장하면 설명 카드로 보여요.',
+                '사진함에 안 쓴 사진이 있는데 아래는 사진을 안 골라서, 그대로 저장하면 설명 카드로 보여요.',
                 style: AppTextStyles.systemNotice,
               ),
               for (final entry in byEvent.entries) ...[
@@ -492,7 +650,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       );
       return;
     }
-    // 이벤트에 올린 사진을 컷씬·사진 말풍선에 붙일 수 있는 건 붙이고, 못 붙인 곳은 저장 전에 알려 줌
+    // 사진함 사진을 컷씬·사진 말풍선에 붙일 수 있는 건 붙이고, 못 붙인 곳은 저장 전에 알려 줌
     final linked = _draft.autoLinkPhotos();
     if (linked > 0) setState(() {});
     final missing = _draft.missingPhotos();
@@ -505,7 +663,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
       }
       if (answer != true) return;
     } else if (linked > 0) {
-      _toast('사진을 안 고른 $linked곳에 이벤트 사진을 자동으로 연결했어요');
+      _toast('사진을 안 고른 $linked곳에 사진함 사진을 자동으로 연결했어요');
     }
     var bundle = _draft.toBundle();
     if (!_draft.isService && !bestPathClears(bundle)) {
@@ -867,6 +1025,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         return ListView(
           padding: pad,
           children: [
+            StudioCard(child: _traitsEditor()),
+            const SizedBox(height: AppSpacing.md),
             EditField(fieldKey: _k(d, 'quote'), value: d.quote, label: '대표 대사 · 상세 화면 맨 위에 보여요',
                 hint: '이 캐릭터다운 한 마디', lines: 2, onChanged: (v) => d.quote = v),
             const Text('대사 예시 · AI가 말투를 배워요', style: AppTextStyles.speakerName),
@@ -1189,6 +1349,90 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   /// 미리보기에서 다른 줄을 뽑을 때마다 바뀜
   int _previewSeed = 0;
 
+  /// 4단계 성격 막대: 왼쪽 ↔ 오른쪽 낱말과 어느 쪽에 가까운지. 오른쪽을 비우면 한쪽짜리 (신중함 80%)
+  Widget _traitsEditor() {
+    final d = _draft;
+    const examples = [('무심함', '다정함'), ('진지함', '장난기'), ('숨김', '솔직함'), ('겸손', '자존심'), ('쿨함', '질투')];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('성격', style: AppTextStyles.choiceButton),
+        const Text('막대를 밀어 어느 쪽에 가까운지 정해요. 오른쪽을 비우면 한쪽짜리(신중함 80%). AI가 말투와 반응에 반영해요', style: AppTextStyles.messageTime),
+        const SizedBox(height: 6),
+        for (var i = 0; i < d.traits.length; i++)
+          Padding(
+            key: ValueKey(_k(d, 'trait-$i-${d.traits.length}')),
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: EditField(
+                        fieldKey: _k(d, 'trait-l-$i-${d.traits.length}'),
+                        value: d.traits[i].left,
+                        hint: '왼쪽',
+                        dense: true,
+                        onChanged: (v) => d.traits[i] =
+                            PersonalityTrait(left: v.trim(), right: d.traits[i].right, percent: d.traits[i].percent),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: EditField(
+                        fieldKey: _k(d, 'trait-r-$i-${d.traits.length}'),
+                        value: d.traits[i].right ?? '',
+                        hint: '오른쪽',
+                        dense: true,
+                        onChanged: (v) => d.traits[i] = PersonalityTrait(
+                            left: d.traits[i].left,
+                            right: v.trim().isEmpty ? null : v.trim(),
+                            percent: d.traits[i].percent),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '빼기',
+                      onPressed: () => setState(() {
+                        d.traits.removeAt(i);
+                        _version++;
+                      }),
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                    ),
+                  ],
+                ),
+                Slider(
+                  key: ValueKey('trait_slider_$i'),
+                  value: d.traits[i].percent.toDouble(),
+                  max: 100,
+                  divisions: 20,
+                  label: '${d.traits[i].percent}%',
+                  activeColor: const Color(0xFFB83B66),
+                  onChanged: (v) => setState(() => d.traits[i] =
+                      PersonalityTrait(left: d.traits[i].left, right: d.traits[i].right, percent: v.round())),
+                ),
+              ],
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const ValueKey('studio_trait_add'),
+            onPressed: () => setState(() {
+              final used = {for (final t in d.traits) t.left};
+              final next = examples.where((e) => !used.contains(e.$1)).firstOrNull;
+              d.traits.add(next == null
+                  ? const PersonalityTrait(left: '', right: '')
+                  : PersonalityTrait(left: next.$1, right: next.$2));
+              _version++;
+            }),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('성격 추가'),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// 서비스 말랑이: 언제, 무슨 문구를 보낼지
   Widget _serviceStep(EdgeInsets pad) {
     final d = _draft;
@@ -1436,46 +1680,52 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
 
   Widget _finishStep() {
     final d = _draft;
-    final withPhotos = [for (final e in d.events) if (e.photos.isNotEmpty || e.photoSlots.isNotEmpty) e];
+    final withPhotos = [for (final e in d.events) if (e.photoSlots.isNotEmpty) e];
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl),
       children: [
         if (!d.isService) ...[
-          const Text('사진함', style: AppTextStyles.speakerName),
-          const Text('대화마다 올린 사진과 사진 자리예요. 누르면 그 대화의 대사 편집으로 가요', style: AppTextStyles.messageTime),
-          const SizedBox(height: 6),
-          if (withPhotos.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('아직 사진이 들어갈 대화가 없어요', style: AppTextStyles.systemNotice),
-            ),
-        ],
-        if (!d.isService)
-        for (final e in withPhotos)
-          StudioCard(
-            child: InkWell(
-              onTap: () => setState(() {
-                _scriptEvent = e;
-                _step = 6;
-              }),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${d.events.indexOf(e) + 1}. ${e.title.trim().isEmpty ? '(제목 없음)' : e.title}',
-                            style: AppTextStyles.chatBubbleBody.copyWith(fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 4),
-                        Wrap(spacing: 4, runSpacing: 4, children: _photoTags(e)),
-                      ],
+          CharacterPhotoBox(
+            key: ValueKey('photo_box_$_version'),
+            draft: d,
+            onChanged: () => setState(() {}),
+            onOpenEvent: (e) => setState(() {
+              _scriptEvent = e;
+              _step = 6;
+            }),
+          ),
+          if (withPhotos.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            const Text('사진이 들어갈 대화', style: AppTextStyles.speakerName),
+            const Text('누르면 그 대화의 대사 편집으로 가요', style: AppTextStyles.messageTime),
+            const SizedBox(height: 6),
+          ],
+          for (final e in withPhotos)
+            StudioCard(
+              child: InkWell(
+                onTap: () => setState(() {
+                  _scriptEvent = e;
+                  _step = 6;
+                }),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${d.events.indexOf(e) + 1}. ${e.title.trim().isEmpty ? '(제목 없음)' : e.title}',
+                              style: AppTextStyles.chatBubbleBody.copyWith(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 4),
+                          Wrap(spacing: 4, runSpacing: 4, children: _photoTags(e)),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded),
-                ],
+                    const Icon(Icons.chevron_right_rounded),
+                  ],
+                ),
               ),
             ),
-          ),
+        ],
         const SizedBox(height: AppSpacing.md),
         EditField(
           fieldKey: _k(d, 'author'),
@@ -1840,22 +2090,6 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     ];
   }
 
-  /// 사진함 사진 하나의 '자유대화에서 보낼 때' (감정·상황·키워드)
-  Future<void> _editPhotoTrigger(EventDraft e, String image) async {
-    final result = await showDialog<PhotoTrigger>(
-      context: context,
-      builder: (_) => _PhotoTriggerDialog(image: image, initial: e.photoTriggers[image] ?? const PhotoTrigger()),
-    );
-    if (result == null || !mounted) return;
-    setState(() {
-      if (result.isSet || result.caption.trim().isNotEmpty) {
-        e.photoTriggers[image] = result;
-      } else {
-        e.photoTriggers.remove(image);
-      }
-    });
-  }
-
   Widget _eventCard(EventDraft e, int index) {
     final d = _draft;
     final lines = e.scenes.fold(0, (sum, s) => sum + s.lines.where((l) => l.text.trim().isNotEmpty).length);
@@ -2010,29 +2244,16 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                 hint: '앨범에 모이는 장면 설명. 비우면 컷씬 없음. 몇 번째 장면에서 모일지는 대사 탭에서 골라요',
                 onChanged: (v) => setState(() => e.cutscene = v),
               ),
-            const Text('이벤트 사진', style: AppTextStyles.speakerName),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: EventPhotoBox(
-                photos: e.photos,
-                note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요. 사진을 누르면 자유대화에서 보낼 때를 정해요',
-                triggers: e.photoTriggers,
-                onTap: (v) => _editPhotoTrigger(e, v),
-                onAdd: (v) => setState(() => e.addPhoto(v)),
-                onRemove: (v) => setState(() => e.removePhoto(v)),
-              ),
-            ),
             if (e.kind != DraftKind.daily) ...[
-              const Text('컷씬 사진', style: AppTextStyles.speakerName),
+              const Text('컷씬 사진 · 사진함에서 골라요', style: AppTextStyles.speakerName),
               const SizedBox(height: 4),
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: EventPhotoPicker(
-                  photos: e.photos,
+                  photos: d.photos,
                   selected: e.cutsceneImage,
                   note: '고르지 않으면 설명 카드로 보여요',
-                  onAdd: (v) => setState(() => e.addPhoto(v)),
+                  onAdd: (v) => setState(() => d.addPhoto(v)),
                   onSelect: (v) => setState(() => e.cutsceneImage = v),
                 ),
               ),
@@ -2177,7 +2398,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (d.events[i].photoSlots.isNotEmpty || d.events[i].photos.isNotEmpty)
+                      if (d.events[i].photoSlots.isNotEmpty)
                         Icon(
                           d.events[i].photoSlots.any((s) => _photoState(s) == PhotoState.missing)
                               ? Icons.warning_amber_rounded
@@ -2224,7 +2445,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     );
   }
 
-  /// 대사 탭 맨 위: 이 대화의 사진함, 컷씬 사진, 사진 말풍선이 채워졌는지
+  /// 대사 탭 맨 위: 캐릭터 사진함 바로 가기, 컷씬 사진, 사진 말풍선이 채워졌는지
   Widget _photoSummary(EventDraft event) {
     final cut = event.photoSlots.where((s) => s.isCutscene).firstOrNull;
     return StudioCard(
@@ -2239,24 +2460,24 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
               Flexible(child: Wrap(spacing: 4, runSpacing: 4, alignment: WrapAlignment.end, children: _photoTags(event))),
             ],
           ),
-          const SizedBox(height: 6),
-          EventPhotoBox(
-            photos: event.photos,
-            note: '여기 올린 사진 중에서 컷씬과 사진 말풍선이 골라 써요. 사진을 누르면 자유대화에서 보낼 때를 정해요',
-            triggers: event.photoTriggers,
-            onTap: (v) => _editPhotoTrigger(event, v),
-            onAdd: (v) => setState(() => event.addPhoto(v)),
-            onRemove: (v) => setState(() => event.removePhoto(v)),
+          Row(
+            children: [
+              Expanded(
+                child: Text('사진은 캐릭터 사진함 ${_draft.photos.length}장에서 골라요. 설명이 같으면 저절로 붙어요',
+                    style: AppTextStyles.messageTime),
+              ),
+              TextButton(onPressed: () => _goStep(7), child: const Text('사진함 열기')),
+            ],
           ),
           if (cut != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text('컷씬 사진 · ${cut.label}', style: AppTextStyles.speakerName, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
             EventPhotoPicker(
-              photos: event.photos,
+              photos: _draft.photos,
               selected: event.cutsceneImage,
               note: _photoStateText(_photoState(cut)),
-              onAdd: (v) => setState(() => event.addPhoto(v)),
+              onAdd: (v) => setState(() => _draft.addPhoto(v)),
               onSelect: (v) => setState(() => event.cutsceneImage = v),
             ),
           ],
@@ -2439,10 +2660,10 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: EventPhotoPicker(
-                photos: event.photos,
+                photos: _draft.photos,
                 selected: line.photoImage,
                 note: state == PhotoState.shared ? '고르지 않으면 설명이 같은 사진이 나와요' : '고르지 않으면 설명 카드로 보여요',
-                onAdd: (v) => setState(() => event.addPhoto(v)),
+                onAdd: (v) => setState(() => _draft.addPhoto(v)),
                 onSelect: (v) => setState(() => line.photoImage = v),
               ),
             ),
@@ -2525,187 +2746,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   }
 }
 
-/// 이벤트 사진함: 올린 사진들 + 올리기, 사진마다 빼기
-class EventPhotoBox extends StatelessWidget {
-  const EventPhotoBox({
-    super.key,
-    required this.photos,
-    required this.note,
-    required this.onAdd,
-    required this.onRemove,
-    this.triggers = const {},
-    this.onTap,
-  });
-
-  final List<String> photos;
-  final String note;
-  final ValueChanged<String> onAdd;
-  final ValueChanged<String> onRemove;
-
-  /// 자유대화에서 보낼 때를 정해 둔 사진 (번개 표시)
-  final Map<String, PhotoTrigger> triggers;
-  final ValueChanged<String>? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (final p in photos)
-          if (CharacterImage.providerFor(p) case final provider?)
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                GestureDetector(
-                  onTap: onTap == null ? null : () => onTap!(p),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image(image: provider, width: 56, height: 56, fit: BoxFit.cover),
-                  ),
-                ),
-                if (triggers[p]?.isSet ?? false)
-                  const Positioned(
-                    left: 3,
-                    bottom: 3,
-                    child: CircleAvatar(
-                      radius: 9,
-                      backgroundColor: Color(0xFFF2B13C),
-                      child: Icon(Icons.bolt_rounded, size: 13, color: Colors.white),
-                    ),
-                  ),
-                Positioned(
-                  top: -6,
-                  right: -6,
-                  child: InkWell(
-                    onTap: () => onRemove(p),
-                    child: const CircleAvatar(
-                      radius: 10,
-                      backgroundColor: Colors.black54,
-                      child: Icon(Icons.close_rounded, size: 14, color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-          label: const Text('사진 올리기'),
-          onPressed: () async {
-            final picked = await pickPhoto(context);
-            if (picked != null) onAdd(picked);
-          },
-        ),
-        if (photos.isEmpty || onTap != null) Text(note, style: AppTextStyles.messageTime),
-      ],
-    );
-  }
-}
-
-/// 사진 하나를 자유대화에서 언제 보낼지 정하는 창
-class _PhotoTriggerDialog extends StatefulWidget {
-  const _PhotoTriggerDialog({required this.image, required this.initial});
-
-  final String image;
-  final PhotoTrigger initial;
-
-  @override
-  State<_PhotoTriggerDialog> createState() => _PhotoTriggerDialogState();
-}
-
-class _PhotoTriggerDialogState extends State<_PhotoTriggerDialog> {
-  late final _caption = TextEditingController(text: widget.initial.caption);
-  late final _mood = TextEditingController(text: widget.initial.mood);
-  late final _situation = TextEditingController(text: widget.initial.situation);
-  late final _keywords = TextEditingController(text: widget.initial.keywords.join(', '));
-
-  static const _moods = ['기쁨', '설렘', '장난', '뿌듯함', '서운함', '걱정', '피곤함', '심심함'];
-
-  @override
-  void dispose() {
-    _caption.dispose();
-    _mood.dispose();
-    _situation.dispose();
-    _keywords.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = CharacterImage.providerFor(widget.image);
-    return AlertDialog(
-      title: const Text('자유대화에서 보낼 때'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (provider != null)
-              Center(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image(image: provider, height: 120, fit: BoxFit.cover),
-                ),
-              ),
-            const SizedBox(height: 8),
-            const Text('자유대화 방에서 AI가 대화 흐름이 이 조건에 맞을 때만 이 사진을 보내요. 받은 사진은 앨범에 들어가요.',
-                style: AppTextStyles.messageTime),
-            TextField(
-              key: const ValueKey('trigger_caption'),
-              controller: _caption,
-              decoration: const InputDecoration(labelText: '사진 설명', hintText: '비우면 이 사진을 쓰는 말풍선·컷씬 설명'),
-            ),
-            TextField(
-              key: const ValueKey('trigger_mood'),
-              controller: _mood,
-              decoration: const InputDecoration(labelText: '감정', hintText: '예: 설렘'),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final m in _moods)
-                  StudioPill(label: m, selected: _mood.text == m, onTap: () => setState(() => _mood.text = m)),
-              ],
-            ),
-            TextField(
-              key: const ValueKey('trigger_situation'),
-              controller: _situation,
-              decoration: const InputDecoration(labelText: '상황', hintText: '예: 유저가 보고 싶다고 할 때'),
-            ),
-            TextField(
-              key: const ValueKey('trigger_keywords'),
-              controller: _keywords,
-              decoration: const InputDecoration(labelText: '키워드 (쉼표로 나눠요)', hintText: '예: 고양이, 두부, 귀여워'),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
-        TextButton(
-          onPressed: () => Navigator.pop(
-            context,
-            PhotoTrigger(
-              caption: _caption.text.trim(),
-              mood: _mood.text.trim(),
-              situation: _situation.text.trim(),
-              keywords: [
-                for (final k in _keywords.text.split(RegExp(r'[,，\n]')))
-                  if (k.trim().isNotEmpty) k.trim(),
-              ],
-            ),
-          ),
-          child: const Text('저장'),
-        ),
-      ],
-    );
-  }
-}
-
-/// 이벤트 사진함에서 하나 고르기 (누르면 고르고, 고른 걸 다시 누르면 빼기). 새로 올리면 사진함에도 들어가고 바로 골라짐
+/// 캐릭터 사진함에서 하나 고르기 (누르면 고르고, 고른 걸 다시 누르면 빼기). 새로 올리면 사진함에도 들어가고 바로 골라짐
 class EventPhotoPicker extends StatelessWidget {
   const EventPhotoPicker({
     super.key,

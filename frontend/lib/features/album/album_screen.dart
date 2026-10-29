@@ -108,7 +108,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                           items: [
                                             for (final p in got)
                                               PhotoViewerItem(
-                                                  label: p.label, image: p.image, chip: p.group, caption: p.event.title),
+                                                  label: p.label, image: p.image, chip: p.group, caption: p.event?.title ?? '자유대화'),
                                           ],
                                         ),
                                       )
