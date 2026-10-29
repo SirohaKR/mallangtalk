@@ -331,6 +331,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     ref.onDispose(() {
       _disposed = true;
       _userBurstReplyTimer?.cancel();
+      _scriptedReplyTimer?.cancel();
       _serviceTimer?.cancel();
       _runId++; // 대화방이 닫히면(캐릭터 삭제·로그아웃 등) 돌던 연출을 멈춤
     });
@@ -1391,7 +1392,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final trimmed = text.trim();
     if (trimmed.isEmpty && (photoLabel == null || photoLabel.isEmpty))
       return false;
-    if (!ref.read(roomByokProvider(_roomId)).canUseAi) {
+    if (repliesWithAi && !ref.read(roomByokProvider(_roomId)).canUseAi) {
       _addSystemNotice('자유대화를 하려면 API 키를 등록해 주세요.');
       return false;
     }
@@ -1435,6 +1436,14 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       timestamp: now,
     );
 
+    if (!repliesWithAi) {
+      // 서비스 말랑이가 AI 없이 답하는 방식: 정해 둔 답 랜덤 / 읽씹
+      state = state.copyWith(messages: [...state.messages, myMsg]);
+      _saveRun(keepCurrentNode: true);
+      _scheduleScriptedReply();
+      return true;
+    }
+
     _pendingUserBurstTexts.add(
       '${replyTo == null ? '' : '[답장 대상: ${replyTo.speakerName}: ${replyTo.text}] '}${photoLabel != null ? '[사진 전송: $photoLabel] ${dialogueInputForAi(trimmed)}' : dialogueInputForAi(trimmed)}',
     );
@@ -1446,6 +1455,37 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     // 내가 추가로 더 칠 수 있으므로 대기 타이머를 새로고침합니다.
     _scheduleBurstReply();
     return true;
+  }
+
+  /// 내가 보낸 톡에 AI가 답하는지 (서비스 말랑이가 '정해 둔 답'·'읽씹'이면 false라 AI 키가 없어도 보낼 수 있음)
+  bool get repliesWithAi => !_service || (_bundle.character.service?.reply ?? 'ai') == 'ai';
+
+  Timer? _scriptedReplyTimer;
+
+  /// 서비스 말랑이 답장 (AI 없이): 조금 뒤 읽고, '정해 둔 답'이면 그중 하나를 쳐서 보냄. 연달아 보내면 마지막 뒤에 한 번만
+  void _scheduleScriptedReply() {
+    _scriptedReplyTimer?.cancel();
+    final config = _bundle.character.service;
+    if (config == null) return;
+    final runId = _runId;
+    _scriptedReplyTimer = Timer(const Duration(milliseconds: 1800), () async {
+      if (_disposed || runId != _runId) return;
+      _markAllUserMessagesRead();
+      final lines = [
+        for (final l in config.replyLines)
+          if (l.trim().isNotEmpty) l.trim()
+      ];
+      if (config.reply != 'list' || lines.isEmpty) {
+        _saveRun(keepCurrentNode: true);
+        return;
+      }
+      final random = ref.read(storyRandomProvider);
+      final text = fillServiceTemplate(lines[random.nextInt(lines.length)],
+          ref.read(serviceUserInfoProvider(_characterId)),
+          userName: _nickname, charName: state.character.name, now: ref.read(clockProvider)(), random: random);
+      await _typeOut(ScriptBubblePiece(text: text), () => !_disposed && runId == _runId);
+      if (!_disposed) _saveRun(keepCurrentNode: true);
+    });
   }
 
   /// End only the current free-chat scene; keep history and relationship memory.

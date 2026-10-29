@@ -170,4 +170,30 @@ void main() {
     final last = container.read(chatRoomProvider(dohaId)).messages.lastWhere((m) => !m.isUser && !m.isSystem);
     expect(last.text, contains('범띠 운세는… 새 사람에게서 힌트를 얻어요'));
   });
+
+  testWidgets('답장 방식: 정해 둔 답은 AI 키 없이 그중 하나로 답하고, 읽씹은 읽기만 함', (tester) async {
+    const base = ServiceConfig(mode: 'list', lines: ['오늘도 좋은 하루!'], reply: 'list', replyLines: ['{이름}, 콩떡은 거짓말 못 해!']);
+    expect(ServiceConfig.fromJson(base.toJson()).reply, 'list');
+    expect(ServiceConfig.fromJson(base.toJson()).replyLines, base.replyLines);
+    expect(ServiceConfig.fromJson(const ServiceConfig().toJson()).reply, 'ai');
+
+    SharedPreferences.setMockInitialValues({...fastTempo, 'nickname_$dohaId': '다홍'});
+    var container = await openDohaChat(tester, bundle: serviceBundle(base));
+    var notifier = container.read(chatRoomProvider(dohaId).notifier);
+    expect(notifier.repliesWithAi, isFalse);
+    expect(notifier.sendUserMessage(text: '이거 진짜 맞아요?'), isTrue, reason: 'AI 키 없어도 보내짐');
+    await settle(tester);
+    var messages = container.read(chatRoomProvider(dohaId)).messages;
+    expect(messages.last.text, '다홍, 콩떡은 거짓말 못 해!');
+    expect(messages.where((m) => m.isUser).every((m) => !m.isUnread), isTrue);
+
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    container = await openDohaChat(tester, bundle: serviceBundle(base.copyWith(reply: 'none')));
+    notifier = container.read(chatRoomProvider(dohaId).notifier);
+    expect(notifier.sendUserMessage(text: '안녕'), isTrue);
+    await settle(tester);
+    messages = container.read(chatRoomProvider(dohaId)).messages;
+    expect(messages.last.isUser, isTrue);
+    expect(messages.last.isUnread, isFalse, reason: '읽고 답은 안 함');
+  });
 }

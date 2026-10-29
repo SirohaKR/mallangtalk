@@ -115,7 +115,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _send(ChatRoomNotifier notifier) {
-    if (!_ensureAiReady()) return;
+    if (notifier.repliesWithAi && !_ensureAiReady()) return;
     if (!notifier.sendUserMessage(
         text: _inputController.text, replyTo: _replyTarget)) return;
     setState(() => _replyTarget = null);
@@ -556,7 +556,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     label: const Text('다시 보내기'),
                   ),
                 ),
-              if (chatState.isByokAiModeEnabled && !hasApiKey)
+              if (chatState.isByokAiModeEnabled && !hasApiKey && notifier.repliesWithAi)
                 GestureDetector(
                   onTap: () => _openAiSheet(theme, chatState.character),
                   child: const Padding(
@@ -744,9 +744,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 PopupMenuItem(
                     value: 'switch',
                     child: Text(free ? '스토리 대화방으로' : '자유대화 방 열기')),
-              PopupMenuItem(
-                  value: 'ai',
-                  child: Text(service ? '답장 AI 고르기' : '자유대화 AI 고르기')),
+              if (notifier.repliesWithAi ||
+                  chatState.character.service?.mode == 'ai')
+                PopupMenuItem(
+                    value: 'ai',
+                    child: Text(service ? '답장 AI 고르기' : '자유대화 AI 고르기')),
               PopupMenuItem(
                   value: 'restart',
                   child: Text(free || service ? '대화 비우기' : '처음부터 다시')),

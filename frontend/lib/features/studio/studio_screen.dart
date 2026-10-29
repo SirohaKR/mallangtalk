@@ -1995,6 +1995,40 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
           onChanged: (v) => set(s.copyWith(reroll: v)),
         ),
         const SizedBox(height: AppSpacing.sm),
+        const Text('내가 답장하면', style: AppTextStyles.speakerName),
+        const SizedBox(height: 6),
+        SegmentedButton<String>(
+          key: const ValueKey('studio_service_reply'),
+          segments: const [
+            ButtonSegment(value: 'ai', label: Text('AI가 답')),
+            ButtonSegment(value: 'list', label: Text('정해 둔 답')),
+            ButtonSegment(value: 'none', label: Text('읽씹')),
+          ],
+          selected: {s.reply},
+          showSelectedIcon: false,
+          onSelectionChanged: (v) => set(s.copyWith(reply: v.first)),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          switch (s.reply) {
+            'list' => '적어 둔 답 중에서 랜덤으로 보내요. AI 키가 없어도 돼요',
+            'none' => '읽기만 하고 답은 안 해요. AI 키가 없어도 돼요',
+            _ => '캐릭터 설정·말투대로 AI가 답해요. 대화방을 보는 사람의 AI 키를 써요',
+          },
+          style: AppTextStyles.messageTime,
+        ),
+        if (s.reply == 'list') ...[
+          const SizedBox(height: AppSpacing.sm),
+          EditField(
+            fieldKey: _k(d, 'svc_replies'),
+            value: s.replyLines.join('\n'),
+            label: '정해 둔 답 (한 줄에 하나)',
+            hint: '예: 콩떡은 거짓말 못 해! 믿으면 맞는 거야',
+            lines: 4,
+            onChanged: (v) => set(s.copyWith(replyLines: v.split('\n'))),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.sm),
         const Text('미리보기', style: AppTextStyles.speakerName),
         const SizedBox(height: 6),
         Container(

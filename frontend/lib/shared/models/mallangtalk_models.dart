@@ -183,6 +183,14 @@ class ServiceConfig {
   /// 데이터 표에 같은 이름의 칸이 있으면 유저 값과 맞는 줄에서 고르고, 틀에 {띠}처럼 넣을 수도 있음
   final List<String> ask;
 
+  /// 유저가 답장하면: 'ai' AI가 답함(기본) / 'list' [replyLines] 중 랜덤 / 'none' 읽고 답 안 함(읽씹)
+  final String reply;
+
+  /// 정해 둔 답 (reply가 'list'일 때, {이름} 등 넣을 수 있음)
+  final List<String> replyLines;
+
+  static const replyModes = ['ai', 'list', 'none'];
+
   const ServiceConfig({
     this.days = const [1, 2, 3, 4, 5, 6, 7],
     this.times = const ['08:00'],
@@ -195,6 +203,8 @@ class ServiceConfig {
     this.noRepeat = true,
     this.reroll = true,
     this.ask = const [],
+    this.reply = 'ai',
+    this.replyLines = const [],
   });
 
   static const modes = ['list', 'table', 'ai'];
@@ -211,6 +221,8 @@ class ServiceConfig {
     bool? noRepeat,
     bool? reroll,
     List<String>? ask,
+    String? reply,
+    List<String>? replyLines,
   }) =>
       ServiceConfig(
         days: days ?? this.days,
@@ -224,6 +236,8 @@ class ServiceConfig {
         noRepeat: noRepeat ?? this.noRepeat,
         reroll: reroll ?? this.reroll,
         ask: ask ?? this.ask,
+        reply: reply ?? this.reply,
+        replyLines: replyLines ?? this.replyLines,
       );
 
   factory ServiceConfig.fromJson(Map<String, dynamic> json) => ServiceConfig(
@@ -250,6 +264,8 @@ class ServiceConfig {
         noRepeat: json['no_repeat'] != false,
         reroll: json['reroll'] != false,
         ask: [for (final a in json['ask'] as List? ?? const []) '$a'],
+        reply: replyModes.contains(json['reply']) ? json['reply'] as String : 'ai',
+        replyLines: [for (final l in json['reply_lines'] as List? ?? const []) '$l'],
       );
 
   Map<String, dynamic> toJson() => {
@@ -264,6 +280,8 @@ class ServiceConfig {
         'no_repeat': noRepeat,
         'reroll': reroll,
         if (ask.isNotEmpty) 'ask': ask,
+        if (reply != 'ai') 'reply': reply,
+        if (replyLines.isNotEmpty) 'reply_lines': replyLines,
       };
 
   /// 물어볼 정보 중 데이터 표에도 있는 칸이면 그 칸의 값들 (고르기 버튼으로 보여 줌)
