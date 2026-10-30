@@ -442,3 +442,9 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
 - 변경: `PairEditBox`(studio_widgets.dart) 새로 만듦. 짧은 칸(이름·항목·상황·키워드)은 위에 한 줄(`EditField.singleLine`, 앞 아이콘 `icon`), 긴 칸은 아래에 넓게, 버튼(비밀·항상·빼기)은 짧은 칸 옆. 연한 배경 상자로 한 항목씩 묶음. 프로필 항목·대사 예시·주변 인물·로어북에 적용. 성격 막대(왼쪽·오른쪽 둘 다 짧음)는 그대로.
 - 검증: `flutter analyze` 문제 없음. 임시 골든 테스트로 3·4·6단계 캡처해서 모양 확인(notes/lorebook/ui_*.png, 테스트 파일은 지움). `flutter test` 148개 통과, 1개 실패: `claude_chat_client_test.dart`의 '방법은 절대 말하지 않는다' 확인 — main의 1b8fef9(쨋뀨 직접 수정)에서 그 문구를 뺀 탓으로 이 작업과 무관.
 - 다음: 쨋뀨가 실제 폰에서 확인. 위 실패 테스트는 문구를 되돌릴지 쨋뀨 결정 대기.
+
+## 2026-10-30 / 38. 대화방 기억 노트
+- 요청: 대화방에서 지금까지 저장된 기억(로어북처럼 쌓인 내용)을 유저가 보고 지우거나 고칠 수 있게 (쨋뀨).
+- 변경: 대화방 메뉴에 '기억 노트 (개수)' (AI로 답하는 방에서만). `lib/features/chat/memory_sheet.dart` 창에서 한 줄 기억을 최근 것부터 보여 주고, 눌러서 고치기·지우기·'기억 추가'. 바뀌면 바로 `ChatRoomNotifier.setMemories`로 저장(run_<방ID>.memories, 계정 연동 그대로). 최근 5개(늘 AI에게 넘어감)는 핀 아이콘.
+- 검증: `flutter analyze` 문제 없음, `memory_note_test.dart` 추가(고치기·지우기·더하기 후 저장 확인). 전체 `flutter test` 149개 통과, 1개 실패는 37번과 같은 main 쪽 문구 문제. 화면 캡처 notes/lorebook/memory_*.png.
+- 다음: 쨋뀨가 폰에서 확인.

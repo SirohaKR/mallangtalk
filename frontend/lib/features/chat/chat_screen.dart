@@ -18,6 +18,7 @@ import 'start_chat.dart';
 import 'chat_ai_sheet.dart';
 import 'chat_notifier.dart';
 import 'chat_theme.dart';
+import 'memory_sheet.dart';
 import 'romance_settings.dart';
 import '../../shared/utils/dialogue_input.dart';
 
@@ -804,6 +805,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   setState(() => _replyTarget = null);
                 case 'romance':
                   showRomanceSettings(context, chatState.character);
+                case 'memory':
+                  showMemorySheet(context,
+                      characterName: chatState.character.name,
+                      memories: chatState.memories,
+                      onChanged: notifier.setMemories);
                 case 'switch':
                   _switchRoom();
                 case 'restart':
@@ -818,6 +824,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
               if (free)
                 const PopupMenuItem(value: 'romance', child: Text('로맨스 분위기')),
+              if (notifier.repliesWithAi)
+                PopupMenuItem(
+                    value: 'memory',
+                    child: Text('기억 노트 (${chatState.memories.length})')),
               if (free)
                 const PopupMenuItem(
                     value: 'end_scene', child: Text('대화 끝 구분선 넣기')),
