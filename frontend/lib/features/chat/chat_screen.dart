@@ -18,6 +18,7 @@ import 'start_chat.dart';
 import 'chat_ai_sheet.dart';
 import 'chat_notifier.dart';
 import 'chat_theme.dart';
+import 'chat_side_menu.dart';
 import 'memory_sheet.dart';
 import 'romance_settings.dart';
 import '../../shared/utils/dialogue_input.dart';
@@ -145,7 +146,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               CoachItem('프로필 사진을 누르면 이 말랑이 소개를 볼 수 있어',
                   target: _avatarKey),
               const CoachItem('문구가 마음에 안 들면 **한 번 더 뽑기**로 다시 받아'),
-              CoachItem('**메뉴**에서 내 별명·정보를 바꾸거나 대화를 비울 수 있어',
+              CoachItem('**메뉴**에서 내 정보를 바꿔. 채팅창에 **/비우기**를 치면 대화를 비워',
                   target: _menuKey),
             ]
           : free
@@ -158,7 +159,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   CoachItem('어울리는 순간엔 사진도 보내고, 받은 사진은 **앨범**에 모여',
                       target: _albumKey),
                   CoachItem(
-                      '**메뉴**에서 로맨스 분위기, 대화 끝 구분선, 스토리 대화방으로 가기를 할 수 있어',
+                      '**메뉴**에서 내 정보, 대화 설정, 로어북(쌓인 기억)을 볼 수 있어. 채팅창에 **/** 를 치면 명령어가 나와',
                       target: _menuKey),
                 ]
               : [
@@ -171,7 +172,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   const CoachItem(
                       '선택지에 따라 이야기와 호감도가 달라져. 고른 답은 내가 직접 치는 것처럼 보내져'),
                   CoachItem(
-                      '**메뉴**에서 내 별명·설정, 대화 속도, 자유대화 방 열기, 처음부터 다시를 할 수 있어',
+                      '**메뉴**에서 내 정보, 대화 설정, 자유대화 방 열기, 처음부터 다시를 할 수 있어',
                       target: _menuKey),
                 ],
       tourIndex: free || service ? null : 4,
@@ -191,7 +192,80 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  List<ChatCommand> _commands(CharacterModel character) =>
+      ChatCommand.forRoom(free: isFreeRoom(widget.roomId), service: character.isService);
+
+  /// 사이드바에서 고른 항목을 팝업으로 엶
+  Future<void> _onSideMenu(String value, ChatTheme theme, ChatRoomState chatState, ChatRoomNotifier notifier) async {
+    final character = chatState.character;
+    switch (value) {
+      case 'profile':
+        askChatNickname(context, character);
+      case 'settings':
+        final pick = await showChatSettingsDialog(context,
+            accent: theme.accent,
+            romance: isFreeRoom(widget.roomId),
+            ai: notifier.repliesWithAi || character.service?.mode == 'ai');
+        if (!mounted) return;
+        switch (pick) {
+          case 'tempo':
+            pickChatTempo(context, character);
+          case 'romance':
+            showRomanceSettings(context, character);
+          case 'ai':
+            _openAiSheet(theme, character);
+        }
+      case 'lorebook':
+        showMemorySheet(context,
+            characterName: character.name,
+            memories: ref.read(chatRoomProvider(widget.roomId)).memories,
+            onChanged: notifier.setMemories);
+      case 'switch':
+        _switchRoom();
+      case 'restart':
+        if (await _confirm('처음부터 다시 할까요?', '지금까지 나눈 이야기가 지워져요.')) notifier.restart();
+    }
+  }
+
+  Future<bool> _confirm(String title, String body) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('확인')),
+          ],
+        ),
+      ) ==
+      true;
+
+  /// 채팅창 명령어 실행 (/구분선, /비우기)
+  Future<void> _runCommand(ChatCommand command, ChatRoomNotifier notifier) async {
+    _inputController.clear();
+    notifier.onUserTypingChanged('');
+    if (command == ChatCommand.divider) {
+      notifier.endConversation();
+      setState(() => _replyTarget = null);
+    } else if (command == ChatCommand.clear) {
+      if (await _confirm('대화를 비울까요?', '이 방의 톡이 모두 지워져요. 로어북 기억은 남아요.')) notifier.restart();
+    } else {
+      final names = _commands(ref.read(chatRoomProvider(widget.roomId)).character).map((c) => '/${c.name}').join(', ');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(names.isEmpty ? '이 방에선 명령어를 쓸 수 없어요' : '모르는 명령어예요. 쓸 수 있는 것: $names')));
+    }
+  }
+
   void _send(ChatRoomNotifier notifier) {
+    final command = ChatCommand.parse(
+        _inputController.text, _commands(ref.read(chatRoomProvider(widget.roomId)).character));
+    if (command != null) {
+      _runCommand(command, notifier);
+      return;
+    }
     if (notifier.repliesWithAi && !_ensureAiReady()) return;
     if (!notifier.sendUserMessage(
         text: _inputController.text, replyTo: _replyTarget)) return;
@@ -668,6 +742,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
               const SizedBox(height: 4),
+              // 입력칸에 '/'를 치면 쓸 수 있는 명령어
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _inputController,
+                builder: (context, value, _) {
+                  final commands = _commands(chatState.character);
+                  final typed = value.text.trim();
+                  if (commands.isEmpty || !typed.startsWith('/')) return const SizedBox.shrink();
+                  final match = commands.where((c) => '/${c.name}'.startsWith(typed)).toList();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final c in match.isEmpty ? commands : match)
+                          ActionChip(
+                            key: ValueKey('command_${c.name}'),
+                            avatar: Icon(Icons.keyboard_command_key_rounded, size: 16, color: theme.accent),
+                            label: Text('/${c.name}  ${c.label}'),
+                            onPressed: () => _runCommand(c, notifier),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
               _InputBar(
                 // 스토리 방이거나 선택지 대사가 쳐지는 중이면 보이기만 하고 못 누름
                 enabled: chatState.isByokAiModeEnabled &&
@@ -688,7 +788,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: theme.background,
+      endDrawer: ChatSideMenu(
+        character: chatState.character,
+        accent: theme.accent,
+        nickname: ref.watch(chatNicknameProvider(id)),
+        memoryCount: chatState.memories.length,
+        showLorebook: notifier.repliesWithAi,
+        commands: _commands(chatState.character),
+        storyRoom: !free && !service,
+        onSelected: (value) => _onSideMenu(value, theme, chatState, notifier),
+      ),
       appBar: AppBar(
         automaticallyImplyLeading: !widget.embedded,
         // 대표색 윗줄
@@ -788,62 +899,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onPressed: () => context.push('/chat/$id/album'),
               icon: const Icon(Icons.photo_library_outlined),
             ),
-          PopupMenuButton<String>(
+          IconButton(
             key: _menuKey,
-            tooltip: '대화 설정',
-            icon: const Icon(Icons.more_vert_rounded),
-            onSelected: (value) {
-              switch (value) {
-                case 'nickname':
-                  askChatNickname(context, chatState.character);
-                case 'tempo':
-                  pickChatTempo(context, chatState.character);
-                case 'ai':
-                  _openAiSheet(theme, chatState.character);
-                case 'end_scene':
-                  notifier.endConversation();
-                  setState(() => _replyTarget = null);
-                case 'romance':
-                  showRomanceSettings(context, chatState.character);
-                case 'memory':
-                  showMemorySheet(context,
-                      characterName: chatState.character.name,
-                      memories: chatState.memories,
-                      onChanged: notifier.setMemories);
-                case 'switch':
-                  _switchRoom();
-                case 'restart':
-                  notifier.restart();
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'nickname',
-                child: Text('${chatState.character.isService ? '내 별명·정보' : '내 별명·설정'}: ${ref.read(chatNicknameProvider(id))}'),
-              ),
-              const PopupMenuItem(value: 'tempo', child: Text('대화 속도')),
-              if (free)
-                const PopupMenuItem(value: 'romance', child: Text('로맨스 분위기')),
-              if (notifier.repliesWithAi)
-                PopupMenuItem(
-                    value: 'memory',
-                    child: Text('기억 노트 (${chatState.memories.length})')),
-              if (free)
-                const PopupMenuItem(
-                    value: 'end_scene', child: Text('대화 끝 구분선 넣기')),
-              if (!service)
-                PopupMenuItem(
-                    value: 'switch',
-                    child: Text(free ? '스토리 대화방으로' : '자유대화 방 열기')),
-              if (notifier.repliesWithAi ||
-                  chatState.character.service?.mode == 'ai')
-                PopupMenuItem(
-                    value: 'ai',
-                    child: Text(service ? '답장 AI 고르기' : '자유대화 AI 고르기')),
-              PopupMenuItem(
-                  value: 'restart',
-                  child: Text(free || service ? '대화 비우기' : '처음부터 다시')),
-            ],
+            tooltip: '메뉴',
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+            icon: const Icon(Icons.menu_rounded),
           ),
           const SizedBox(width: 4),
         ],

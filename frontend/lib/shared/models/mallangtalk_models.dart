@@ -199,6 +199,25 @@ class LoreEntry {
   }
 }
 
+/// 대화방 로어북의 기억 한 개: 대화가 끝날 때 AI가 남기거나 유저가 기억 노트에서 적음.
+/// 저장은 '제목\n세부사항' 글자 하나로 (예전 한 줄 기억은 제목 없이 세부사항만)
+class MemoryNote {
+  final String title;
+  final String detail;
+  const MemoryNote({this.title = '', this.detail = ''});
+
+  factory MemoryNote.parse(String text) {
+    final i = text.indexOf('\n');
+    if (i < 0) return MemoryNote(detail: text.trim());
+    return MemoryNote(title: text.substring(0, i).trim(), detail: text.substring(i + 1).trim());
+  }
+
+  String encode() => title.trim().isEmpty ? detail.trim() : '${title.trim()}\n${detail.trim()}';
+
+  /// AI에게 넘길 한 줄
+  String get forAi => title.isEmpty ? detail : detail.isEmpty ? title : '$title: $detail';
+}
+
 /// 2. 캐릭터 기본 설정 모델 (DB 테이블: characters)
 /// 설정 항목은 쨋뀨의 캐릭터 아카이브 loreshelf(인물·유저·기타 인물 카드)를 참고했어요.
 /// 서비스 말랑이가 언제 무슨 톡을 보낼지
