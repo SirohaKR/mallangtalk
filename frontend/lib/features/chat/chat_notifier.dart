@@ -553,6 +553,16 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _advance(_runId);
   }
 
+  /// 기억 노트에서 유저가 고친 한 줄 기억을 저장 (빈 줄은 버림)
+  void setMemories(List<String> memories) {
+    if (_disposed) return;
+    state = state.copyWith(memories: [
+      for (final m in memories)
+        if (m.trim().isNotEmpty) m.trim(),
+    ]);
+    _saveRun(keepCurrentNode: true);
+  }
+
   /// 진행 기록을 브라우저에 저장. 이벤트 경계마다, 그리고 이벤트 중간에는 말풍선마다
   /// [node]·[nextBubble]로 돌아올 자리를 함께 저장해서 나갔다 와도 그 자리부터 이어짐
   void _saveRun(

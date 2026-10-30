@@ -99,11 +99,15 @@ void main() {
       'byok_model_gemini': 'gemini-3.8-flash',
     });
     final container = await openDohaChat(tester);
-    await tester.tap(find.byTooltip('대화 설정'));
+    await tester.tap(find.byTooltip('메뉴'));
     for (var i = 0; i < 3; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
-    await tester.tap(find.text('자유대화 AI 고르기'));
+    await tester.tap(find.text('대화 설정'));
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    await tester.tap(find.text('AI 모델'));
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
@@ -134,11 +138,15 @@ void main() {
       'byok_claude_api_key': 'sk-ant-test',
     });
     final container = await openDohaChat(tester);
-    await tester.tap(find.byTooltip('대화 설정'));
+    await tester.tap(find.byTooltip('메뉴'));
     for (var i = 0; i < 3; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
-    await tester.tap(find.text('자유대화 AI 고르기'));
+    await tester.tap(find.text('대화 설정'));
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    await tester.tap(find.text('AI 모델'));
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }

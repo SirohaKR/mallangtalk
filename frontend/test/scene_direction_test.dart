@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/core/network/conversation_context.dart';
@@ -21,9 +22,9 @@ void main() {
     await settle(tester);
     final count = container.read(chatRoomProvider(room)).messages.length;
     now = now.add(const Duration(minutes: 20));
-    await tester.tap(find.byTooltip('대화 설정'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('대화 끝 구분선 넣기'));
+    // 채팅창 명령어 /구분선
+    await tester.enterText(find.byType(TextField), '/구분선');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pumpAndSettle();
     expect(container.read(chatRoomProvider(room)).messages.length, count + 1);
     expect(container.read(chatRoomProvider(room)).messages.last.text, '대화 끝');

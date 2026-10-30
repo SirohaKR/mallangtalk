@@ -1282,37 +1282,30 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
             const Text('대사 예시 · AI가 말투를 배워요', style: AppTextStyles.speakerName),
             const SizedBox(height: 6),
             for (var i = 0; i < d.sampleQuotes.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 92,
-                      child: EditField(
-                          fieldKey: _k(d, 'sq-s-$i-${d.sampleQuotes.length}'),
-                          value: d.sampleQuotes[i].situation,
-                          hint: '상황',
-                          dense: true,
-                          onChanged: (v) =>
-                              d.sampleQuotes[i] = CharacterQuote(situation: v, body: d.sampleQuotes[i].body)),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: EditField(
-                          fieldKey: _k(d, 'sq-b-$i-${d.sampleQuotes.length}'),
-                          value: d.sampleQuotes[i].body,
-                          hint: '대사',
-                          dense: true,
-                          onChanged: (v) =>
-                              d.sampleQuotes[i] = CharacterQuote(situation: d.sampleQuotes[i].situation, body: v)),
-                    ),
-                    IconButton(
-                      tooltip: '빼기',
-                      onPressed: () => setState(() => d.sampleQuotes.removeAt(i)),
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                    ),
-                  ],
-                ),
+              PairEditBox(
+                head: EditField(
+                    fieldKey: _k(d, 'sq-s-$i-${d.sampleQuotes.length}'),
+                    value: d.sampleQuotes[i].situation,
+                    hint: '상황 (예: 기분 좋을 때)',
+                    icon: Icons.theater_comedy_outlined,
+                    dense: true,
+                    singleLine: true,
+                    onChanged: (v) =>
+                        d.sampleQuotes[i] = CharacterQuote(situation: v, body: d.sampleQuotes[i].body)),
+                body: EditField(
+                    fieldKey: _k(d, 'sq-b-$i-${d.sampleQuotes.length}'),
+                    value: d.sampleQuotes[i].body,
+                    hint: '대사',
+                    dense: true,
+                    onChanged: (v) =>
+                        d.sampleQuotes[i] = CharacterQuote(situation: d.sampleQuotes[i].situation, body: v)),
+                actions: [
+                  IconButton(
+                    tooltip: '빼기',
+                    onPressed: () => setState(() => d.sampleQuotes.removeAt(i)),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
+                ],
               ),
             Align(
               alignment: Alignment.centerLeft,
@@ -2339,28 +2332,22 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final f in d.fields)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 92,
-                    child: EditField(
-                        fieldKey: _k(f, 'label'),
-                        value: f.label,
-                        hint: '항목',
-                        dense: true,
-                        onChanged: (v) => f.label = v),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: EditField(
-                        fieldKey: _k(f, 'value'),
-                        value: f.value,
-                        hint: '내용',
-                        dense: true,
-                        onChanged: (v) => f.value = v),
-                  ),
+            PairEditBox(
+              head: EditField(
+                  fieldKey: _k(f, 'label'),
+                  value: f.label,
+                  hint: '항목 (예: 나이)',
+                  icon: Icons.label_outline_rounded,
+                  dense: true,
+                  singleLine: true,
+                  onChanged: (v) => f.label = v),
+              body: EditField(
+                  fieldKey: _k(f, 'value'),
+                  value: f.value,
+                  hint: '내용',
+                  dense: true,
+                  onChanged: (v) => f.value = v),
+              actions: [
                   IconButton(
                     tooltip: f.isSecret ? '비밀 (숨김)' : '공개',
                     onPressed: () => setState(() => f.isSecret = !f.isSecret),
@@ -2372,8 +2359,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
                     onPressed: () => setState(() => d.fields.remove(f)),
                     icon: const Icon(Icons.close_rounded, size: 20),
                   ),
-                ],
-              ),
+              ],
             ),
           Align(
             alignment: Alignment.centerLeft,
@@ -2395,39 +2381,33 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final e in d.cast)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  if (e.characterId != null)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 4),
-                      child: Tooltip(
-                        message: '내 캐릭터와 연결됨',
-                        child: Icon(Icons.link_rounded, size: 18, color: AppColors.primaryPink),
-                      ),
-                    ),
-                  SizedBox(
-                    width: 92,
-                    child: EditField(
-                        fieldKey: _k(e, 'name'), value: e.name, hint: '이름', dense: true, onChanged: (v) => e.name = v),
+            PairEditBox(
+              head: EditField(
+                  fieldKey: _k(e, 'name'),
+                  value: e.name,
+                  hint: '이름',
+                  icon: e.characterId != null ? Icons.link_rounded : Icons.person_outline_rounded,
+                  dense: true,
+                  singleLine: true,
+                  onChanged: (v) => e.name = v),
+              body: EditField(
+                  fieldKey: _k(e, 'role'),
+                  value: e.role,
+                  hint: '관계·특징 (예: 룸메이트. 늘 라면만 먹음)',
+                  dense: true,
+                  onChanged: (v) => e.role = v),
+              actions: [
+                if (e.characterId != null)
+                  const Tooltip(
+                    message: '내 캐릭터와 연결됨',
+                    child: Icon(Icons.link_rounded, size: 18, color: AppColors.primaryPink),
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: EditField(
-                        fieldKey: _k(e, 'role'),
-                        value: e.role,
-                        hint: '관계 (예: 룸메이트)',
-                        dense: true,
-                        onChanged: (v) => e.role = v),
-                  ),
-                  IconButton(
-                    tooltip: '빼기',
-                    onPressed: () => setState(() => d.cast.remove(e)),
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                  ),
-                ],
-              ),
+                IconButton(
+                  tooltip: '빼기',
+                  onPressed: () => setState(() => d.cast.remove(e)),
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                ),
+              ],
             ),
           Align(
             alignment: Alignment.centerLeft,
@@ -2457,44 +2437,38 @@ class _StudioScreenState extends ConsumerState<StudioScreen> with AutomaticKeepA
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final e in d.lore)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: EditField(
-                            fieldKey: _k(e, 'keys'),
-                            value: e.keys,
-                            hint: e.always ? '항상 기억 (키워드 없어도 돼요)' : '키워드 (쉼표로, 예: 루나, 고양이)',
-                            dense: true,
-                            onChanged: (v) => e.keys = v),
-                      ),
-                      Tooltip(
-                        message: '키워드와 상관없이 늘 기억',
-                        child: FilterChip(
-                          label: const Text('항상'),
-                          selected: e.always,
-                          onSelected: (v) => setState(() => e.always = v),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '빼기',
-                        onPressed: () => setState(() => d.lore.remove(e)),
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                      ),
-                    ],
+            PairEditBox(
+              head: EditField(
+                  fieldKey: _k(e, 'keys-${e.always}'),
+                  value: e.keys,
+                  hint: e.always ? '항상 기억 (키워드 없어도 됨)' : '키워드 (예: 루나, 고양이)',
+                  icon: e.always ? Icons.push_pin_outlined : Icons.sell_outlined,
+                  dense: true,
+                  singleLine: true,
+                  onChanged: (v) => e.keys = v),
+              body: EditField(
+                  fieldKey: _k(e, 'content'),
+                  value: e.content,
+                  hint: '내용 (예: 루나는 3살 고등어 고양이. 간식은 츄르만 먹고 {{char}} 무릎에서 잔다)',
+                  lines: 2,
+                  dense: true,
+                  onChanged: (v) => e.content = v),
+              actions: [
+                Tooltip(
+                  message: '키워드와 상관없이 늘 기억',
+                  child: FilterChip(
+                    label: const Text('항상'),
+                    selected: e.always,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (v) => setState(() => e.always = v),
                   ),
-                  EditField(
-                      fieldKey: _k(e, 'content'),
-                      value: e.content,
-                      hint: '내용 (예: 루나는 3살 고등어 고양이. 간식은 츄르만 먹고 {{char}} 무릎에서 잔다)',
-                      lines: 2,
-                      onChanged: (v) => e.content = v),
-                ],
-              ),
+                ),
+                IconButton(
+                  tooltip: '빼기',
+                  onPressed: () => setState(() => d.lore.remove(e)),
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                ),
+              ],
             ),
           Align(
             alignment: Alignment.centerLeft,

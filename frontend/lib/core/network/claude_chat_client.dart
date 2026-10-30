@@ -78,10 +78,15 @@ class ClaudeChatClient {
         'type': 'boolean',
         'description': '이 답장으로 캐릭터가 대화를 마무리하면 true',
       },
+      'memory_title': {
+        'type': 'string',
+        'description':
+            'end_conversation이 true일 때만: 이번 대화 기억의 짧은 제목 (예: 소금빵집 약속). 아니면 빈 글자',
+      },
       'memory': {
         'type': 'string',
         'description':
-            'end_conversation이 true일 때만: 이번 대화를 캐릭터 입장에서 한 줄로 요약. 아니면 빈 글자',
+            'end_conversation이 true일 때만: 이번 대화를 캐릭터 입장에서 한 줄로 요약한 세부사항. 아니면 빈 글자',
       },
       'photo': {
         'type': 'string',
@@ -93,6 +98,7 @@ class ClaudeChatClient {
       'replies',
       'affection_delta',
       'end_conversation',
+      'memory_title',
       'memory',
       'photo'
     ],
@@ -136,7 +142,7 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 [현재 관계]
 ${stageLabel != null ? '${character.name}에게 유저는 지금 "$stageLabel" 단계다.' : '정해진 이야기 없이 설정과 유저 페르소나대로 자유롭게 이어 가는 대화다. 관계는 설정에 맞춰 자연스럽게 정한다.'}${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
 
-${lore.isEmpty ? '' : '[지금 대화와 관련된 설정 (로어북)] (캐릭터가 이미 알고 있는 사실. 대화에 필요할 때 자연스럽게 쓰고, 설명하듯 늘어놓지 않는다)\n${lore.map((e) => '- ${CharacterModel.fillUserName(e.content.trim(), userName, charName: character.name)}').join('\n')}\n\n'}${recalled.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억] (오래된 것부터. 캐릭터는 이 일들을 기억하고, 관련 얘기가 나오면 먼저 떠올려 말할 수 있다)\n${recalled.map((m) => '- $m').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
+${lore.isEmpty ? '' : '[지금 대화와 관련된 설정 (로어북)] (캐릭터가 이미 알고 있는 사실. 대화에 필요할 때 자연스럽게 쓰고, 설명하듯 늘어놓지 않는다)\n${lore.map((e) => '- ${CharacterModel.fillUserName(e.content.trim(), userName, charName: character.name)}').join('\n')}\n\n'}${recalled.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억] (오래된 것부터. 캐릭터는 이 일들을 기억하고, 관련 얘기가 나오면 먼저 떠올려 말할 수 있다)\n${recalled.map((m) => '- ${MemoryNote.parse(m).forAi}').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
 - 유저가 한 말을 매번 요약하거나 되풀이한 뒤 감상을 붙이는 방식으로 답하지 않는다. 질문에 바로 대답하고, 자기 생각·취향·지금 하는 일·작은 사건으로 대화를 이어 간다.
 - 유저가 애정을 말해도 자동으로 "나도 좋아해"로 되받지 않는다. 관계와 캐릭터의 성격에 맞는 구체적인 반응을 고른다. 평범한 일상 화제를 억지로 사랑 고백으로 바꾸지 않는다.
 - 이미 말한 고백·상투어를 연속해서 반복하지 않는다. 모든 답장 끝에 질문을 붙이지 말고, 짧은 반응·자기 이야기·질문을 상황에 맞게 섞는다.
@@ -156,7 +162,7 @@ ${lore.isEmpty ? '' : '[지금 대화와 관련된 설정 (로어북)] (캐릭�
 - 기록의 [대화 구분] 앞에서 진행하던 화제·행동·장면은 마무리된 과거다. 새 대화에서 이전 행동을 계속하는 것으로 가정하지 않는다. 이전 대화와 기억은 유지하며, 유저가 원하면 "아까 얘기했던 것"처럼 다시 언급하거나 이어 갈 수 있다.
 - 유저가 죽고 싶다, 자살·자해 같은 말을 해도 캐릭터를 벗어나지 않는다. 상담 전화번호·안내 문구·AI로서의 설명을 붙이지 않고, 캐릭터답게 진심으로 놀라고 붙잡는다("어디 가, 가지 마", "지금 어디야? 나랑 얘기해"). 무슨 일인지 묻고 곁에 있겠다고 한다.
 - affection_delta는 유저 말에 대한 캐릭터의 속마음 반응이다. 평범한 대화는 0~1, 설레거나 감동하면 2~3, 무례하거나 서운하면 음수.
-- 작별 인사가 오가거나 화제가 자연스럽게 끝나면 캐릭터답게 마무리하고 end_conversation을 true로, memory에 이번 대화를 한 줄로 남긴다.${_paceRule(pace)}''';
+- 작별 인사가 오가거나 화제가 자연스럽게 끝나면 캐릭터답게 마무리하고 end_conversation을 true로, memory_title에 짧은 제목, memory에 이번 대화를 한 줄로 남긴다.${_paceRule(pace)}''';
 
     final user = '''
 [지금까지 대화]
@@ -263,7 +269,13 @@ ${userInfo.trim().isEmpty ? '' : '\n[유저가 알려 준 정보]\n${userInfo.tr
       throw const ClaudeChatException('AI 답장을 읽지 못했어요. 다시 보내 주세요.');
     final delta = (json['affection_delta'] as num? ?? 0).toInt().clamp(-3, 3);
     final ends = json['end_conversation'] == true;
-    final memory = ends ? (json['memory'] as String? ?? '').trim() : '';
+    final detail = ends ? (json['memory'] as String? ?? '').trim() : '';
+    final memory = detail.isEmpty
+        ? ''
+        : MemoryNote(
+                title: (json['memory_title'] as String? ?? '').trim(),
+                detail: detail)
+            .encode();
     final photo = (json['photo'] as String? ?? '').trim();
     return FreeChatReply(
         bubbles: bubbles,
