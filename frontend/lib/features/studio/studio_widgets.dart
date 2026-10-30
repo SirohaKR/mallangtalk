@@ -17,6 +17,8 @@ class EditField extends StatelessWidget {
     this.lines = 1,
     this.maxLength,
     this.dense = false,
+    this.singleLine = false,
+    this.icon,
   });
 
   final Object fieldKey;
@@ -28,22 +30,30 @@ class EditField extends StatelessWidget {
   final int? maxLength;
   final bool dense;
 
+  /// 이름·키워드처럼 짧은 칸: 늘 한 줄 (안내 글도 한 줄)
+  final bool singleLine;
+
+  /// 칸 앞 작은 아이콘
+  final IconData? icon;
+
   @override
   Widget build(BuildContext context) {
     final field = TextFormField(
       key: ValueKey(fieldKey),
       initialValue: value,
       // 글이 길어지면 칸이 아래로 늘어남. 한 줄 칸은 줄바꿈 없이 감싸서 보여 주고 엔터는 '완료'
-      minLines: lines,
-      maxLines: null,
+      minLines: singleLine ? 1 : lines,
+      maxLines: singleLine ? 1 : null,
       keyboardType: lines == 1 ? TextInputType.text : TextInputType.multiline,
       textInputAction: lines == 1 ? TextInputAction.done : TextInputAction.newline,
       maxLength: maxLength,
       onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
-        hintMaxLines: 3,
+        hintMaxLines: singleLine ? 1 : 3,
         isDense: dense,
+        prefixIcon: icon == null ? null : Icon(icon, size: 18, color: AppColors.textMuted),
+        prefixIconConstraints: icon == null ? null : const BoxConstraints(minWidth: 36, minHeight: 20),
         counterText: maxLength == null ? null : '',
       ),
     );
@@ -56,6 +66,39 @@ class EditField extends StatelessWidget {
           Text(label!, style: AppTextStyles.speakerName),
           const SizedBox(height: 4),
           field,
+        ],
+      ),
+    );
+  }
+}
+
+/// 짧은 칸(이름·항목·상황·키워드)과 긴 칸(설명)을 한 묶음으로:
+/// 짧은 칸은 위에 한 줄로, 긴 칸은 아래에 넓게 두어 두 칸 높이가 따로 놀지 않게 함
+class PairEditBox extends StatelessWidget {
+  const PairEditBox({super.key, required this.head, required this.body, this.actions = const []});
+
+  final Widget head;
+  final Widget body;
+
+  /// 짧은 칸 옆 버튼 (비밀·항상·빼기 등)
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 4, 10),
+      decoration: BoxDecoration(
+        color: AppColors.scaffoldBackground,
+        borderRadius: BorderRadius.circular(AppSpacing.choiceRadius),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [Expanded(child: head), ...actions]),
+          const SizedBox(height: 6),
+          Padding(padding: const EdgeInsets.only(right: 6), child: body),
         ],
       ),
     );
