@@ -222,7 +222,9 @@ void main() {
     expect(find.text('내일 또 톡해'), findsOneWidget);
     expect(find.text('자유대화가 끝났어요'), findsOneWidget);
     expect(state.isByokAiModeEnabled, isFalse);
-    expect(state.memories, ['두부 얘기로 한참 웃었다']);
+    // 대화가 끝나면 그때까지 나눈 대화를 요약해 로어북에 남김
+    expect(state.memories, ['두부\n두부 얘기로 한참 웃었다']);
+    expect(fake.summarized.single.where((m) => m.isUser).map((m) => m.text), containsAllInOrder(['뭐해', '나 이제 자야겠다']));
     expect(state.internalAffection, 3); // 자유대화에서 오른 만큼만 (2 + 1)
     expect(state.completedEventIds, isEmpty);
     // 미뤘던 첫 이벤트가 처음부터 다시
@@ -232,7 +234,7 @@ void main() {
     notifier.toggleDirectInputMode(true);
     notifier.sendUserMessage(text: '안녕');
     await settle(tester);
-    expect(fake.lastMemories, ['두부 얘기로 한참 웃었다']);
+    expect(fake.lastMemories, ['두부\n두부 얘기로 한참 웃었다']);
   });
 
   testWidgets('AI가 안 끝내도 6번째부터 마무리하라고 하고 12번째에는 꼭 끝냄', (tester) async {
@@ -328,6 +330,23 @@ class _FakeClaude extends ClaudeChatClient {
   String? lastStageLabel = '';
   /// 답장에 같이 보낼 사진 ID
   String sendPhoto = '';
+  /// 로어북 요약을 부탁받은 대화들
+  final summarized = <List<ChatMessageLog>>[];
+
+  @override
+  Future<MemoryNote> summarizeLore({
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required List<ChatMessageLog> messages,
+    required String userName,
+    List<String> previous = const [],
+  }) async {
+    summarized.add(messages);
+    return const MemoryNote(title: '두부', detail: '두부 얘기로 한참 웃었다');
+  }
 
   @override
   Future<FreeChatReply> reply({
@@ -366,7 +385,6 @@ class _FakeClaude extends ClaudeChatClient {
         bubbles: ['아 나 이제 씻으러 가야겠다', '내일 또 톡해'],
         affectionDelta: 1,
         ends: true,
-        memory: '두부 얘기로 한참 웃었다',
       );
     }
     lastProvider = provider;

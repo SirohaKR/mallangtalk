@@ -102,8 +102,11 @@ class SavedRun {
   final String? nodeId;
   final int nextBubble;
 
-  /// 자유대화가 끝날 때마다 남긴 한 줄 기억 (최근 것 몇 개만)
+  /// 대화방 로어북: 몇 턴마다 그동안 대화를 요약해 남긴 기억 ('제목\n요약', 개수 제한 없음)
   final List<String> memories;
+
+  /// 로어북 요약이 어디까지 됐는지 (그 메시지 ID까지 요약함)
+  final String? loreUptoId;
 
   /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
   final int? resetAt;
@@ -121,6 +124,7 @@ class SavedRun {
     this.nodeId,
     this.nextBubble = 0,
     this.memories = const [],
+    this.loreUptoId,
     this.resetAt,
     this.seenMessageCount,
   });
@@ -132,6 +136,7 @@ class SavedRun {
         'messages': [for (final m in messages) m.toJson()],
         'cleared': cleared,
         if (memories.isNotEmpty) 'memories': memories,
+        if (loreUptoId != null) 'lore_upto': loreUptoId,
         if (nodeId != null) ...{
           'event_id': eventId,
           'node_id': nodeId,
@@ -158,6 +163,7 @@ class SavedRun {
       nodeId: json['node_id'] as String?,
       nextBubble: json['next_bubble'] as int? ?? 0,
       memories: [for (final m in json['memories'] as List? ?? const []) '$m'],
+      loreUptoId: json['lore_upto'] as String?,
       resetAt: (json['reset_at'] as num?)?.toInt(),
       seenMessageCount: (json['seen_message_count'] as num?)?.toInt(),
     );
