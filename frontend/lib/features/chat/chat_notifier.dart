@@ -263,6 +263,13 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
 
   /// 이번 자유대화에서 캐릭터가 답한 횟수 (이야기 진행 중이면 [freeTalkWrapUpTurn]부터 마무리, [freeTalkMaxTurns]에서 끝)
   int _freeTurns = 0;
+
+  /// 로어북 요약이 어디까지 됐는지 (그 메시지 ID까지 요약함, null이면 처음부터)
+  String? _loreUptoId;
+  bool _summarizing = false;
+
+  /// 이만큼 주고받을 때마다 그동안 대화를 요약해 로어북에 남김
+  static const loreEveryTurns = 10;
   static const freeTalkWrapUpTurn = 6;
   static const freeTalkMaxTurns = 12;
 
@@ -371,6 +378,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       _serviceTimer =
           Timer.periodic(const Duration(seconds: 30), (_) => _deliverService());
       Future.microtask(_deliverService);
+      _loreUptoId = savedService?.loreUptoId;
       return _freshRunState(unlockedCutscenes: album).copyWith(
         isByokAiModeEnabled: true,
         internalAffection: 100,
@@ -385,6 +393,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       final freeMsgs = savedFree?.messages ?? const [];
       final freeSeen = (savedFree?.seenMessageCount ?? freeMsgs.length)
           .clamp(0, freeMsgs.length);
+      _loreUptoId = savedFree?.loreUptoId;
       return _freshRunState(unlockedCutscenes: album).copyWith(
         isByokAiModeEnabled: true,
         messages: freeMsgs,
@@ -410,6 +419,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       ]);
 
     _resetAt = saved?.resetAt;
+    _loreUptoId = saved?.loreUptoId;
     // 저장된 진행 기록이 있으면 마지막으로 끝낸 이벤트 다음부터 이어서 진행
     if (saved != null) {
       final savedSeen = (saved.seenMessageCount ?? saved.messages.length)
@@ -534,6 +544,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _userBurstReplyTimer?.cancel();
     _pendingUserBurstTexts.clear();
     _freeTurns = 0;
+    _loreUptoId = null; // 비운 대화는 요약 위치도 처음부터 (로어북은 남김)
     if (_aiRoom) {
       // 자유대화 방·서비스 말랑이는 대화만 비움 (한 줄 기억은 남김)
       state = state.copyWith(
@@ -553,7 +564,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _advance(_runId);
   }
 
-  /// 기억 노트에서 유저가 고친 한 줄 기억을 저장 (빈 줄은 버림)
+  /// 로어북 창에서 유저가 고친 기억을 저장 (빈 줄은 버림)
   void setMemories(List<String> memories) {
     if (_disposed) return;
     state = state.copyWith(memories: [
@@ -595,6 +606,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         nodeId: node?.id,
         nextBubble: nextBubble,
         memories: state.memories,
+        loreUptoId: _loreUptoId,
         resetAt: _resetAt,
         seenMessageCount:
             state.seenMessageCount.clamp(0, state.messages.length),
@@ -1522,6 +1534,47 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           timestamp: now),
     ]);
     _saveRun();
+    unawaited(_maybeSummarize(force: true));
+  }
+
+  /// 지난 요약 뒤로 [loreEveryTurns]번 이상 주고받았으면(대화가 끝날 때는 2번 이상) 그동안 대화를
+  /// AI가 500자 이내로 요약해 로어북에 더함. 실패하면 다음 기회에 다시 함
+  Future<void> _maybeSummarize({bool force = false}) async {
+    if (_summarizing || _disposed || state.messages.isEmpty) return;
+    final messages = state.messages;
+    final start = _loreUptoId == null
+        ? 0
+        : messages.indexWhere((m) => m.id == _loreUptoId) + 1;
+    final part = messages.skip(start).where((m) => !m.isSystem).toList();
+    var rounds = 0;
+    for (var i = 1; i < part.length; i++) {
+      if (!part[i].isUser && part[i - 1].isUser) rounds++;
+    }
+    if (rounds < (force ? 2 : loreEveryTurns)) return;
+    final byok = ref.read(roomByokProvider(_roomId));
+    if (!byok.canUseAi) return;
+    _summarizing = true;
+    final upto = messages.last.id;
+    try {
+      final note = await ref.read(claudeChatClientProvider).summarizeLore(
+            provider: byok.provider,
+            apiKey: byok.apiKey ?? '',
+            relay: byok.relay,
+            model: byok.model,
+            character: state.character,
+            messages: part,
+            userName: _nickname,
+            previous: state.memories,
+          );
+      if (_disposed) return;
+      _loreUptoId = upto;
+      state = state.copyWith(memories: [...state.memories, note.encode()]);
+      _saveRun(keepCurrentNode: true);
+    } on ClaudeChatException {
+      // 다음에 주고받을 때 다시 요약함
+    } finally {
+      _summarizing = false;
+    }
   }
 
   /// 내가 마지막 톡을 보내고 2.2초 동안 추가 입력이 없을 때만 캐릭터가 읽고 답장을 시작합니다.
@@ -1581,7 +1634,6 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     final List<ScriptBubblePiece> replyPieces;
     var affectionDelta = 0;
     var ends = false;
-    var memory = '';
     final byok = ref.read(roomByokProvider(_roomId));
     if (byok.canUseAi) {
       state = state.copyWith(isCharacterTyping: true);
@@ -1645,7 +1697,6 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
         affectionDelta =
             _aiRoom ? 0 : reply.affectionDelta; // 자유대화 방·서비스 말랑이는 호감도 없음
         ends = limited && (reply.ends || pace.mustEnd);
-        memory = reply.memory;
       } on ClaudeChatException catch (e) {
         _awaitingAiReply = false;
         if (!stillValid()) return;
@@ -1686,12 +1737,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
             (state.internalAffection + affectionDelta).clamp(0, 100),
       );
     }
-    if (memory.isNotEmpty) {
-      // 최근 30개까지 모아 둠. AI에겐 최근 5개 + 지금 대화와 관련된 옛 기억만 넘김 (recallMemories)
-      final all = [...state.memories, memory];
-      state =
-          state.copyWith(memories: all.skip(max(0, all.length - 30)).toList());
-    }
+    // 10번 주고받을 때마다(대화가 끝나면 그때까지) 그동안 대화를 요약해 로어북에 남김
+    unawaited(_maybeSummarize(force: ends));
     if (ends) {
       await _endFreeTalk(byCharacter: true);
     } else {
