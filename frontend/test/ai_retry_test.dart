@@ -100,20 +100,39 @@ void main() {
     expect(waits, [const Duration(milliseconds: 12500), const Duration(milliseconds: 12500)]);
   });
 
-  test('effort가 low면 Gemini에게 생각을 짧게(thinkingLevel low) 하라고 하고, 기다릴 때 알려 줌', () async {
-    Future<void> run(String effort) async {
+  test('Gemini Flash는 톡 답장엔 생각을 거의 안 하고(minimal), 대본엔 짧게(low) 하라고 하고, 기다릴 때 알려 줌', () async {
+    Future<Object?> run(String model, String effort) async {
       final adapter = _SeqAdapter([(429, _geminiLimit()), (200, _geminiOk())]);
       final told = <Duration>[];
       await callJsonModel(Dio()..httpClientAdapter = adapter,
-          provider: AiProvider.gemini, apiKey: 'k', model: 'gemini-3.8-flash', system: 's', user: 'u',
+          provider: AiProvider.gemini, apiKey: 'k', model: model, system: 's', user: 'u',
           schema: const {'type': 'object'}, maxTokens: 10, effort: effort, onRetryWait: told.add);
       expect(told, [const Duration(milliseconds: 12500)]);
       final config = (adapter.bodies.last as Map)['generationConfig'] as Map;
-      expect(config['thinkingConfig'], effort == 'low' ? {'thinkingLevel': 'low'} : isNull);
+      return config['thinkingConfig'];
     }
 
-    await run('low');
-    await run('medium'); // 대본 만들기는 지금처럼 깊게 생각
+    expect(await run('gemini-3.8-flash', 'low'), {'thinkingLevel': 'minimal'});
+    expect(await run('gemini-3.8-flash', 'medium'), {'thinkingLevel': 'low'});
+    expect(await run('gemini-3.5-flash-lite', 'low'), {'thinkingLevel': 'minimal'});
+    expect(await run('gemini-4-argon', 'low'), {'thinkingLevel': 'low'});
+    expect(await run('gemini-4-argon', 'medium'), isNull); // 큰 모델의 대본은 모델에 맡김
+    expect(await run('gemini-2.5-flash', 'low'), isNull);
+  });
+
+  test('모델이 그 생각 단계를 모른다고 하면 한 단계 위로 바꿔 다시 보냄', () async {
+    Map<String, dynamic> rejected() => {
+          'error': {'code': 400, 'message': 'Thinking level minimal is not supported for this model.'},
+        };
+    final adapter = _SeqAdapter([(400, rejected()), (400, rejected()), (200, _geminiOk())]);
+    await callJsonModel(Dio()..httpClientAdapter = adapter,
+        provider: AiProvider.gemini, apiKey: 'k', model: 'gemini-3.8-flash', system: 's', user: 'u',
+        schema: const {'type': 'object'}, maxTokens: 10, effort: 'low');
+    expect(adapter.calls, 3);
+    Object? thinking(int i) => ((adapter.bodies[i] as Map)['generationConfig'] as Map)['thinkingConfig'];
+    expect(thinking(0), {'thinkingLevel': 'minimal'});
+    expect(thinking(1), {'thinkingLevel': 'low'});
+    expect(thinking(2), isNull);
   });
 
   test('계속 막히면 세 번까지만 다시 하고 알기 쉬운 안내', () async {
