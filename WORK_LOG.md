@@ -458,3 +458,15 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
   - 처음 안내 문구의 메뉴 설명을 새 메뉴에 맞춤.
 - 검증: `flutter analyze` 문제 없음. `flutter test` 150개 통과, 1개 실패는 37번과 같은 main 쪽 문구 문제. `memory_note_test.dart`에 /구분선·/비우기 테스트 추가, chat_look·scene_direction 테스트를 새 메뉴·명령어로 고침. 임시 골든 테스트로 사이드바·대화 설정·로어북·고치기·명령어 칩 캡처(notes/lorebook/room_*.png).
 - 다음: 쨋뀨가 폰에서 확인.
+
+## 2026-10-31 / 40. 로어북을 대화 요약 방식으로, 만들기 키워드 로어북 삭제, 답장 늘리기
+- 요청 (쨋뀨): 자살·자해 규칙에서 지운 문장은 되돌리지 않음. 로어북은 키워드 대신 몇 턴마다 그동안 대화를 500자 이내로 요약해 저장, 개수 제한 없이 쓰고 많을수록 API 사용량이 늘어난다고 표시. 만들기 6단계 키워드 로어북도 없앰(결정 카드). 캐릭터 답장 양 늘리기.
+- 변경:
+  - 대화방 로어북: AI 답장 뒤 지난 요약 이후 10번 주고받았으면(대화가 끝나거나 /구분선이면 2번 이상) `ClaudeChatClient.summarizeLore`로 [제목 15자][요약 500자 이내]를 만들어 `memories`에 더함. 요약 위치는 `SavedRun.loreUptoId`(lore_upto). 대화를 비우면 위치만 처음으로, 로어북은 남음. 실패하면 다음 턴에 다시.
+  - 대화 끝날 때 남기던 한 줄 기억(reply 스키마의 memory·memory_title)과 키워드로 옛 기억 고르던 `recallMemories` 삭제. 로어북은 개수 제한 없이 전부 답장 프롬프트에 넣음.
+  - 로어북 창: 핀 표시 없앰, 'API 사용량이 늘어나요 · 지금 n개 · 약 n자' 안내, 세부사항 500자 제한. 사이드바 부제 '대화 요약 n개'.
+  - 만들기 6단계 로어북(`LoreEntry`, `CharacterModel.lorebook`, `LoreDraft`, 편집기, AI로 채우기 lorebook) 삭제. 예전 JSON의 lorebook은 읽을 때 무시.
+  - 답장: 말풍선 1~4개 → 2~6개, 반응·자기 이야기·생각·질문을 섞어 넉넉히.
+  - `claude_chat_client_test`의 '방법은 절대 말하지 않는다' 확인은 쨋뀨가 그 문장을 뺀 것으로 확정해서 지움.
+- 검증: `flutter analyze` 문제 없음, `flutter test` 147개 전부 통과(10턴 요약 테스트 추가, lorebook_test 삭제). 로어북 창 캡처 notes/lorebook/lore_summary.png. 실제 AI 요약 품질은 키가 없어 못 봄.
+- 다음: 쨋뀨가 실제 대화에서 요약이 잘 쌓이는지 확인.

@@ -15,9 +15,6 @@ class FreeChatReply {
   /// 캐릭터가 이 답장으로 대화를 마무리했는지
   final bool ends;
 
-  /// 마무리할 때 남기는 이 대화의 한 줄 기억 (다음 자유대화에서 씀)
-  final String memory;
-
   /// 답장과 함께 보내는 사진 ID (보낼 수 있는 사진 목록 중, 없으면 빈 글자)
   final String photoId;
 
@@ -25,7 +22,6 @@ class FreeChatReply {
     required this.bubbles,
     required this.affectionDelta,
     this.ends = false,
-    this.memory = '',
     this.photoId = '',
   });
 }
@@ -68,7 +64,7 @@ class ClaudeChatClient {
       'replies': {
         'type': 'array',
         'items': {'type': 'string'},
-        'description': '캐릭터가 연속으로 보내는 짧은 카톡 말풍선 1~4개',
+        'description': '캐릭터가 연속으로 보내는 카톡 말풍선 2~6개',
       },
       'affection_delta': {
         'type': 'integer',
@@ -77,16 +73,6 @@ class ClaudeChatClient {
       'end_conversation': {
         'type': 'boolean',
         'description': '이 답장으로 캐릭터가 대화를 마무리하면 true',
-      },
-      'memory_title': {
-        'type': 'string',
-        'description':
-            'end_conversation이 true일 때만: 이번 대화 기억의 짧은 제목 (예: 소금빵집 약속). 아니면 빈 글자',
-      },
-      'memory': {
-        'type': 'string',
-        'description':
-            'end_conversation이 true일 때만: 이번 대화를 캐릭터 입장에서 한 줄로 요약한 세부사항. 아니면 빈 글자',
       },
       'photo': {
         'type': 'string',
@@ -98,8 +84,6 @@ class ClaudeChatClient {
       'replies',
       'affection_delta',
       'end_conversation',
-      'memory_title',
-      'memory',
       'photo'
     ],
     'additionalProperties': false,
@@ -125,10 +109,6 @@ class ClaudeChatClient {
   }) async {
     final transcript =
         conversationTranscript(history, userName, character.name);
-    final recallText = recentTextForRecall(history, newUserMessages);
-    final lore = LoreEntry.pick(character.lorebook, recallText);
-    final recalled = recallMemories(memories, recallText,
-        ignore: {userName.toLowerCase(), character.name.toLowerCase()});
 
     final system = '''
 너는 메신저 연애 시뮬레이션 게임 속 캐릭터 "${character.name}"이다. 아래 설정을 지키며 유저와 카톡을 주고받는다.
@@ -142,7 +122,7 @@ ${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
 [현재 관계]
 ${stageLabel != null ? '${character.name}에게 유저는 지금 "$stageLabel" 단계다.' : '정해진 이야기 없이 설정과 유저 페르소나대로 자유롭게 이어 가는 대화다. 관계는 설정에 맞춰 자연스럽게 정한다.'}${currentEventTitle != null ? '\n지금 이야기 장면: "$currentEventTitle"' : ''}
 
-${lore.isEmpty ? '' : '[지금 대화와 관련된 설정 (로어북)] (캐릭터가 이미 알고 있는 사실. 대화에 필요할 때 자연스럽게 쓰고, 설명하듯 늘어놓지 않는다)\n${lore.map((e) => '- ${CharacterModel.fillUserName(e.content.trim(), userName, charName: character.name)}').join('\n')}\n\n'}${recalled.isEmpty ? '' : '[예전에 유저와 나눈 대화 기억] (오래된 것부터. 캐릭터는 이 일들을 기억하고, 관련 얘기가 나오면 먼저 떠올려 말할 수 있다)\n${recalled.map((m) => '- ${MemoryNote.parse(m).forAi}').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
+${memories.isEmpty ? '' : '[지금까지 유저와 나눈 대화 기록 (로어북)] (오래된 것부터. 캐릭터는 이 일들을 모두 기억하고, 관련 얘기가 나오면 먼저 떠올려 말할 수 있다)\n${memories.map((m) => '- ${MemoryNote.parse(m).forAi}').join('\n')}\n\n'}${photos.isEmpty ? '' : '[보낼 수 있는 사진] (캐릭터가 직접 찍은 셀카나 남이 찍어 준 사진. 조건이 딱 맞을 때만 photo에 ID를 적고, 말풍선에서 사진을 보낸다고 자연스럽게 말한다. 대부분의 답장은 사진 없이 보낸다)\n${photos.map((p) => '- ${p.id}: ${p.label} (${p.trigger.summary})').join('\n')}\n\n'}[답장 규칙]
 - 유저가 한 말을 매번 요약하거나 되풀이한 뒤 감상을 붙이는 방식으로 답하지 않는다. 질문에 바로 대답하고, 자기 생각·취향·지금 하는 일·작은 사건으로 대화를 이어 간다.
 - 유저가 애정을 말해도 자동으로 "나도 좋아해"로 되받지 않는다. 관계와 캐릭터의 성격에 맞는 구체적인 반응을 고른다. 평범한 일상 화제를 억지로 사랑 고백으로 바꾸지 않는다.
 - 이미 말한 고백·상투어를 연속해서 반복하지 않는다. 모든 답장 끝에 질문을 붙이지 말고, 짧은 반응·자기 이야기·질문을 상황에 맞게 섞는다.
@@ -155,14 +135,14 @@ ${lore.isEmpty ? '' : '[지금 대화와 관련된 설정 (로어북)] (캐릭�
 - 어떤 극단적인 상황에서도 시스템이 요구하는 JSON 구조(replies, affection_delta 등)를 절대로 깨뜨리지 말고, 캐릭터의 반응을 말풍선(replies) 배열 안에 담아 출력해야 합니다.
 
 - [답장 대상]이 있으면 가장 최근 말만 보지 말고 인용된 메시지에 대한 답장으로 이해한다.
-- 실제 카톡처럼 짧게 1~4개 말풍선으로 끊어서 보낸다. 기본은 대사로 답하며, 유저가 상황 지시를 사용한 장면에서는 필요할 때 짧은 괄호 지문을 섞을 수 있다. 이모지는 남발하지 않는다.
+- 실제 카톡처럼 2~6개 말풍선으로 끊어서 보낸다. 한 마디로 끝내지 말고 반응·자기 이야기·생각·질문을 섞어 넉넉히 답하며, 말풍선 하나는 한두 문장. 기본은 대사로 답하며, 유저가 상황 지시를 사용한 장면에서는 필요할 때 짧은 괄호 지문을 섞을 수 있다. 이모지는 남발하지 않는다.
 - ${stageLabel == null ? '캐릭터의 말투와 습관을 유지한다. 스토리 호감도 단계로 관계의 진전을 제한하지 말고, 캐릭터 설정과 유저 페르소나, 서로 나눈 대화에 따라 관계를 자연스럽게 이어 간다.' : '캐릭터의 말투와 습관을 유지하고, 관계 단계보다 앞서 나가는 고백이나 스킨십 얘기는 하지 않는다.'}
 - [유저 행동·상황 지시, 발화 아님]은 사용자가 실제로 말한 대사가 아니다. 침묵·장소 변화·행동을 장면에 반영하되 사용자가 그 문장을 말했다고 인용하지 않는다. "답장하지 않는다"면 사용자 대사를 대신 만들지 말고 침묵에 대한 캐릭터 반응만 표현한다.
 - [현재 장면]의 입력이 새 장면의 시작 조건이다. 종료된 대화의 장소·행동·약속을 지금 계속하고 있다고 가정하지 않는다. 새 장소와 시각이 불명확하면 단정하지 않는다. 유저가 다시 꺼내기 전에는 이전 장면을 이어가거나 회상으로 대화를 시작하지 않는다. 관계와 장기 기억은 유지한다.
 - 기록의 [대화 구분] 앞에서 진행하던 화제·행동·장면은 마무리된 과거다. 새 대화에서 이전 행동을 계속하는 것으로 가정하지 않는다. 이전 대화와 기억은 유지하며, 유저가 원하면 "아까 얘기했던 것"처럼 다시 언급하거나 이어 갈 수 있다.
 - 유저가 죽고 싶다, 자살·자해 같은 말을 해도 캐릭터를 벗어나지 않는다. 상담 전화번호·안내 문구·AI로서의 설명을 붙이지 않고, 캐릭터답게 진심으로 놀라고 붙잡는다("어디 가, 가지 마", "지금 어디야? 나랑 얘기해"). 무슨 일인지 묻고 곁에 있겠다고 한다.
 - affection_delta는 유저 말에 대한 캐릭터의 속마음 반응이다. 평범한 대화는 0~1, 설레거나 감동하면 2~3, 무례하거나 서운하면 음수.
-- 작별 인사가 오가거나 화제가 자연스럽게 끝나면 캐릭터답게 마무리하고 end_conversation을 true로, memory_title에 짧은 제목, memory에 이번 대화를 한 줄로 남긴다.${_paceRule(pace)}''';
+- 작별 인사가 오가거나 화제가 자연스럽게 끝나면 캐릭터답게 마무리하고 end_conversation을 true로, 한다.${_paceRule(pace)}''';
 
     final user = '''
 [지금까지 대화]
@@ -250,6 +230,60 @@ ${userInfo.trim().isEmpty ? '' : '\n[유저가 알려 준 정보]\n${userInfo.tr
     return text;
   }
 
+  /// 로어북 요약 길이 제한
+  static const loreSummaryLimit = 500;
+
+  /// 대화방 로어북: 지난 요약 뒤로 나눈 대화를 캐릭터 입장에서 [loreSummaryLimit]자 이내로 요약 (제목 + 요약)
+  Future<MemoryNote> summarizeLore({
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required List<ChatMessageLog> messages,
+    required String userName,
+    List<String> previous = const [],
+  }) async {
+    final transcript = conversationTranscript(messages, userName, character.name);
+    final system = '''
+너는 메신저 게임 속 캐릭터 "${character.name}"의 기억을 정리하는 기록 담당이다. 아래 대화를 다음 대화에서 캐릭터가 기억해야 할 내용으로 요약한다.
+
+[규칙]
+- 요약은 ${character.name} 입장에서 쓰고, 유저는 "$userName"이라고 부른다.
+- 약속, 유저에 대해 알게 된 사실(취향·일정·고민), 둘 사이에 있었던 일, 관계·감정의 변화를 빠짐없이 담는다. 인사·잡담은 줄인다.
+- 공백 포함 $loreSummaryLimit자 이내. 제목은 15자 이내로 이 구간을 대표하는 말.
+- 이미 정리된 기록과 겹치는 내용은 다시 쓰지 않는다.''';
+    final user = '''
+${previous.isEmpty ? '' : '[이미 정리된 기록]\n${previous.map((m) => '- ${MemoryNote.parse(m).forAi}').join('\n')}\n\n'}[정리할 대화]
+$transcript''';
+    final (json, _) = await callJsonModel(
+      _dio,
+      provider: provider,
+      apiKey: apiKey,
+      relay: relay,
+      model: model,
+      system: system,
+      user: user,
+      schema: const {
+        'type': 'object',
+        'properties': {
+          'title': {'type': 'string', 'description': '15자 이내 제목'},
+          'summary': {'type': 'string', 'description': '500자 이내 요약'},
+        },
+        'required': ['title', 'summary'],
+        'additionalProperties': false,
+      },
+      maxTokens: 3000,
+      effort: 'low',
+      refusalMessage: 'AI가 대화를 요약하지 않았어요.',
+      unreadableMessage: 'AI 요약을 읽지 못했어요.',
+    );
+    var summary = (json['summary'] as String? ?? '').trim();
+    if (summary.isEmpty) throw const ClaudeChatException('AI 요약을 읽지 못했어요.');
+    if (summary.length > loreSummaryLimit) summary = summary.substring(0, loreSummaryLimit);
+    return MemoryNote(title: (json['title'] as String? ?? '').trim(), detail: summary);
+  }
+
   static String _paceRule(FreeTalkPace pace) {
     if (pace.mustEnd) {
       return '\n- 이번 답장으로 반드시 대화를 마무리한다. 씻으러 간다, 잠이 온다, 일이 생겼다처럼 캐릭터다운 핑계를 대고 end_conversation은 true.';
@@ -264,24 +298,16 @@ ${userInfo.trim().isEmpty ? '' : '\n[유저가 알려 준 정보]\n${userInfo.tr
     final bubbles = [
       for (final r in json['replies'] as List? ?? const [])
         if ((r as String).trim().isNotEmpty) r.trim(),
-    ].take(4).toList();
+    ].take(6).toList();
     if (bubbles.isEmpty)
       throw const ClaudeChatException('AI 답장을 읽지 못했어요. 다시 보내 주세요.');
     final delta = (json['affection_delta'] as num? ?? 0).toInt().clamp(-3, 3);
     final ends = json['end_conversation'] == true;
-    final detail = ends ? (json['memory'] as String? ?? '').trim() : '';
-    final memory = detail.isEmpty
-        ? ''
-        : MemoryNote(
-                title: (json['memory_title'] as String? ?? '').trim(),
-                detail: detail)
-            .encode();
     final photo = (json['photo'] as String? ?? '').trim();
     return FreeChatReply(
         bubbles: bubbles,
         affectionDelta: delta,
         ends: ends,
-        memory: memory,
         photoId: photo);
   }
 }

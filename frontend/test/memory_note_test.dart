@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mallangtalk/core/network/claude_chat_client.dart';
 import 'package:mallangtalk/core/storage/local_store.dart';
 import 'package:mallangtalk/features/chat/chat_notifier.dart';
 import 'package:mallangtalk/shared/models/mallangtalk_models.dart';
@@ -25,7 +27,7 @@ void main() {
 
     await tester.tap(find.byTooltip('메뉴'));
     await tester.pumpAndSettle();
-    expect(find.text('쌓인 기억 2개 · 보고 고치기'), findsOneWidget);
+    expect(find.text('대화 요약 2개 · 보고 고치기'), findsOneWidget);
     await tester.tap(find.text('로어북'));
     await tester.pumpAndSettle();
     expect(find.text('주말에 산책하기로 했다'), findsOneWidget);
@@ -93,4 +95,84 @@ void main() {
     expect(state().memories, ['남은 기억']);
     await settle(tester);
   });
+
+  testWidgets('10번 주고받으면 그동안 대화를 요약해 로어북에 넣고, 다음 답장부터 전부 AI에게 넘김', (tester) async {
+    final room = freeRoomId(dohaId);
+    SharedPreferences.setMockInitialValues({...fastTempo});
+    final fake = _SummaryFake();
+    final container = await openDohaChat(tester, roomId: room, extra: [
+      ...testAiOverrides,
+      claudeChatClientProvider.overrideWithValue(fake),
+    ]);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final notifier = container.read(chatRoomProvider(room).notifier);
+    for (var i = 1; i <= 9; i++) {
+      notifier.sendUserMessage(text: '톡 $i');
+      await settle(tester);
+    }
+    expect(fake.summaries, 0);
+    notifier.sendUserMessage(text: '톡 10');
+    await settle(tester);
+    expect(fake.summaries, 1);
+    expect(container.read(chatRoomProvider(room)).memories, ['요약 1\n열 번 나눈 대화 요약']);
+    expect(container.read(localStoreProvider).loadRun(room)!.loreUptoId, isNotNull);
+
+    notifier.sendUserMessage(text: '톡 11');
+    await settle(tester);
+    expect(fake.lastMemories, ['요약 1\n열 번 나눈 대화 요약']);
+    expect(fake.summaries, 1); // 다음 요약은 또 10번 뒤
+
+    // 로어북 창에 API 사용량 안내
+    await tester.tap(find.byTooltip('메뉴'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('로어북'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('API 사용량이 늘어나요'), findsOneWidget);
+    await tester.tap(find.byTooltip('닫기'));
+    await settle(tester);
+  });
+}
+
+class _SummaryFake extends ClaudeChatClient {
+  _SummaryFake() : super(dio: Dio());
+  int summaries = 0;
+  List<String> lastMemories = const [];
+
+  @override
+  Future<FreeChatReply> reply({
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required String? stageLabel,
+    required String? currentEventTitle,
+    required List<ChatMessageLog> history,
+    required List<String> newUserMessages,
+    String userName = '너',
+    String userIntro = '',
+    String userPersona = '',
+    FreeTalkPace pace = FreeTalkPace.open,
+    List<String> memories = const [],
+    List<FreeTalkPhoto> photos = const [],
+    void Function(Duration wait)? onRetryWait,
+  }) async {
+    lastMemories = memories;
+    return const FreeChatReply(bubbles: ['응응'], affectionDelta: 0);
+  }
+
+  @override
+  Future<MemoryNote> summarizeLore({
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required List<ChatMessageLog> messages,
+    required String userName,
+    List<String> previous = const [],
+  }) async {
+    summaries++;
+    return MemoryNote(title: '요약 $summaries', detail: '열 번 나눈 대화 요약');
+  }
 }

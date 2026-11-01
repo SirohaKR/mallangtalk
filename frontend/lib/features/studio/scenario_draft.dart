@@ -40,14 +40,6 @@ class CastDraft {
   CastDraft({this.name = '', this.role = '', this.speech = '', this.characterId});
 }
 
-class LoreDraft {
-  /// 쉼표로 나눈 키워드
-  String keys;
-  String content;
-  bool always;
-  LoreDraft({this.keys = '', this.content = '', this.always = false});
-}
-
 class StageDraft {
   String name;
   int start;
@@ -197,7 +189,6 @@ class ScenarioDraft {
   List<CharacterQuote> sampleQuotes = [];
   final List<FieldDraft> fields = [];
   final List<CastDraft> cast = [];
-  final List<LoreDraft> lore = [];
   final List<StageDraft> stages = [];
   final List<EventDraft> events = [];
 
@@ -301,7 +292,6 @@ class ScenarioDraft {
       ..sampleQuotes = [...c.sampleQuotes];
     d.fields.addAll([for (final f in c.profileFields) FieldDraft(label: f.label, value: f.value, isSecret: f.isSecret)]);
     d.cast.addAll([for (final e in c.extraCast) CastDraft(name: e.name, role: e.role, speech: e.speech, characterId: e.characterId)]);
-    d.lore.addAll([for (final e in c.lorebook) LoreDraft(keys: e.keys.join(', '), content: e.content, always: e.always)]);
     d.stages.addAll([for (final s in c.affectionStages) StageDraft(name: s.stageLabel, start: s.minScore)]);
     final events = [...bundle.events]..sort((a, b) => a.chapterOrder.compareTo(b.chapterOrder));
     for (final e in events) {
@@ -431,11 +421,6 @@ class ScenarioDraft {
         extraCast: [
           for (final e in cast)
             if (e.name.trim().isNotEmpty) ExtraCast(name: e.name.trim(), role: e.role.trim(), speech: e.speech.trim(), characterId: e.characterId),
-        ],
-        lorebook: [
-          for (final e in lore)
-            if (e.content.trim().isNotEmpty && (e.always || LoreEntry.splitKeys(e.keys).isNotEmpty))
-              LoreEntry(keys: LoreEntry.splitKeys(e.keys), content: e.content.trim(), always: e.always),
         ],
         themeColor: themeColor,
         chatBackground: chatBackground,

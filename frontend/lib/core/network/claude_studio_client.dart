@@ -139,7 +139,7 @@ class ClaudeStudioClient {
 [캐릭터]
 이름: ${c.name}
 상태메시지: ${c.statusMessage}
-${c.aiCharacterSheet}${c.lorebook.isEmpty ? '' : '\n\n[로어북] (키워드: 내용)\n${c.lorebook.where((e) => e.content.trim().isNotEmpty).map((e) => '- ${e.keys.join(', ')}: ${e.content.trim()}').join('\n')}'}
+${c.aiCharacterSheet}
 
 [호감도 단계] (낮은 단계부터)
 ${c.affectionStages.map((s) => '- ${s.stageLabel} (${s.minScore}~${s.maxScore}점)').join('\n')}''';
@@ -311,7 +311,6 @@ ${_characterSheet(base)}
       secret: base.secret,
       userRole: base.userRole,
       extraCast: base.extraCast,
-      lorebook: base.lorebook,
       themeColor: base.themeColor,
       gender: base.gender,
       unlisted: base.unlisted,
@@ -325,7 +324,7 @@ ${_characterSheet(base)}
   }
 
   /// 만들기 단계의 '빈 칸 AI로 채우기': 캐릭터 설정을 보고 [fields]에 든 칸만 써서 돌려줌 (화면이 빈 칸에만 넣음)
-  /// fields: profile_fields, quote, sample_quotes, traits, world_setting, user_role, extra_cast, secret, lorebook
+  /// fields: profile_fields, quote, sample_quotes, traits, world_setting, user_role, extra_cast, secret
   Future<Map<String, dynamic>> fillBlanks({
     required AiProvider provider,
     String apiKey = '',
@@ -362,8 +361,6 @@ ${_characterSheet(base)}
       'user_role': {'type': 'string', 'description': '이 이야기에서 유저가 누구인지 1~2문장. 유저 이름 자리는 {{user}}'},
       'extra_cast': pairs('name', 'role', '대화에 이름이 나올 주변 인물 2~3명 (친구·가족·반려동물). role은 캐릭터와의 관계와 한 줄 특징'),
       'secret': {'type': 'string', 'description': '유저는 아직 모르고 이야기가 서서히 드러낼 캐릭터의 비밀 1~2문장. 유저 이름 자리는 {{user}}'},
-      'lorebook': pairs('keys', 'content',
-          '로어북 항목 5~8개: 대화에 그 말이 나오면 캐릭터가 떠올릴 구체적인 사실 (장소·물건·추억·주변 인물·반려동물·습관 등). keys는 대화에 나올 만한 낱말 1~3개를 쉼표로, content는 1~2문장. 설정에 이미 있는 사실을 구체적으로 늘리고 어긋나지 않게'),
     };
     final wanted = [for (final f in fields) if (all.containsKey(f)) f];
     if (wanted.isEmpty) return const {};

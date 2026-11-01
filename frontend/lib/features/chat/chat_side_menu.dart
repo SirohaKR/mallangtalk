@@ -108,7 +108,7 @@ class ChatSideMenu extends StatelessWidget {
                   'AI 모델',
                 ].join(' · ')),
             if (showLorebook)
-              item('lorebook', Icons.auto_stories_outlined, '로어북', '쌓인 기억 $memoryCount개 · 보고 고치기'),
+              item('lorebook', Icons.auto_stories_outlined, '로어북', '대화 요약 $memoryCount개 · 보고 고치기'),
             if (storyRoom) ...[
               const Divider(height: 24, color: AppColors.borderLight),
               item('switch', Icons.forum_outlined, '자유대화 방 열기', '정해진 이야기 없이 AI와 자유롭게'),

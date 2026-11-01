@@ -91,7 +91,7 @@ void main() {
     expect(body['system'], contains('스토리 호감도 단계로 관계의 진전을 제한하지'));
     expect(body['system'], contains('마무리된 과거'));
     expect(body['system'], contains('캐릭터를 벗어나지 않는다'));
-    expect(body['system'], contains('방법은 절대 말하지 않는다'));
+    // 자살·자해 규칙 뒷부분(동조·방법 금지 문장)은 쨋뀨가 직접 뺌 (2026-10-31 확인)
     final transcript = body['messages'][0]['content'] as String;
     expect(transcript, contains('지금 산책 중이야'));
     expect(transcript, contains('[대화 구분:'));

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../core/network/claude_chat_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/utils/korean.dart';
+import 'chat_notifier.dart';
 
-/// 대화방 로어북: 대화가 끝날 때마다 캐릭터가 남긴 기억([제목][세부사항])을 유저가 보고 고치고 지우고 더함.
-/// 바뀔 때마다 [onChanged]로 바로 저장. AI에겐 최근 5개 + 지금 대화와 관련된 옛 기억이 넘어감
+/// 대화방 로어북: 10번 주고받을 때마다 AI가 그동안 대화를 요약해 남긴 기억([제목][세부사항])을 유저가 보고 고치고 지우고 더함.
+/// 바뀔 때마다 [onChanged]로 바로 저장. 개수 제한 없이 전부 AI에게 넘어감 (많을수록 API 사용량이 늘어남)
 Future<void> showMemorySheet(
   BuildContext context, {
   required String characterName,
@@ -61,7 +63,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
                 autofocus: true,
                 maxLines: 1,
                 decoration: const InputDecoration(
-                  hintText: '제목 (예: 고양이 알레르기)',
+                  hintText: '제목 (예: 소금빵집 약속)',
                   prefixIcon: Icon(Icons.sell_outlined, size: 18),
                 ),
               ),
@@ -69,10 +71,11 @@ class _MemoryDialogState extends State<_MemoryDialog> {
               TextField(
                 key: const ValueKey('memory_edit_field'),
                 controller: detail,
-                minLines: 3,
+                minLines: 4,
                 maxLines: null,
+                maxLength: ClaudeChatClient.loreSummaryLimit,
                 decoration: const InputDecoration(
-                    hintText: '세부사항 (예: 내가 고양이 알레르기가 있어서 루나를 만지면 재채기한다고 했다)'),
+                    hintText: '세부사항 (예: 토요일 아침에 망원동 소금빵집에 같이 가기로 했다. 쨋뀨는 고양이 알레르기가 있다)'),
               ),
             ],
           ),
@@ -93,6 +96,8 @@ class _MemoryDialogState extends State<_MemoryDialog> {
     setState(() => index == null ? _items.add(note) : _items[index] = note);
     _save();
   }
+
+  int _chars() => _items.fold(0, (n, m) => n + m.title.length + m.detail.length);
 
   void _delete(int index) {
     setState(() => _items.removeAt(index));
@@ -124,9 +129,35 @@ class _MemoryDialogState extends State<_MemoryDialog> {
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: Text(
-                  '대화가 끝날 때마다 ${josa(widget.characterName, '이', '가')} 남긴 기억이에요. '
-                  '핀이 꽂힌 최근 5개는 늘, 그 전 기억은 대화에 관련된 말이 나오면 떠올려요',
+                  '${ChatRoomNotifier.loreEveryTurns}번 주고받을 때마다 그동안 나눈 대화를 '
+                  '${ClaudeChatClient.loreSummaryLimit}자 이내로 요약해 남겨요. '
+                  '${josa(widget.characterName, '은', '는')} 여기 적힌 내용을 전부 기억해요.',
                   style: AppTextStyles.messageTime,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 로어북은 매 답장마다 전부 AI에게 넘어가서 많을수록 비용이 늘어남
+              Container(
+                key: const ValueKey('lore_usage_note'),
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E0),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFB7791F)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '로어북이 많아질수록 답장마다 AI에게 보내는 글이 길어져서 API 사용량이 늘어나요. '
+                        '지금 ${_items.length}개 · 약 ${_chars()}자',
+                        style: AppTextStyles.messageTime.copyWith(color: const Color(0xFF8A5A12)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -165,7 +196,6 @@ class _MemoryDialogState extends State<_MemoryDialog> {
   /// 기억 한 개: 위 [제목] + 버튼, 아래 [세부사항]
   Widget _card(int index) {
     final m = _items[index];
-    final recent = index >= _items.length - 5;
     return Container(
       key: ValueKey('memory_$index'),
       margin: const EdgeInsets.only(bottom: 8, right: 12),
@@ -180,8 +210,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
         children: [
           Row(
             children: [
-              Icon(recent ? Icons.push_pin_rounded : Icons.bookmark_border_rounded,
-                  size: 16, color: recent ? AppColors.primaryPink : AppColors.textMuted),
+              const Icon(Icons.bookmark_border_rounded, size: 16, color: AppColors.primaryPink),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(m.title.isEmpty ? '제목 없음' : m.title,
