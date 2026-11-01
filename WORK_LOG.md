@@ -470,3 +470,12 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
   - `claude_chat_client_test`의 '방법은 절대 말하지 않는다' 확인은 쨋뀨가 그 문장을 뺀 것으로 확정해서 지움.
 - 검증: `flutter analyze` 문제 없음, `flutter test` 147개 전부 통과(10턴 요약 테스트 추가, lorebook_test 삭제). 로어북 창 캡처 notes/lorebook/lore_summary.png. 실제 AI 요약 품질은 키가 없어 못 봄.
 - 다음: 쨋뀨가 실제 대화에서 요약이 잘 쌓이는지 확인.
+
+## 2026-11-01 / 41. Gemini Flash(중간 모델) 응답 시간 초과
+- 요청 (쨋뀨): Gemini 가장 싼 모델(Flash-Lite)은 잘 답하는데 중간 모델(Flash)은 여전히 응답 대기 시간 초과.
+- 원인(코드로 본 추정): Gemini 3 이후 모델은 thinkingLevel을 안 정하면 깊게(high) 생각함. AI로 만들기(effort medium)는 아예 안 보내서 Flash가 대본마다 오래 생각했고, 톡 답장은 low였지만 Flash-Lite(원래 거의 안 생각)보다 느림. 톡 답장은 브라우저에서 2분이면 끊김(웹 dio는 xhr.timeout = 전체 시간).
+- 변경:
+  - `packages/mallangtalk_ai`: `geminiThinkingLevel(model, effort)` — Flash 계열은 톡 답장(low)=minimal, 대본(medium)=low. 그 밖 큰 모델은 톡=low, 대본=모델 기본. Gemini 2.x는 안 보냄. 모델이 그 단계를 모른다는 400(메시지에 thinking)이면 minimal→low→안 보냄 순서로 다시 보냄.
+  - `ClaudeChatClient` 기다림 2분 → 4분(서버 nginx 420초 안). 시간 초과 안내 문구를 'Gemini는 Flash-Lite'로.
+- 검증: `flutter analyze`·`dart analyze`(server) 문제 없음, `flutter test` 148개 전부 통과(ai_retry_test에 생각 단계·되돌리기 테스트). 실제 Gemini 키로 속도는 못 재 봄.
+- 다음: 쨋뀨가 배포 후 Flash로 자유대화·AI로 만들기 해 보기. 그래도 느리면 무료 등급 붐빔일 수 있어 스트리밍 검토.

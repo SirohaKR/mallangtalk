@@ -163,7 +163,7 @@ Future<(Map<String, dynamic>, AiUsage)> callJsonModel(
       throw ClaudeChatException(body['error'] as String);
     }
     if (_isTimeout(e)) {
-      throw const ClaudeChatException('AI 답이 너무 오래 걸려서 끊겼어요. 다시 보내 보거나, 설정에서 더 빠른 모델(Flash 등)로 바꿔 보세요.');
+      throw const ClaudeChatException('AI 답이 너무 오래 걸려서 끊겼어요. 다시 보내 보거나, 설정에서 더 빠른 모델(Gemini는 Flash-Lite)로 바꿔 보세요.');
     }
     if (relay != null && status == null) {
       throw const ClaudeChatException('말랑톡 서버에 연결하지 못했어요. 서버가 켜져 있는지 확인해 주세요.');
@@ -359,10 +359,36 @@ Future<(String, AiUsage)> _openai(Dio dio, String apiKey, String model, String s
   );
 }
 
+/// [초보자 노트] Gemini에게 얼마나 오래 속으로 생각할지(thinkingLevel) 알려 주는 값. null이면 안 보냄.
+/// Gemini 3 이후 모델은 따로 말하지 않으면 깊게(high) 생각해서, Flash는 짧은 톡 답장에도 몇 분씩 걸려
+/// 시간 초과가 나곤 했어요. Flash-Lite는 원래 생각을 거의 안 해서 빨랐고요.
+/// - Flash 계열: 톡 답장(low)은 minimal(거의 안 생각), 대본 쓰기(medium)는 low
+/// - 그 밖(Argon 등 큰 모델): 톡 답장은 low, 대본은 지금처럼 모델에 맡김
+/// - Gemini 2.x는 thinkingLevel을 모르니 안 보냄
+String? geminiThinkingLevel(String model, String effort) {
+  if (model.startsWith('gemini-2')) return null;
+  final flash = model.contains('flash');
+  return switch (effort) {
+    'low' => flash ? 'minimal' : 'low',
+    'medium' => flash ? 'low' : null,
+    _ => null,
+  };
+}
+
+/// 모델이 그 thinkingLevel을 안 받아 준다고 400을 돌려줬는지
+bool _isThinkingRejected(DioException e) {
+  if (e.response?.statusCode != 400) return false;
+  final body = e.response?.data;
+  final error = body is Map ? body['error'] : null;
+  final message = error is Map ? '${error['message']}'.toLowerCase() : '';
+  return message.contains('thinking');
+}
+
 Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String system, String user,
     Map<String, dynamic> schema, int maxTokens, String effort, String refusal, String truncated,
     List<String> images) async {
-  final response = await dio.post<Map<String, dynamic>>(
+  final level = geminiThinkingLevel(model, effort);
+  Future<Response<Map<String, dynamic>>> post(String? thinking) => dio.post<Map<String, dynamic>>(
     'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
     options: Options(headers: {'x-goog-api-key': apiKey}),
     data: {
@@ -385,13 +411,24 @@ Future<(String, AiUsage)> _gemini(Dio dio, String apiKey, String model, String s
         'maxOutputTokens': maxTokens * 2 > 65536 ? 65536 : maxTokens * 2,
         'responseMimeType': 'application/json',
         'responseJsonSchema': schema,
-        // Gemini 3 이후 모델은 따로 말하지 않으면 깊게(high) 생각해서 짧은 톡 답장도 수십 초 걸림.
-        // effort가 low(자유대화 답장 등)면 생각을 짧게 해서 빨리 답하게 함
-        if (effort == 'low' && !model.startsWith('gemini-2'))
-          'thinkingConfig': {'thinkingLevel': 'low'},
+        if (thinking != null) 'thinkingConfig': {'thinkingLevel': thinking},
       },
     },
   );
+  Response<Map<String, dynamic>> response;
+  try {
+    response = await post(level);
+  } on DioException catch (e) {
+    // 새 모델이 minimal 같은 값을 아직 모르면 한 단계 위(low)로, 그래도 안 되면 안 보내고 다시
+    if (level == null || !_isThinkingRejected(e)) rethrow;
+    final next = level == 'minimal' ? 'low' : null;
+    try {
+      response = await post(next);
+    } on DioException catch (e2) {
+      if (next == null || !_isThinkingRejected(e2)) rethrow;
+      response = await post(null);
+    }
+  }
   final data = response.data ?? const {};
   if (data['promptFeedback']?['blockReason'] != null) throw ClaudeChatException(refusal);
   final candidate = (data['candidates'] as List? ?? const []).firstOrNull as Map? ?? const {};

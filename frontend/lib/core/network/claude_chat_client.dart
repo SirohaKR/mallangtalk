@@ -53,7 +53,8 @@ final claudeChatClientProvider =
 class ClaudeChatClient {
   ClaudeChatClient({Dio? dio})
       : _dio = dio ??
-            Dio(aiDioOptions(total: const Duration(minutes: 2), web: kIsWeb));
+            // Gemini 무료 등급은 붐빌 때 답이 1~2분 넘게 걸리기도 해서 넉넉히 4분 (서버 nginx는 7분)
+            Dio(aiDioOptions(total: const Duration(minutes: 4), web: kIsWeb));
 
   final Dio _dio;
 
