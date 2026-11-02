@@ -124,6 +124,14 @@ void main() {
     await tester.tap(find.text('지우기'));
     await tester.pumpAndSettle();
     expect(lines(), ['톡', '(첫 장면)', '입력 둘', '(새 장면)']);
+
+    // 메뉴는 톡 방처럼 오른쪽 사이드바
+    await tester.tap(find.byKey(const ValueKey('scene_menu')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('scene_side_lorebook')), findsOneWidget);
+    expect(find.byKey(const ValueKey('scene_side_ai')), findsOneWidget);
+    expect(find.byKey(const ValueKey('scene_side_end')), findsOneWidget);
+    expect(find.byKey(const ValueKey('scene_side_clear')), findsOneWidget);
   });
 }
 

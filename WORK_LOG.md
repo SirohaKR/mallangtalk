@@ -520,6 +520,7 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
 - 변경:
   - 톡 방: 연달아 보낸 내 톡 묶음의 마지막 아래 작은 버튼. 쓰레기통 = 확인 창 뒤 그 묶음+뒤 캐릭터 답장(다음 내 톡·대화 구분 전까지) 삭제. 재전송 = 예상 사용량(원·입력/출력 토큰, 한글 1자≈1토큰 어림) 확인 창 뒤 답장만 지우고 같은 내 톡으로 다시 물음(`ChatRoomNotifier.deleteTurn/resendTurn/estimateResend/canResendTurn`). 답 기다리던 톡을 지우면 그 요청도 멈춤. 로어북 요약 위치(lore_upto)·읽은 개수 맞춤.
   - 연동: 지우기·재전송 때 `reset_at`을 지금 시각으로 남겨서, 다른 기기에 남은 지우기 전(더 긴) 대화가 이기지 않게. 자유대화·서비스 방을 다시 열 때 `reset_at`을 안 읽어 다음 저장에서 사라지던 문제도 고침.
+  - 현실 장면 방 메뉴(쨋뀨 추가 요청): 점 세 개 팝업 메뉴 → 톡 방처럼 오른쪽 사이드바(`_SceneSideMenu`: 로어북·AI 모델·장면 마치기·비우기).
   - 현실 장면 방: 내 입력 상자 이름 옆에 재전송(마지막 입력만)·쓰레기통. 재전송 확인 창에 예상 비용(이어 쓰기 최대 포함). `SceneRoomNotifier.deleteTurn/resend/estimateResend`.
   - 테마: 확인 창(Dialog)·아래 창·메뉴·드로어·카드 흰 바탕(틴트 없음, colorScheme surfaceContainer* 전부 흰색), 둥근 모서리. 쨋뀨 추가 요청: 대화 속도 고르는 창처럼 전부 하얗게. TextButton은 분홍 굵은 글씨, FilledButton은 분홍 알약 버튼.
 - 검증: `flutter analyze` 문제 없음, `flutter test` 157개 전부 통과(`turn_edit_test.dart` 2개 추가). 임시 골든 캡처로 버튼·확인 창 확인(notes/turn-edit/*.png, 테스트 파일은 지움). 실제 과금 금액과 맞는지는 키가 없어 못 봄.

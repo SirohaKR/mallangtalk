@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/claude_chat_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../chat/chat_ai_sheet.dart';
 import '../chat/chat_notifier.dart';
@@ -63,6 +64,7 @@ class SceneScreen extends ConsumerStatefulWidget {
 class _SceneScreenState extends ConsumerState<SceneScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   static const _paper = Color(0xFFFBF8F4);
 
@@ -141,18 +143,9 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
       case 'end':
         await notifier.endScene();
       case 'clear':
-        final ok = await showDialog<bool>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: const Text('현실 장면 방을 비울까요?'),
-            content: const Text('장면 기록이 지워져요. 로어북에 들어간 요약은 톡 방에 그대로 남아요.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('취소')),
-              TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('비우기')),
-            ],
-          ),
-        );
-        if (ok == true) notifier.clear();
+        if (await _ask('현실 장면 방을 비울까요?', '장면 기록이 지워져요. 로어북에 들어간 요약은 톡 방에 그대로 남아요.', '비우기')) {
+          notifier.clear();
+        }
     }
   }
 
@@ -179,6 +172,7 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
     final ai = ref.watch(roomByokProvider(sceneAiRoom(source)));
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: _paper,
       appBar: AppBar(
         backgroundColor: _paper,
@@ -195,17 +189,24 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
           ),
         ]),
         actions: [
-          PopupMenuButton<String>(
+          // 톡 방처럼 오른쪽 사이드바 메뉴
+          IconButton(
+            key: const ValueKey('scene_menu'),
             tooltip: '메뉴',
-            onSelected: (v) => _menu(v, notifier, character.name),
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'lorebook', child: Text('로어북 (대화 요약 $memoryCount개)')),
-              const PopupMenuItem(value: 'ai', child: Text('AI 모델 바꾸기')),
-              if (scene.sceneOpen && !scene.writing) const PopupMenuItem(value: 'end', child: Text('장면 마치기')),
-              if (!scene.isEmpty && !scene.writing) const PopupMenuItem(value: 'clear', child: Text('현실 장면 방 비우기')),
-            ],
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+            icon: const Icon(Icons.menu_rounded),
           ),
+          const SizedBox(width: 4),
         ],
+      ),
+      endDrawer: _SceneSideMenu(
+        character: character,
+        accent: theme.accent,
+        memoryCount: memoryCount,
+        model: aiModelName(ai),
+        canEnd: scene.sceneOpen && !scene.writing,
+        canClear: !scene.isEmpty && !scene.writing,
+        onSelected: (v) => _menu(v, notifier, character.name),
       ),
       body: Column(children: [
         Expanded(
@@ -331,6 +332,69 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
             ),
           ),
       ]),
+    );
+  }
+}
+
+/// 현실 장면 방 오른쪽 사이드바: 로어북 / AI 모델 / 장면 마치기 / 비우기
+class _SceneSideMenu extends StatelessWidget {
+  const _SceneSideMenu({
+    required this.character,
+    required this.accent,
+    required this.memoryCount,
+    required this.model,
+    required this.canEnd,
+    required this.canClear,
+    required this.onSelected,
+  });
+  final CharacterModel character;
+  final Color accent;
+  final int memoryCount;
+  final String model;
+  final bool canEnd;
+  final bool canClear;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    Widget item(String value, IconData icon, String title, String subtitle) => ListTile(
+          key: ValueKey('scene_side_$value'),
+          leading: Icon(icon, color: accent),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(subtitle, style: AppTextStyles.messageTime, maxLines: 2, overflow: TextOverflow.ellipsis),
+          trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+          onTap: () {
+            Navigator.pop(context);
+            onSelected(value);
+          },
+        );
+    return Drawer(
+      width: (width * 0.5).clamp(280.0, 420.0).clamp(0.0, width * 0.88),
+      backgroundColor: AppColors.surfaceWhite,
+      child: SafeArea(
+        child: ListView(padding: const EdgeInsets.symmetric(vertical: 12), children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(children: [
+              CharacterAvatar(character: character, radius: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(character.name, style: AppTextStyles.appBarTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const Text('현실 장면', style: AppTextStyles.messageTime),
+                ]),
+              ),
+            ]),
+          ),
+          const Divider(height: 1, color: AppColors.borderLight),
+          item('lorebook', Icons.auto_stories_outlined, '로어북', '대화 요약 $memoryCount개 · 톡 방과 같이 씀'),
+          item('ai', Icons.smart_toy_outlined, 'AI 모델', '$model · 현실 장면 방만 따로'),
+          if (canEnd || canClear) const Divider(height: 24, color: AppColors.borderLight),
+          if (canEnd) item('end', Icons.flag_outlined, '장면 마치기', '지금 장면을 요약해 로어북에 넣고 닫아요'),
+          if (canClear) item('clear', Icons.delete_sweep_outlined, '현실 장면 방 비우기', '장면 기록만 지워요 · 로어북은 남아요'),
+        ]),
+      ),
     );
   }
 }
