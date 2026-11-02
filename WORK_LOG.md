@@ -479,3 +479,14 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
   - `ClaudeChatClient` 기다림 2분 → 4분(서버 nginx 420초 안). 시간 초과 안내 문구를 'Gemini는 Flash-Lite'로.
 - 검증: `flutter analyze`·`dart analyze`(server) 문제 없음, `flutter test` 148개 전부 통과(ai_retry_test에 생각 단계·되돌리기 테스트). 실제 Gemini 키로 속도는 못 재 봄.
 - 다음: 쨋뀨가 배포 후 Flash로 자유대화·AI로 만들기 해 보기. 그래도 느리면 무료 등급 붐빔일 수 있어 스트리밍 검토.
+
+## 2026-11-02 / 42. PC 접속 뒤 폰 데이터가 사라진 일: 되돌리기 + 연동이 데이터를 덮지 않게
+- 요청 (쨋뀨): 폰에서 잘 쓰다가 PC로 접속했더니 데이터가 다 사라짐. 되살릴 수 있는지 보고, 다시는 안 생기게.
+- 원인(코드로 본 추정, 실제 DB는 못 봄): 기기 연동은 키마다 '더 나중에 바뀐 값'이 이김. PC가 연동 전에 빈 값·기본값을 쓰면 그 시각이 폰의 마지막 변경보다 최근이라 서버 값을 덮을 수 있었고, 서버엔 바뀌기 전 값이 남지 않았음. 폰은 다음에 열 때(또는 돌아올 때) 서버의 빈 값을 받아 자기 데이터까지 덮게 됨.
+- 변경:
+  - 앱 `state_sync.dart`: 이 계정으로 끝까지 맞춘 적 없는 기기(새 기기·로그아웃 뒤 다시 로그인, `sync_base_v1`로 구분)는 서버에 있는 값을 덮지 않고 받기만 함. 예전부터 연동하던 기기(연동 시각 기록 있음)는 그대로.
+  - 한쪽 값으로 덮으면 다른 쪽이 비거나 절반 아래로 줄어드는 항목(2KB 이상)은 자동으로 덮지 않고 `SyncConflictScreen`에서 물어봄: '데이터 많은 쪽 지키기(추천)' / '최근에 바뀐 쪽 쓰기'. 고르기 전엔 앱이 안 열리고 그 키는 서버로 안 올림(`SyncOutbox.forget`). 대화 기록(run_)은 진행도 비교로 정한 경우 그대로.
+  - 서버 DB 마이그레이션 3: `user_state_history` + 트리거. 값이 바뀌거나 지워지기 직전 값을 키마다 최근 30개 보관(같은 값으로 다시 쓰면 안 남김). SQLite(개발용)에는 없음.
+  - `deploy/restore-user-state.sh`: 한 사람 user_state만 백업 파일(dump) 또는 기록(history) 시각으로 비교·되돌리기. `--apply` 전에 backup.sh. 되돌린 값은 지금 시각으로 저장. 사용법은 docs/OPERATIONS.md.
+- 검증: `flutter analyze`·`dart analyze` 문제 없음, `flutter test` 149개 통과(accounts_test에 새 기기·빈 값 덮기·물어보기 시나리오 추가). 서버 테스트는 로컬 PostgreSQL 16으로 postgres_test까지 통과(기록 트리거 확인). 되돌리기 스크립트는 로컬 PostgreSQL에서 list·dump·history·--apply 확인(docker compose 경로는 NAS에서 처음 돌려 봄).
+- 다음: 쨋뀨 NAS `data/backups`에 사라지기 전 백업이 있으면 dump로 되돌리기. 없으면 이 버전 배포 후 폰을 열어 '데이터 많은 쪽 지키기'. 배포 전에는 폰에서 말랑톡을 열지 않기.

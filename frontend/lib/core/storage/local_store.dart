@@ -67,6 +67,9 @@ class SyncOutbox {
     if (_dirty.isNotEmpty) _schedule(delay);
   }
 
+  /// 이 키들은 보내지 않음 (기기 연동에서 사용자에게 물어볼 항목)
+  void forget(Set<String> keys) => _dirty.removeAll(keys);
+
   /// 다른 계정으로 바꿀 때 이전 계정의 대기 중이던 변경분을 비움
   void clear() {
     _timer?.cancel();
@@ -331,8 +334,20 @@ class LocalStore {
   String? get syncUser => _getString('sync_user');
   Future<void> saveSyncUser(String? username) => _put('sync_user', username);
 
+  /// 이 기기가 이 계정으로 서버와 끝까지 맞춘 적이 있는지 (없으면 '새로 들어온 기기'로 보고 서버 값을 우선)
+  /// 연동 시각 기록만 있고 이 표시가 없는 예전 기기는 맞춘 적 있는 기기로 봄
+  bool hasSyncedWith(String username) {
+    final base = _getString(_syncBaseKey);
+    if (base != null) return base == username;
+    return syncUser == username && _syncTimes.isNotEmpty;
+  }
+
+  Future<void> saveSyncBase(String? username) => _put(_syncBaseKey, username);
+  static const _syncBaseKey = 'sync_base_v1';
+
   /// 연동 대상 값을 이 기기에서 모두 지움 (로그아웃하거나 다른 계정으로 로그인했을 때)
   Future<void> clearSynced() async {
+    await _put(_syncBaseKey, '');
     final keys = syncedKeys().toList();
     _memory.removeWhere((k, _) => isSyncedKey(k));
     _memory.remove(_syncTimesKey);

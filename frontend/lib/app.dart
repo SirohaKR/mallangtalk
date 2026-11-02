@@ -12,6 +12,7 @@ import 'core/update/app_update.dart';
 import 'features/auth/auth_state.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/state_sync.dart';
+import 'features/auth/sync_conflict_screen.dart';
 import 'features/library/character_library.dart';
 
 class MallangTalkApp extends StatelessWidget {
@@ -134,6 +135,9 @@ class _BootGateState extends ConsumerState<_BootGate> with WidgetsBindingObserve
       } else {
         _syncedUsername = username;
       }
+      // 한쪽 값으로 덮으면 데이터가 크게 사라지는 항목이 있으면 고를 때까지 앱을 열지 않음
+      final conflicts = sync.valueOrNull ?? const <SyncConflict>[];
+      if (conflicts.isNotEmpty) return SyncConflictScreen(conflicts: conflicts);
       ref.watch(librarySyncProvider); // 내 캐릭터를 서버와 맞춤
     }
     return KeyedSubtree(

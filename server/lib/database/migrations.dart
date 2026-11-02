@@ -39,6 +39,32 @@ const migrations = <List<String>>[
       octet_length(s.value) AS bytes,s.value IS NULL AS deleted
       FROM user_state s JOIN users u ON u.id=s.user_id''',
   ],
+  [
+    // 2026-11-02: PC 접속 뒤 폰 데이터가 덮여 사라진 일. user_state 값이 바뀌거나 지워지기 직전 값을
+    // 남겨 두어 deploy/restore-user-state.sh로 되돌릴 수 있게 함 (키마다 최근 30개만 보관).
+    '''CREATE TABLE user_state_history (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key TEXT NOT NULL, value TEXT, updated_at BIGINT NOT NULL,
+      replaced_at TIMESTAMPTZ NOT NULL DEFAULT now())''',
+    'CREATE INDEX user_state_history_user_key ON user_state_history(user_id, key, id DESC)',
+    'CREATE INDEX user_state_history_user_time ON user_state_history(user_id, replaced_at)',
+    r'''CREATE FUNCTION user_state_keep_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF TG_OP = 'UPDATE' AND NEW.value IS NOT DISTINCT FROM OLD.value THEN
+          RETURN NEW;
+        END IF;
+        INSERT INTO user_state_history(user_id, key, value, updated_at)
+          VALUES (OLD.user_id, OLD.key, OLD.value, OLD.updated_at);
+        DELETE FROM user_state_history WHERE user_id = OLD.user_id AND key = OLD.key AND id IN (
+          SELECT id FROM user_state_history WHERE user_id = OLD.user_id AND key = OLD.key
+          ORDER BY id DESC OFFSET 30);
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+      END $$''',
+    '''CREATE TRIGGER user_state_history_trigger BEFORE UPDATE OR DELETE ON user_state
+      FOR EACH ROW EXECUTE FUNCTION user_state_keep_history()''',
+  ],
 ];
 
 Future<void> migrate(Connection connection) => connection.runTx((tx) async {

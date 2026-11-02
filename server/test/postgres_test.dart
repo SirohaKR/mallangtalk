@@ -53,6 +53,12 @@ void main() {
     await pg.saveState(
         user.id, [(key: 'run_char1', value: '"old"', updatedAt: 99)]);
     expect((await pg.stateOf(user.id))['run_char1']?.value, '"원본 값"');
+    // 값이 바뀌면 바뀌기 직전 값이 기록에 남음 (같은 값이면 안 남김)
+    await pg.saveState(user.id, [(key: 'run_char1', value: '[]', updatedAt: 150)]);
+    await pg.saveState(user.id, [(key: 'run_char1', value: '[]', updatedAt: 151)]);
+    final history = await pg.connection.execute(
+        "SELECT value, updated_at FROM user_state_history WHERE key='run_char1'");
+    expect([for (final r in history) (r[0], r[1])], [('"원본 값"', 100)]);
     await Future.wait(List.generate(
         8,
         (i) => pg.saveState(
