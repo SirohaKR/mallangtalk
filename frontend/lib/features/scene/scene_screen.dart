@@ -7,10 +7,12 @@ import '../../core/network/claude_chat_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/character_avatar.dart';
+import '../chat/chat_ai_sheet.dart';
 import '../chat/chat_notifier.dart';
 import '../chat/chat_theme.dart';
 import '../chat/memory_sheet.dart';
 import '../library/character_library.dart';
+import '../settings/byok_settings.dart';
 import '../settings/user_profile.dart';
 import 'scene_room.dart';
 
@@ -94,6 +96,9 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
             characterName: name,
             memories: notifier.sharedMemories,
             onChanged: ref.read(chatRoomProvider(widget.sourceRoomId).notifier).setMemories);
+      case 'ai':
+        showChatAiSheet(context, accent: ChatTheme.of(ref.read(chatRoomProvider(widget.sourceRoomId)).character).accent,
+            roomId: sceneAiRoom(widget.sourceRoomId), onlyHereFirst: true);
       case 'end':
         await notifier.endScene();
       case 'clear':
@@ -128,9 +133,11 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
 
     final lines = scene.lines.reversed.toList();
     final est = notifier.estimate(_input.text);
+    String won(double w) => w < 10 ? '10원 안쪽' : '${(w / 10).round() * 10}원';
     final cost = est.won == null
-        ? '비용은 모델 가격을 몰라서 어림 못 해요'
-        : '보내면 약 ${est.won! < 10 ? '10원 안쪽' : '${(est.won! / 10).round() * 10}원'}';
+        ? '이 모델은 가격을 몰라 비용을 어림 못 해요'
+        : '보내면 약 ${won(est.won!)} (짧게 와서 이어 쓰면 최대 ${won(est.maxWon!)})';
+    final ai = ref.watch(roomByokProvider(sceneAiRoom(source)));
 
     return Scaffold(
       backgroundColor: _paper,
@@ -154,6 +161,7 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
             onSelected: (v) => _menu(v, notifier, character.name),
             itemBuilder: (_) => [
               PopupMenuItem(value: 'lorebook', child: Text('로어북 (대화 요약 $memoryCount개)')),
+              const PopupMenuItem(value: 'ai', child: Text('AI 모델 바꾸기')),
               if (scene.sceneOpen && !scene.writing) const PopupMenuItem(value: 'end', child: Text('장면 마치기')),
               if (!scene.isEmpty && !scene.writing) const PopupMenuItem(value: 'clear', child: Text('현실 장면 방 비우기')),
             ],
@@ -222,11 +230,26 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
             child: SafeArea(
               top: false,
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Text(
-                  '$cost · 입력 약 ${(est.inputTokens / 1000).toStringAsFixed(1)}천 + 출력 약 ${est.outputTokens ~/ 1000}천 토큰 (짧게 오면 이어 쓰기로 조금 더)',
-                  key: const ValueKey('scene_cost'),
-                  style: AppTextStyles.messageTime,
-                ),
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                      '$cost · 입력 약 ${(est.inputTokens / 1000).toStringAsFixed(1)}천 + 출력 약 ${est.outputTokens ~/ 1000}천 토큰',
+                      key: const ValueKey('scene_cost'),
+                      style: AppTextStyles.messageTime,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // 대화 도중 모델 바꾸기 (현실 장면 방만 따로 고를 수 있음)
+                  ActionChip(
+                    key: const ValueKey('scene_model'),
+                    avatar: Icon(Icons.smart_toy_outlined, size: 16, color: theme.accent),
+                    label: Text(aiModelName(ai), style: const TextStyle(fontSize: 12)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: scene.writing
+                        ? null
+                        : () => showChatAiSheet(context, accent: theme.accent, roomId: sceneAiRoom(source), onlyHereFirst: true),
+                  ),
+                ]),
                 const SizedBox(height: 6),
                 Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Expanded(

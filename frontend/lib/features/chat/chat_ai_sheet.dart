@@ -10,7 +10,10 @@ import '../settings/byok_settings.dart';
 /// 대화방에서 자유대화 AI(회사·모델)를 바로 고르는 시트
 /// [freeTalk]: 스토리/자유대화 방이 있는 대화방에서 열면 '자유대화' 켜고 끄기 (켜면 자유대화 방, 끄면 스토리 방으로)
 Future<void> showChatAiSheet(BuildContext context,
-    {required Color accent, String? roomId, ({bool on, String name, VoidCallback toggle})? freeTalk}) {
+    {required Color accent,
+    String? roomId,
+    ({bool on, String name, VoidCallback toggle})? freeTalk,
+    bool onlyHereFirst = false}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -18,7 +21,7 @@ Future<void> showChatAiSheet(BuildContext context,
     useSafeArea: true,
     backgroundColor: AppColors.surfaceWhite,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-    builder: (_) => _ChatAiSheet(accent: accent, roomId: roomId, freeTalk: freeTalk),
+    builder: (_) => _ChatAiSheet(accent: accent, roomId: roomId, freeTalk: freeTalk, onlyHereFirst: onlyHereFirst),
   );
 }
 
@@ -27,7 +30,10 @@ Future<void> showChatAiSheet(BuildContext context,
 /// 대화방에서 열면 '이 대화만 / 모든 대화 기본으로' 중 어디에 쓸지 고를 수 있어요.
 /// 모든 대화 기본은 설정 > AI 연결과 같은 값이에요.
 class _ChatAiSheet extends ConsumerStatefulWidget {
-  const _ChatAiSheet({required this.accent, this.roomId, this.freeTalk});
+  const _ChatAiSheet({required this.accent, this.roomId, this.freeTalk, this.onlyHereFirst = false});
+
+  /// 처음부터 '이 대화만'을 골라 둠 (현실 장면 방: 모델을 바꿔도 톡 방·다른 대화는 그대로)
+  final bool onlyHereFirst;
 
   final Color accent;
 
@@ -47,7 +53,7 @@ class _ChatAiSheetState extends ConsumerState<_ChatAiSheet> {
   late AiProvider _provider = _active().provider;
 
   /// true면 이 대화방에만 (이미 '이 대화만'으로 골라 둔 방이면 처음부터 true)
-  late bool _onlyHere = _room != null && ref.read(roomAiChoiceProvider(_room!)) != null;
+  late bool _onlyHere = _room != null && (widget.onlyHereFirst || ref.read(roomAiChoiceProvider(_room!)) != null);
   final _key = TextEditingController();
   bool _saving = false;
 

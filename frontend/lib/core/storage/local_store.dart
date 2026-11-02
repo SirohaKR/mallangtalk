@@ -535,6 +535,8 @@ class LocalStore {
   Future<void> forgetCharacter(String characterId) async {
     await _write('scene_$characterId', null); // 현실 장면 방
     await _write('scene_$characterId#free', null);
+    await _write('ai_room_$characterId@scene', null);
+    await _write('ai_room_$characterId#free@scene', null);
     await clearRun(characterId);
     await clearRun('$characterId#free'); // 자유대화 방
     await _write(_albumKey(characterId), null);
@@ -556,6 +558,8 @@ class LocalStore {
   Future<void> resetCharacterOnAdd(String characterId) async {
     await _write('scene_$characterId', null); // 현실 장면 방
     await _write('scene_$characterId#free', null);
+    await _write('ai_room_$characterId@scene', null);
+    await _write('ai_room_$characterId#free@scene', null);
     await clearRun(characterId);
     await clearRun('$characterId#free');
     await _write(_albumKey(characterId), null);

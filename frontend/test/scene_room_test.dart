@@ -125,6 +125,36 @@ void main() {
     await reopened.read(builtinBundlesProvider.future);
     expect(reopened.read(sceneRoomProvider(room)).lines.where((l) => l.isStory), hasLength(2));
   });
+  testWidgets('긴 장면도 최근 4줄만 다시 보내고, 장면 방 AI는 톡 방과 따로 고름', (tester) async {
+    final room = freeRoomId(dohaId);
+    final now = DateTime(2026).toIso8601String();
+    SharedPreferences.setMockInitialValues({
+      ...fastTempo,
+      'scene_$room': jsonEncode({'lines': [
+        {'kind': 'start', 'id': 's', 'text': '톡', 'context': 'c', 'at': now},
+        for (var i = 0; i < 10; i++) {'kind': i.isEven ? 'user' : 'story', 'id': 'l$i', 'text': '줄$i', 'at': now},
+        {'kind': 'user', 'id': 'last', 'text': '마지막 입력', 'at': now},
+      ]}),
+      // 장면 방만 Haiku로 (톡 방은 기본 Sonnet)
+      'ai_room_$room@scene': 'claude|claude-haiku-5-5',
+    });
+    final fake = _SceneFake();
+    final container = await openDohaChat(tester, roomId: room, extra: [
+      byokSettingsProvider.overrideWith(_Ai.new),
+      claudeChatClientProvider.overrideWithValue(fake),
+    ]);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    expect(container.read(roomAiChoiceProvider(sceneAiRoom(room))), (AiProvider.claude, 'claude-haiku-5-5'));
+    expect(container.read(roomAiChoiceProvider(room)), isNull);
+
+    final notifier = container.read(sceneRoomProvider(room).notifier);
+    final est = notifier.estimate('');
+    expect(est.maxWon!, greaterThan(est.won!));
+    await notifier.retry();
+    await tester.pumpAndSettle();
+    expect(fake.inputs.single, '마지막 입력');
+    expect(fake.scenes.single.map((l) => l.text), ['줄6', '줄7', '줄8', '줄9']);
+  });
 }
 
 class _Ai extends ByokSettingsNotifier {
@@ -137,6 +167,7 @@ class _SceneFake extends ClaudeChatClient {
   final contexts = <String>[];
   final memories = <List<String>>[];
   final inputs = <String?>[];
+  final scenes = <List<({bool isUser, String text})>>[];
 
   @override
   Future<String> sceneTurn({
@@ -157,6 +188,7 @@ class _SceneFake extends ClaudeChatClient {
     contexts.add(talkContext);
     this.memories.add(memories);
     inputs.add(userInput);
+    scenes.add(scene);
     return userInput == null ? '(도하가 편의점 앞에 섰다.)\n"기다렸지?"' : '(도하가 웃었다.)\n"보여."';
   }
 
