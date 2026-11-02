@@ -18,7 +18,9 @@ void main() {
     await settle(tester);
     final target = container.read(chatRoomProvider(room)).messages.first;
     await tester.longPress(find.text('오늘 어디 갈까?'));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('msg_reply')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('reply_preview')), findsOneWidget);
     await tester.enterText(find.byType(TextField), '공원 가자');
     await tester.testTextInput.receiveAction(TextInputAction.send);
@@ -41,7 +43,9 @@ void main() {
             .replyToId,
         target.id);
     await tester.longPress(find.text('공원 가자'));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('msg_reply')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('답장 취소'));
     await tester.pump();
     expect(find.byKey(const ValueKey('reply_preview')), findsNothing);

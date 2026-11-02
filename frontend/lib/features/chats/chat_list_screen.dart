@@ -9,6 +9,7 @@ import '../chat/chat_notifier.dart';
 import '../chat/chat_screen.dart';
 import '../chat/start_chat.dart';
 import '../library/character_library.dart';
+import '../scene/scene_room.dart';
 import '../settings/user_profile.dart';
 
 /// [초보자 노트] '채팅' 탭: 대화 중인 캐릭터 목록. 마지막 말풍선과 안 읽은 톡 숫자를 카톡처럼 보여줍니다.
@@ -199,7 +200,8 @@ class _ChatRoomTile extends ConsumerWidget {
                 ? '사진'
                 : last.text;
 
-    return Material(
+    final scene = service ? null : ref.watch(sceneRoomProvider(roomId).select((s) => s.lastStory?.text ?? (s.isEmpty ? null : '')));
+    final tile = Material(
         type: MaterialType.transparency,
         child: ListTile(
           selected: selected,
@@ -284,6 +286,23 @@ class _ChatRoomTile extends ConsumerWidget {
           onTap: onSelectInSplit ??
               () => openChat(context, room.character, roomId: roomId),
         ));
+    if (scene == null) return tile;
+    // 이 톡 방에서 이어진 현실 장면 방 (톡 방 바로 아래)
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      tile,
+      ListTile(
+        key: ValueKey('scene_tile_$roomId'),
+        dense: true,
+        contentPadding: const EdgeInsets.only(left: 76, right: AppSpacing.lg),
+        leading: const Icon(Icons.auto_stories_outlined, size: 20, color: AppColors.aiActivePurple),
+        minLeadingWidth: 20,
+        title: Text('${room.character.name} · 현실 장면',
+            style: AppTextStyles.appBarTitle.copyWith(fontSize: 13.5)),
+        subtitle: Text(scene.isEmpty ? '장면을 이어 가 보세요' : scene.replaceAll('\n', ' '),
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: AppTextStyles.messageTime),
+        onTap: () => context.push(sceneRoute(roomId)),
+      ),
+    ]);
   }
 
   static String _timeLabel(DateTime t) {

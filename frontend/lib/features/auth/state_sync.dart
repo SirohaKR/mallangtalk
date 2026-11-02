@@ -64,6 +64,7 @@ class SyncConflict {
     if (key == 'my_profile') return '내 프로필';
     if (key == 'favorites_v1') return '즐겨찾기';
     if (key.startsWith('run_')) return '대화 기록';
+    if (key.startsWith('scene_')) return '현실 장면 기록';
     if (key.startsWith('album_') || key.startsWith('photos_')) return '앨범';
     if (key.startsWith('persona_') || key.startsWith('userinfo_')) return '내 설정';
     return '진행 기록';

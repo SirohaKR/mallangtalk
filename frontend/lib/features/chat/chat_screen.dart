@@ -22,6 +22,7 @@ import 'chat_side_menu.dart';
 import 'memory_sheet.dart';
 import 'romance_settings.dart';
 import '../../shared/utils/dialogue_input.dart';
+import '../scene/scene_room.dart';
 
 final chatPhotoPickerProvider =
     Provider<Future<String?> Function(BuildContext)>((ref) => pickPhoto);
@@ -222,10 +223,48 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             characterName: character.name,
             memories: ref.read(chatRoomProvider(widget.roomId)).memories,
             onChanged: notifier.setMemories);
+      case 'scene':
+        context.push(sceneRoute(widget.roomId));
       case 'switch':
         _switchRoom();
       case 'restart':
         if (await _confirm('처음부터 다시 할까요?', '지금까지 나눈 이야기가 지워져요.')) notifier.restart();
+    }
+  }
+
+  /// 말풍선 꾹: 답장하기(자유대화 방) / 여기서 현실 장면으로
+  Future<void> _onMessageLongPress(ChatMessageLog msg, ChatTheme theme) async {
+    final free = isFreeRoom(widget.roomId);
+    final pick = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (free)
+            ListTile(
+              key: const ValueKey('msg_reply'),
+              leading: Icon(Icons.reply_rounded, color: theme.accent),
+              title: const Text('답장하기'),
+              onTap: () => Navigator.pop(context, 'reply'),
+            ),
+          ListTile(
+            key: const ValueKey('msg_scene'),
+            leading: Icon(Icons.auto_stories_outlined, color: theme.accent),
+            title: const Text('여기서 현실 장면으로'),
+            subtitle: const Text('이 톡 바로 뒤, 실제로 마주한 장면을 소설처럼 이어 가요', style: AppTextStyles.messageTime),
+            onTap: () => Navigator.pop(context, 'scene'),
+          ),
+        ]),
+      ),
+    );
+    if (!mounted) return;
+    switch (pick) {
+      case 'reply':
+        setState(() => _replyTarget = msg);
+        _inputFocus.requestFocus();
+      case 'scene':
+        ref.read(sceneRoomProvider(widget.roomId).notifier).startFrom(msg.id);
+        context.push(sceneRoute(widget.roomId));
     }
   }
 
@@ -444,6 +483,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final hasApiKey = ref.watch(roomByokProvider(roomId).select((s) => s.canUseAi));
     final bundle = ref.watch(characterBundleProvider(id));
     final theme = ChatTheme.of(chatState.character);
+    final hasScene = !service && ref.watch(sceneRoomProvider(roomId).select((s) => !s.isEmpty));
     final screenWidth = MediaQuery.sizeOf(context).width;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     // 앨범에서 '이 톡으로 가기'로 왔으면 그 사진 톡으로
@@ -569,12 +609,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         bundle?.photoFor(msg.photoImage, msg.photoLabel);
                     return GestureDetector(
                         key: ValueKey(messageRowKeys[index]),
-                        onLongPress: free
-                            ? () {
-                                setState(() => _replyTarget = msg);
-                                _inputFocus.requestFocus();
-                              }
-                            : null,
+                        onLongPress: service
+                            ? null
+                            : () => _onMessageLongPress(msg, theme),
                         child: AnimatedContainer(
                           key: msg.hasPhoto
                               ? _photoKeys.putIfAbsent(msg.id, GlobalKey.new)
@@ -795,7 +832,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         accent: theme.accent,
         nickname: ref.watch(chatNicknameProvider(id)),
         memoryCount: chatState.memories.length,
-        showLorebook: notifier.repliesWithAi,
+        showLorebook: notifier.repliesWithAi || hasScene,
+        sceneCount: service ? null : ref.watch(sceneRoomProvider(roomId).select((s) => s.lines.where((l) => l.isStart).length)),
         commands: _commands(chatState.character),
         storyRoom: !free && !service,
         onSelected: (value) => _onSideMenu(value, theme, chatState, notifier),

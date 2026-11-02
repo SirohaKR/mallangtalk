@@ -43,6 +43,7 @@ class ChatSideMenu extends StatelessWidget {
     required this.nickname,
     required this.memoryCount,
     required this.showLorebook,
+    this.sceneCount,
     required this.commands,
     required this.storyRoom,
     required this.onSelected,
@@ -55,12 +56,15 @@ class ChatSideMenu extends StatelessWidget {
 
   /// AI가 답하는 방에서만 로어북(기억)이 쌓임
   final bool showLorebook;
+
+  /// 현실 장면 방에서 시작한 장면 수 (null이면 메뉴에 안 보임: 서비스 말랑이)
+  final int? sceneCount;
   final List<ChatCommand> commands;
 
   /// 스토리 방: 입력칸이 잠겨 있어서 명령어 대신 메뉴에 둠
   final bool storyRoom;
 
-  /// 'profile' / 'settings' / 'lorebook' / 'switch' / 'restart'
+  /// 'profile' / 'settings' / 'lorebook' / 'scene' / 'switch' / 'restart'
   final ValueChanged<String> onSelected;
 
   @override
@@ -109,6 +113,9 @@ class ChatSideMenu extends StatelessWidget {
                 ].join(' · ')),
             if (showLorebook)
               item('lorebook', Icons.auto_stories_outlined, '로어북', '대화 요약 $memoryCount개 · 보고 고치기'),
+            if (sceneCount != null)
+              item('scene', Icons.auto_stories_outlined, '현실 장면 방',
+                  sceneCount == 0 ? '말풍선을 꾹 눌러 현실 장면으로 이어 가요' : '장면 $sceneCount개 · 로어북 같이 씀'),
             if (storyRoom) ...[
               const Divider(height: 24, color: AppColors.borderLight),
               item('switch', Icons.forum_outlined, '자유대화 방 열기', '정해진 이야기 없이 AI와 자유롭게'),
