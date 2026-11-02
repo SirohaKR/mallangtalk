@@ -72,6 +72,7 @@ sh deploy/verify-backup.sh data/backups/postgres-YYYYMMDD-HHMMSS.dump
 sh deploy/restore-user-state.sh list <아이디>
 sh deploy/restore-user-state.sh dump <아이디> data/backups/postgres-YYYYMMDD-HHMMSS.dump [--apply]
 sh deploy/restore-user-state.sh history <아이디> "2026-11-02 12:00" [--apply]
+# 일부만: 맨 뒤에 --only=run_char_xxx,album_char_xxx
 ```
 
 user_state 값이 바뀌거나 지워지면 바뀌기 직전 값이 user_state_history에 키마다 최근 30개 남는다

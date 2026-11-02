@@ -8,6 +8,7 @@
 #       백업 파일에 있던 그 사람 값으로 되돌림
 #   sh deploy/restore-user-state.sh history <아이디> "2026-11-02 12:00" [--apply]
 #       그 시각(한국 시간) 바로 전 값으로 되돌림 (2026-11-02 기록 기능을 넣은 뒤 바뀐 것만 가능)
+#   맨 뒤에 --only=항목1,항목2 를 붙이면 그 항목만 비교·되돌림 (예: --only=run_char_serena_astin)
 #
 # 되돌린 값은 지금 시각으로 저장돼서, 폰·PC가 다음에 열 때 이 값을 받아 갑니다.
 # --apply 전에 deploy/backup.sh로 전체 백업을 먼저 남깁니다.
@@ -23,7 +24,7 @@ SHARED_DIR="${SHARED_DIR:-/tmp}" # db 컨테이너 안 경로 (CSV를 잠깐 둠
 SKIP_BACKUP="${SKIP_BACKUP:-}"
 
 usage() {
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
   exit 64
 }
 
@@ -31,6 +32,17 @@ mode="${1:-}"
 user="${2:-}"
 [ -n "$mode" ] && [ -n "$user" ] || usage
 case "$user" in *"'"*) echo '아이디에 작은따옴표는 쓸 수 없어요.'; exit 64 ;; esac
+
+apply=""
+only=""
+for arg in "${4:-}" "${5:-}"; do
+  case "$arg" in
+    --apply) apply=1 ;;
+    --only=*) only="${arg#--only=}" ;;
+    "") ;;
+    *) echo "알 수 없는 옵션: $arg"; usage ;;
+  esac
+done
 
 q() { $PSQL -v ON_ERROR_STOP=1 -X -q "$@"; }
 
@@ -42,6 +54,11 @@ SQL
 
 # 되돌릴 값(user_state_restore: key, value, updated_at)을 지금 값과 비교해서 보여 줌
 show_compare() {
+  if [ -n "$only" ]; then
+    q -d "$DB" -v only="$only" <<'SQL'
+DELETE FROM user_state_restore WHERE NOT (key = ANY (string_to_array(:'only', ',')));
+SQL
+  fi
   q -d "$DB" -v uid="$user_id" <<'SQL'
 \pset footer off
 SELECT r.key AS "항목",
@@ -112,7 +129,7 @@ SQL
 :copy_cmd
 SQL
     show_compare
-    if [ "${4:-}" = "--apply" ]; then apply_restore; else echo '비교만 했어요. 되돌리려면 맨 뒤에 --apply를 붙여 다시 실행하세요.'; fi
+    if [ -n "$apply" ]; then apply_restore; else echo '비교만 했어요. 되돌리려면 맨 뒤에 --apply를 붙여 다시 실행하세요.'; fi
     drop_table
     ;;
   history)
@@ -127,7 +144,7 @@ WHERE user_id = :uid AND replaced_at >= (:'at'::timestamp AT TIME ZONE 'Asia/Seo
 ORDER BY key, id ASC;
 SQL
     show_compare
-    if [ "${4:-}" = "--apply" ]; then apply_restore; else echo '비교만 했어요. 되돌리려면 맨 뒤에 --apply를 붙여 다시 실행하세요.'; fi
+    if [ -n "$apply" ]; then apply_restore; else echo '비교만 했어요. 되돌리려면 맨 뒤에 --apply를 붙여 다시 실행하세요.'; fi
     drop_table
     ;;
   *) usage ;;
