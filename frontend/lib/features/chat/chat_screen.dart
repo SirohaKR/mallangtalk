@@ -268,15 +268,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<bool> _confirm(String title, String body) async =>
+  /// 쓰레기통: 내 톡과 그 답장을 지울지 물어보고 지움
+  Future<void> _deleteTurn(String id, ChatRoomNotifier notifier) async {
+    if (await _confirm('이 톡을 지울까요?', '내가 보낸 톡과 그에 대한 답장이 함께 지워져요. 로어북에 들어간 요약은 남아요.',
+        ok: '지우기')) {
+      notifier.deleteTurn(id);
+    }
+  }
+
+  /// 재전송: 예상 사용량을 보여 주고, 확인하면 같은 내 톡으로 답장을 다시 받음
+  Future<void> _resendTurn(String id, ChatRoomNotifier notifier, ChatTheme theme) async {
+    final est = notifier.estimateResend(id);
+    final ai = ref.read(roomByokProvider(widget.roomId));
+    final won = est.won;
+    final cost = won == null
+        ? '이 모델은 가격을 몰라 금액은 어림 못 해요'
+        : '약 ${won < 1 ? '1원 안쪽' : won < 10 ? '${won.toStringAsFixed(1)}원' : '${won.round()}원'}';
+    final ok = await _confirm(
+      '답장을 다시 받을까요?',
+      '지금 답장은 지우고, 내 톡 그대로 ${aiModelName(ai)}에게 다시 물어봐요.\n\n'
+          '예상 사용량: $cost\n입력 약 ${(est.inputTokens / 1000).toStringAsFixed(1)}천 + 출력 약 ${(est.outputTokens / 1000).toStringAsFixed(1)}천 토큰',
+      ok: '다시 받기',
+      bodyKey: const ValueKey('resend_cost'),
+    );
+    if (ok) await notifier.resendTurn(id);
+  }
+
+  Future<bool> _confirm(String title, String body, {String ok = '확인', Key? bodyKey}) async =>
       await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(title),
-          content: Text(body),
+          content: Text(body, key: bodyKey),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('확인')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(ok)),
           ],
         ),
       ) ==
@@ -607,8 +633,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     }
                     final image =
                         bundle?.photoFor(msg.photoImage, msg.photoLabel);
-                    return GestureDetector(
-                        key: ValueKey(messageRowKeys[index]),
+                    // 연달아 보낸 내 톡의 마지막 아래에: 쓰레기통(내 톡+답장 지우기)·재전송(답장 다시 받기, 맨 마지막만)
+                    final turnEnd = msg.isUser &&
+                        notifier.canEditTurns &&
+                        (index + 1 >= chatState.messages.length ||
+                            !chatState.messages[index + 1].isUser);
+                    final bubble = GestureDetector(
                         onLongPress: service
                             ? null
                             : () => _onMessageLongPress(msg, theme),
@@ -634,6 +664,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 : null,
                           ),
                         ));
+                    if (!turnEnd) {
+                      return KeyedSubtree(
+                          key: ValueKey(messageRowKeys[index]), child: bubble);
+                    }
+                    return Column(
+                      key: ValueKey(messageRowKeys[index]),
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        bubble,
+                        _TurnActions(
+                          id: msg.id,
+                          canResend: notifier.canResendTurn(msg.id),
+                          onDelete: () => _deleteTurn(msg.id, notifier),
+                          onResend: () => _resendTurn(msg.id, notifier, theme),
+                        ),
+                      ],
+                    );
                   },
                 ),
           ),
@@ -1184,6 +1231,38 @@ class _MessageBubbleRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 내 톡 묶음 아래 작은 버튼: 재전송(답장 다시 받기)·쓰레기통(내 톡+답장 지우기)
+class _TurnActions extends StatelessWidget {
+  const _TurnActions({required this.id, required this.canResend, required this.onDelete, required this.onResend});
+  final String id;
+  final bool canResend;
+  final VoidCallback onDelete;
+  final VoidCallback onResend;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(String key, String tip, IconData icon, VoidCallback onTap) => Tooltip(
+          message: tip,
+          child: InkResponse(
+            key: ValueKey('${key}_$id'),
+            onTap: onTap,
+            radius: 18,
+            child: Padding(
+              padding: const EdgeInsets.all(5),
+              child: Icon(icon, size: 17, color: AppColors.textSecondary),
+            ),
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, right: 2),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (canResend) button('turn_resend', '답장 다시 받기', Icons.refresh_rounded, onResend),
+        button('turn_delete', '이 톡과 답장 지우기', Icons.delete_outline_rounded, onDelete),
+      ]),
     );
   }
 }

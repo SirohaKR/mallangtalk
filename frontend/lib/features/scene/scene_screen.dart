@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/claude_chat_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/models/mallangtalk_models.dart';
 import '../../shared/widgets/character_avatar.dart';
 import '../chat/chat_ai_sheet.dart';
 import '../chat/chat_notifier.dart';
@@ -63,6 +64,7 @@ class SceneScreen extends ConsumerStatefulWidget {
 class _SceneScreenState extends ConsumerState<SceneScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   static const _paper = Color(0xFFFBF8F4);
 
@@ -89,6 +91,45 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
     if (notifier.send(_input.text)) _input.clear();
   }
 
+  Future<bool> _ask(String title, String body, String ok, {Key? bodyKey}) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(title),
+          content: Text(body, key: bodyKey),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('취소')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(ok)),
+          ],
+        ),
+      ) ==
+      true;
+
+  /// 쓰레기통: 내 입력과 그 뒤 장면을 지움
+  Future<void> _deleteTurn(String id, SceneRoomNotifier notifier) async {
+    if (await _ask('이 부분을 지울까요?', '내가 쓴 입력과 그 뒤에 이어진 장면이 함께 지워져요. 로어북에 들어간 요약은 남아요.', '지우기')) {
+      notifier.deleteTurn(id);
+    }
+  }
+
+  /// 재전송: 예상 비용을 보여 주고, 확인하면 같은 입력으로 장면을 다시 받음
+  Future<void> _resend(String id, SceneRoomNotifier notifier) async {
+    final est = notifier.estimateResend(id);
+    final ai = ref.read(roomByokProvider(sceneAiRoom(widget.sourceRoomId)));
+    String won(double w) => w < 10 ? '10원 안쪽' : '${(w / 10).round() * 10}원';
+    final cost = est.won == null
+        ? '이 모델은 가격을 몰라 금액은 어림 못 해요'
+        : '약 ${won(est.won!)} (짧게 와서 이어 쓰면 최대 ${won(est.maxWon!)})';
+    final ok = await _ask(
+      '장면을 다시 받을까요?',
+      '지금 장면은 지우고, 내 입력 그대로 ${aiModelName(ai)}에게 다시 써 달라고 해요.\n\n'
+          '예상 사용량: $cost\n입력 약 ${(est.inputTokens / 1000).toStringAsFixed(1)}천 + 출력 약 ${est.outputTokens ~/ 1000}천 토큰',
+      '다시 받기',
+      bodyKey: const ValueKey('scene_resend_cost'),
+    );
+    if (ok) await notifier.resend(id);
+  }
+
   Future<void> _menu(String value, SceneRoomNotifier notifier, String name) async {
     switch (value) {
       case 'lorebook':
@@ -102,18 +143,9 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
       case 'end':
         await notifier.endScene();
       case 'clear':
-        final ok = await showDialog<bool>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: const Text('현실 장면 방을 비울까요?'),
-            content: const Text('장면 기록이 지워져요. 로어북에 들어간 요약은 톡 방에 그대로 남아요.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('취소')),
-              TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('비우기')),
-            ],
-          ),
-        );
-        if (ok == true) notifier.clear();
+        if (await _ask('현실 장면 방을 비울까요?', '장면 기록이 지워져요. 로어북에 들어간 요약은 톡 방에 그대로 남아요.', '비우기')) {
+          notifier.clear();
+        }
     }
   }
 
@@ -140,6 +172,7 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
     final ai = ref.watch(roomByokProvider(sceneAiRoom(source)));
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: _paper,
       appBar: AppBar(
         backgroundColor: _paper,
@@ -156,17 +189,24 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
           ),
         ]),
         actions: [
-          PopupMenuButton<String>(
+          // 톡 방처럼 오른쪽 사이드바 메뉴
+          IconButton(
+            key: const ValueKey('scene_menu'),
             tooltip: '메뉴',
-            onSelected: (v) => _menu(v, notifier, character.name),
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'lorebook', child: Text('로어북 (대화 요약 $memoryCount개)')),
-              const PopupMenuItem(value: 'ai', child: Text('AI 모델 바꾸기')),
-              if (scene.sceneOpen && !scene.writing) const PopupMenuItem(value: 'end', child: Text('장면 마치기')),
-              if (!scene.isEmpty && !scene.writing) const PopupMenuItem(value: 'clear', child: Text('현실 장면 방 비우기')),
-            ],
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+            icon: const Icon(Icons.menu_rounded),
           ),
+          const SizedBox(width: 4),
         ],
+      ),
+      endDrawer: _SceneSideMenu(
+        character: character,
+        accent: theme.accent,
+        memoryCount: memoryCount,
+        model: aiModelName(ai),
+        canEnd: scene.sceneOpen && !scene.writing,
+        canClear: !scene.isEmpty && !scene.writing,
+        onSelected: (v) => _menu(v, notifier, character.name),
       ),
       body: Column(children: [
         Expanded(
@@ -200,7 +240,16 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
                         return switch (l.kind) {
                           'start' => _StartMark(key: ValueKey(l.id), text: l.text, accent: theme.accent),
                           'user' => _UserBlock(
-                              key: ValueKey(l.id), text: l.text, name: nickname, accent: theme.accent, narration: narration),
+                              key: ValueKey(l.id),
+                              id: l.id,
+                              text: l.text,
+                              name: nickname,
+                              accent: theme.accent,
+                              narration: narration,
+                              canResend: notifier.canResend(l.id),
+                              busy: scene.writing,
+                              onDelete: () => _deleteTurn(l.id, notifier),
+                              onResend: () => _resend(l.id, notifier)),
                           'story' => Padding(
                               key: ValueKey(l.id),
                               padding: const EdgeInsets.only(bottom: 22),
@@ -287,6 +336,69 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
   }
 }
 
+/// 현실 장면 방 오른쪽 사이드바: 로어북 / AI 모델 / 장면 마치기 / 비우기
+class _SceneSideMenu extends StatelessWidget {
+  const _SceneSideMenu({
+    required this.character,
+    required this.accent,
+    required this.memoryCount,
+    required this.model,
+    required this.canEnd,
+    required this.canClear,
+    required this.onSelected,
+  });
+  final CharacterModel character;
+  final Color accent;
+  final int memoryCount;
+  final String model;
+  final bool canEnd;
+  final bool canClear;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    Widget item(String value, IconData icon, String title, String subtitle) => ListTile(
+          key: ValueKey('scene_side_$value'),
+          leading: Icon(icon, color: accent),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(subtitle, style: AppTextStyles.messageTime, maxLines: 2, overflow: TextOverflow.ellipsis),
+          trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+          onTap: () {
+            Navigator.pop(context);
+            onSelected(value);
+          },
+        );
+    return Drawer(
+      width: (width * 0.5).clamp(280.0, 420.0).clamp(0.0, width * 0.88),
+      backgroundColor: AppColors.surfaceWhite,
+      child: SafeArea(
+        child: ListView(padding: const EdgeInsets.symmetric(vertical: 12), children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(children: [
+              CharacterAvatar(character: character, radius: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(character.name, style: AppTextStyles.appBarTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const Text('현실 장면', style: AppTextStyles.messageTime),
+                ]),
+              ),
+            ]),
+          ),
+          const Divider(height: 1, color: AppColors.borderLight),
+          item('lorebook', Icons.auto_stories_outlined, '로어북', '대화 요약 $memoryCount개 · 톡 방과 같이 씀'),
+          item('ai', Icons.smart_toy_outlined, 'AI 모델', '$model · 현실 장면 방만 따로'),
+          if (canEnd || canClear) const Divider(height: 24, color: AppColors.borderLight),
+          if (canEnd) item('end', Icons.flag_outlined, '장면 마치기', '지금 장면을 요약해 로어북에 넣고 닫아요'),
+          if (canClear) item('clear', Icons.delete_sweep_outlined, '현실 장면 방 비우기', '장면 기록만 지워요 · 로어북은 남아요'),
+        ]),
+      ),
+    );
+  }
+}
+
 /// 맨 아래 상태 줄: 쓰는 중 / 실패 / 키 없음
 class _Status extends StatelessWidget {
   const _Status({required this.scene, required this.name, required this.accent, required this.onRetry, required this.onSettings});
@@ -350,11 +462,40 @@ class _StartMark extends StatelessWidget {
 }
 
 class _UserBlock extends StatelessWidget {
-  const _UserBlock({super.key, required this.text, required this.name, required this.accent, required this.narration});
+  const _UserBlock({
+    super.key,
+    required this.id,
+    required this.text,
+    required this.name,
+    required this.accent,
+    required this.narration,
+    this.canResend = false,
+    this.busy = false,
+    required this.onDelete,
+    required this.onResend,
+  });
+  final String id;
   final String text;
   final String name;
   final Color accent;
   final Color narration;
+  final bool canResend;
+  final bool busy;
+  final VoidCallback onDelete;
+  final VoidCallback onResend;
+
+  Widget _button(String key, String tip, IconData icon, VoidCallback onTap) => Tooltip(
+        message: tip,
+        child: InkResponse(
+          key: ValueKey('${key}_$id'),
+          onTap: onTap,
+          radius: 16,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(icon, size: 17, color: AppColors.textSecondary),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -367,7 +508,12 @@ class _UserBlock extends StatelessWidget {
             border: Border(left: BorderSide(color: accent, width: 3)),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: AppTextStyles.speakerName.copyWith(color: accent)),
+            Row(children: [
+              Expanded(child: Text(name, style: AppTextStyles.speakerName.copyWith(color: accent))),
+              // 재전송(이 입력으로 장면 다시 받기, 맨 마지막만)·쓰레기통(입력+그 뒤 장면 지우기)
+              if (canResend) _button('scene_resend', '장면 다시 받기', Icons.refresh_rounded, onResend),
+              if (!busy) _button('scene_delete', '이 입력과 장면 지우기', Icons.delete_outline_rounded, onDelete),
+            ]),
             const SizedBox(height: 4),
             SelectableText.rich(
               sceneTextSpan(text, narration: narration, dialogue: AppColors.textPrimary),
