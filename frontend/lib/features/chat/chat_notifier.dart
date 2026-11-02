@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/widgets.dart' show Characters;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/claude_chat_client.dart';
+import '../../core/network/conversation_context.dart';
 import '../../core/storage/local_store.dart';
 import '../../shared/models/mallangtalk_models.dart';
 import '../auth/auth_state.dart';
@@ -303,7 +304,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     }
   }
 
-  /// '처음부터 다시'를 누른 시각 (ms). 같은 회차 안에서 다른 기기가 옛 상태로 덮어쓰지 않게 구분
+  /// '처음부터 다시'·비우기를 누르거나 내 톡을 지우기·다시 받기 한 시각 (ms).
+  /// 같은 대화 안에서 다른 기기에 남은 옛 상태(지우기 전 더 긴 대화)가 연동 때 덮어쓰지 않게 구분
   int? _resetAt;
   bool _disposed = false;
   ScriptNodeModel? _currentNode;
@@ -379,6 +381,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
           Timer.periodic(const Duration(seconds: 30), (_) => _deliverService());
       Future.microtask(_deliverService);
       _loreUptoId = savedService?.loreUptoId;
+      _resetAt = savedService?.resetAt;
       return _freshRunState(unlockedCutscenes: album).copyWith(
         isByokAiModeEnabled: true,
         internalAffection: 100,
@@ -394,6 +397,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       final freeSeen = (savedFree?.seenMessageCount ?? freeMsgs.length)
           .clamp(0, freeMsgs.length);
       _loreUptoId = savedFree?.loreUptoId;
+      _resetAt = savedFree?.resetAt; // 다시 열어도 비운·고친 시각을 잃지 않게 (연동 때 옛 대화가 이기지 않게)
       return _freshRunState(unlockedCutscenes: album).copyWith(
         isByokAiModeEnabled: true,
         messages: freeMsgs,
@@ -1467,9 +1471,7 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return true;
     }
 
-    _pendingUserBurstTexts.add(
-      '${replyTo == null ? '' : '[답장 대상: ${replyTo.speakerName}: ${replyTo.text}] '}${photoLabel != null ? '[사진 전송: $photoLabel] ${dialogueInputForAi(trimmed)}' : dialogueInputForAi(trimmed)}',
-    );
+    _pendingUserBurstTexts.add(_aiInputOf(myMsg));
     _isUserCurrentlyTypingText = false;
 
     state = state.copyWith(messages: [...state.messages, myMsg]);
@@ -1765,6 +1767,120 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     if (!state.canRetryFreeTalk || !state.isByokAiModeEnabled) return;
     _userBurstReplyTimer?.cancel();
     _processCombinedUserBurstReply();
+  }
+
+  /// 내 톡 하나를 AI에게 넘길 글로 (답장 대상·사진 표시 포함)
+  String _aiInputOf(ChatMessageLog m) {
+    final text = m.hasPhoto && m.text == '사진을 보냈습니다.' ? '' : m.text;
+    final reply = m.replyToText == null ? '' : '[답장 대상: ${m.replyToName ?? '상대'}: ${m.replyToText}] ';
+    final body = m.photoLabel != null
+        ? '[사진 전송: ${m.photoLabel}] ${dialogueInputForAi(text)}'
+        : dialogueInputForAi(text);
+    return '$reply$body';
+  }
+
+  /// 내 톡에 지우기·다시 받기 버튼을 보여 줄 방인지 (자유대화 방·서비스 말랑이. 스토리 방은 호감도가 얽혀 있어 빼요)
+  bool get canEditTurns => _aiRoom;
+
+  /// 내 톡 묶음([lastUserId]가 연달아 보낸 내 톡의 마지막)과 그 뒤 캐릭터 답장이 차지하는 칸 [start, end)
+  ({int start, int userEnd, int end})? _turnRange(String lastUserId) {
+    final msgs = state.messages;
+    final i = msgs.indexWhere((m) => m.id == lastUserId);
+    if (i < 0 || !msgs[i].isUser) return null;
+    var start = i;
+    while (start > 0 && msgs[start - 1].isUser) start--;
+    var end = i + 1;
+    while (end < msgs.length && !msgs[end].isUser && !msgs[end].isConversationBreak) end++;
+    return (start: start, userEnd: i + 1, end: end);
+  }
+
+  /// 다시 받기는 맨 마지막 내 톡 묶음에만 (그 뒤에 내 톡·대화 구분이 없을 때)
+  bool canResendTurn(String lastUserId) {
+    if (!canEditTurns || !repliesWithAi || _awaitingAiReply || state.isCharacterTyping) return false;
+    final r = _turnRange(lastUserId);
+    return r != null && r.end == state.messages.length;
+  }
+
+  /// 메시지를 지운 뒤 요약 위치·읽은 개수를 맞추고 저장. 지운 시각을 남겨 연동 때 지우기 전 대화가 이기지 않게
+  void _removeRange(int start, int end) {
+    final msgs = state.messages;
+    final removed = {for (final m in msgs.sublist(start, end)) m.id};
+    if (_loreUptoId != null && removed.contains(_loreUptoId)) {
+      _loreUptoId = start == 0 ? null : msgs[start - 1].id;
+    }
+    final seen = state.seenMessageCount;
+    final removedBeforeSeen = (seen.clamp(start, end) - start);
+    state = state.copyWith(
+      messages: [...msgs.sublist(0, start), ...msgs.sublist(end)],
+      seenMessageCount: (seen - removedBeforeSeen).clamp(0, msgs.length - removed.length),
+    );
+    _resetAt = DateTime.now().millisecondsSinceEpoch;
+  }
+
+  /// 쓰레기통: 내 톡 묶음과 그에 대한 캐릭터 답장을 지움 (로어북에 들어간 요약은 그대로)
+  void deleteTurn(String lastUserId) {
+    if (_disposed || !canEditTurns) return;
+    final r = _turnRange(lastUserId);
+    if (r == null) return;
+    final ids = {for (final m in state.messages.sublist(r.start, r.userEnd)) m.id};
+    // 아직 답을 기다리던 톡이면 그 요청도 멈춤
+    if (state.messages.any((m) => ids.contains(m.id) && m.isUnread) || r.end == state.messages.length) {
+      _userBurstReplyTimer?.cancel();
+      _scriptedReplyTimer?.cancel();
+      if (_pendingUserBurstTexts.isNotEmpty || _awaitingAiReply || state.isCharacterTyping) {
+        _pendingUserBurstTexts.clear();
+        _runId++;
+        _awaitingAiReply = false;
+        state = state.copyWith(isCharacterTyping: false);
+      }
+      state = state.copyWith(canRetryFreeTalk: false);
+    }
+    _removeRange(r.start, r.end);
+    _saveRun(keepCurrentNode: true);
+  }
+
+  /// 다시 받기 전에 보여 줄 어림 사용량 (한글 1자 ≈ 1토큰으로 넉넉히)
+  ({int inputTokens, int outputTokens, double? won}) estimateResend(String lastUserId) {
+    final r = _turnRange(lastUserId);
+    final msgs = state.messages;
+    final history = r == null ? msgs : msgs.sublist(0, r.start);
+    final burst = r == null ? const <ChatMessageLog>[] : msgs.sublist(r.start, r.userEnd);
+    final transcript = conversationTranscript(history, _nickname, state.character.name);
+    final memories = state.memories.fold<int>(0, (n, m) => n + m.length + 4);
+    final persona = ref.read(chatPersonaProvider(_characterId)).length;
+    final input = 2600 +
+        state.character.aiCharacterSheet.length +
+        memories +
+        persona +
+        transcript.length +
+        burst.fold<int>(0, (n, m) => n + _aiInputOf(m).length) +
+        (_free ? _bundle.freeTalkPhotos.length * 60 : 0);
+    const output = 700; // 말풍선 2~6개 + JSON 모양
+    final m = ref.read(roomByokProvider(_roomId)).modelOption;
+    final won = m == null ? null : (input * m.inputUsdPerMTok + output * m.outputUsdPerMTok) / 1e6 * 1400;
+    return (inputTokens: input, outputTokens: output, won: won);
+  }
+
+  /// 재전송: 마지막 내 톡 묶음은 그대로 두고, 그에 대한 캐릭터 답장만 지운 뒤 AI에게 다시 받음
+  Future<void> resendTurn(String lastUserId) async {
+    if (_disposed || !canResendTurn(lastUserId)) return;
+    if (!ref.read(roomByokProvider(_roomId)).canUseAi) {
+      _addSystemNotice('다시 받으려면 API 키를 등록해 주세요.');
+      return;
+    }
+    final r = _turnRange(lastUserId)!;
+    final burst = state.messages.sublist(r.start, r.userEnd);
+    _userBurstReplyTimer?.cancel();
+    _removeRange(r.userEnd, r.end);
+    final ids = {for (final m in burst) m.id};
+    state = state.copyWith(canRetryFreeTalk: false, messages: [
+      for (final m in state.messages) ids.contains(m.id) ? m.copyWith(isUnread: true) : m,
+    ]);
+    _pendingUserBurstTexts
+      ..clear()
+      ..addAll([for (final m in burst) _aiInputOf(m)]);
+    _saveRun(keepCurrentNode: true);
+    await _processCombinedUserBurstReply();
   }
 
   /// 이야기가 아직 진행 중(또는 조건이 안 맞아 멈춤)이라 자유대화를 끝내고 돌아가야 하는지

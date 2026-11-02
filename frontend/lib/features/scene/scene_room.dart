@@ -189,11 +189,62 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
   /// 실패한 장면 다시 쓰기
   Future<void> retry() => _write();
 
+  /// 내 입력 [userLineId]와 그에 대한 AI 장면이 차지하는 칸 [i, end) (다음 내 입력·장면 시작·안내 전까지)
+  ({int index, int end})? _turn(String userLineId) {
+    final i = state.lines.indexWhere((l) => l.id == userLineId);
+    if (i < 0 || !state.lines[i].isUser) return null;
+    var end = i + 1;
+    while (end < state.lines.length && state.lines[end].isStory) end++;
+    return (index: i, end: end);
+  }
+
+  /// 다시 받기는 진행 중인 장면의 맨 마지막 내 입력에만
+  bool canResend(String userLineId) {
+    if (state.writing || !state.sceneOpen) return false;
+    final t = _turn(userLineId);
+    return t != null && t.end == state.lines.length;
+  }
+
+  void _removeLines(int start, int end) {
+    final removed = {for (final l in state.lines.sublist(start, end)) l.id};
+    if (_loreUptoId != null && removed.contains(_loreUptoId)) {
+      final before = state.lines.take(start).where((l) => l.isUser || l.isStory).lastOrNull;
+      _loreUptoId = before?.id;
+    }
+    state = state.copyWith(lines: [...state.lines.sublist(0, start), ...state.lines.sublist(end)], clearError: true);
+  }
+
+  /// 쓰레기통: 내 입력과 그 뒤 AI 장면을 지움 (로어북에 들어간 요약은 그대로)
+  void deleteTurn(String userLineId) {
+    if (state.writing) return;
+    final t = _turn(userLineId);
+    if (t == null) return;
+    _removeLines(t.index, t.end);
+    _save();
+  }
+
+  /// 재전송: 마지막 내 입력은 그대로 두고 그 뒤 AI 장면만 지운 뒤 다시 씀
+  Future<void> resend(String userLineId) async {
+    if (!canResend(userLineId)) return;
+    final t = _turn(userLineId)!;
+    _removeLines(t.index + 1, t.end);
+    _save();
+    await _write();
+  }
+
+  /// 재전송하면 드는 어림 비용 (지금 장면을 지운 상태로 셈)
+  ({int inputTokens, int outputTokens, double? won, double? maxWon}) estimateResend(String userLineId) {
+    final t = _turn(userLineId);
+    if (t == null) return estimate('');
+    return estimate('', lines: state.lines.sublist(0, t.index + 1));
+  }
+
   /// 지금 장면에서 AI에게 넘길 것: 시작 줄, 그 뒤 줄들, 마지막 내 입력
-  ({SceneLine? start, List<SceneLine> scene, String? input}) _current() {
-    final s = state.lines.lastIndexWhere((l) => l.isStart);
+  ({SceneLine? start, List<SceneLine> scene, String? input}) _current([List<SceneLine>? all]) {
+    final lines = all ?? state.lines;
+    final s = lines.lastIndexWhere((l) => l.isStart);
     if (s < 0) return (start: null, scene: const [], input: null);
-    final after = state.lines.skip(s + 1).where((l) => l.isUser || l.isStory).toList();
+    final after = lines.skip(s + 1).where((l) => l.isUser || l.isStory).toList();
     final input = after.isNotEmpty && after.last.isUser ? after.removeLast().text : null;
     // 장면이 길어질수록 다시 보내는 글이 불어나서 비용이 커짐: 로어북에 요약된 앞부분은 빼고, 최근 [recentLines]줄만
     final upto = after.indexWhere((l) => l.id == _loreUptoId);
@@ -201,7 +252,7 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
     // 방금 요약했어도 바로 앞 장면(내 입력+AI 장면)은 그대로 넘겨 이어지게
     if (recent.length < 2) recent = after.length > 2 ? after.sublist(after.length - 2) : after;
     final scene = recent.length > recentLines ? recent.sublist(recent.length - recentLines) : recent;
-    return (start: state.lines[s], scene: scene, input: input);
+    return (start: lines[s], scene: scene, input: input);
   }
 
   Future<void> _write() async {
@@ -300,13 +351,14 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
   }
 
   /// 다음에 보낼 때 드는 어림 비용. 한글은 1글자 ≈ 1토큰으로 넉넉히 잡음
-  ({int inputTokens, int outputTokens, double? won, double? maxWon}) estimate(String input) {
-    final cur = _current();
+  ({int inputTokens, int outputTokens, double? won, double? maxWon}) estimate(String input, {List<SceneLine>? lines}) {
+    final cur = _current(lines);
     final sheet = _character.aiCharacterSheet.length;
     final memories = sharedMemories.fold<int>(0, (n, m) => n + m.length + 4);
     final context = cur.start?.context.length ?? 0;
     final scene = cur.scene.fold<int>(0, (a, l) => a + l.text.length);
-    final inputTokens = 1800 + sheet + memories + context + scene + _persona.length + input.trim().length;
+    final inputTokens =
+        1800 + sheet + memories + context + scene + _persona.length + input.trim().length + (cur.input?.length ?? 0);
     // 1900~2600자 + JSON 모양 ≈ 3천 토큰
     const outputTokens = 3000;
     final m = _byok.modelOption;

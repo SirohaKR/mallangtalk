@@ -38,6 +38,55 @@ class AppTheme {
           textStyle: AppTextStyles.choiceButton,
         ),
       ),
+      // 팝업(확인 창·아래에서 올라오는 창·메뉴)은 흰 바탕, 고르는 버튼은 분홍
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surfaceWhite,
+        surfaceTintColor: Colors.transparent,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        titleTextStyle: AppTextStyles.appBarTitle.copyWith(fontSize: 17),
+        contentTextStyle: const TextStyle(
+            fontFamily: AppTextStyles.fontFamily, fontSize: 14.5, height: 1.5, color: AppColors.textSecondary),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.surfaceWhite,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: AppColors.surfaceWhite,
+        dragHandleColor: AppColors.borderLight,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.surfaceWhite,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: AppColors.borderLight),
+        ),
+      ),
+      menuTheme: const MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(AppColors.surfaceWhite),
+          surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primaryPink,
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          textStyle: const TextStyle(fontFamily: AppTextStyles.fontFamily, fontWeight: FontWeight.w700, fontSize: 14.5),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primaryPink,
+          foregroundColor: Colors.white,
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+          textStyle: const TextStyle(fontFamily: AppTextStyles.fontFamily, fontWeight: FontWeight.w700, fontSize: 14.5),
+        ),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surfaceWhite,

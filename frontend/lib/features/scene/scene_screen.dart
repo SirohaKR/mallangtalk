@@ -89,6 +89,45 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
     if (notifier.send(_input.text)) _input.clear();
   }
 
+  Future<bool> _ask(String title, String body, String ok, {Key? bodyKey}) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(title),
+          content: Text(body, key: bodyKey),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('취소')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(ok)),
+          ],
+        ),
+      ) ==
+      true;
+
+  /// 쓰레기통: 내 입력과 그 뒤 장면을 지움
+  Future<void> _deleteTurn(String id, SceneRoomNotifier notifier) async {
+    if (await _ask('이 부분을 지울까요?', '내가 쓴 입력과 그 뒤에 이어진 장면이 함께 지워져요. 로어북에 들어간 요약은 남아요.', '지우기')) {
+      notifier.deleteTurn(id);
+    }
+  }
+
+  /// 재전송: 예상 비용을 보여 주고, 확인하면 같은 입력으로 장면을 다시 받음
+  Future<void> _resend(String id, SceneRoomNotifier notifier) async {
+    final est = notifier.estimateResend(id);
+    final ai = ref.read(roomByokProvider(sceneAiRoom(widget.sourceRoomId)));
+    String won(double w) => w < 10 ? '10원 안쪽' : '${(w / 10).round() * 10}원';
+    final cost = est.won == null
+        ? '이 모델은 가격을 몰라 금액은 어림 못 해요'
+        : '약 ${won(est.won!)} (짧게 와서 이어 쓰면 최대 ${won(est.maxWon!)})';
+    final ok = await _ask(
+      '장면을 다시 받을까요?',
+      '지금 장면은 지우고, 내 입력 그대로 ${aiModelName(ai)}에게 다시 써 달라고 해요.\n\n'
+          '예상 사용량: $cost\n입력 약 ${(est.inputTokens / 1000).toStringAsFixed(1)}천 + 출력 약 ${est.outputTokens ~/ 1000}천 토큰',
+      '다시 받기',
+      bodyKey: const ValueKey('scene_resend_cost'),
+    );
+    if (ok) await notifier.resend(id);
+  }
+
   Future<void> _menu(String value, SceneRoomNotifier notifier, String name) async {
     switch (value) {
       case 'lorebook':
@@ -200,7 +239,16 @@ class _SceneScreenState extends ConsumerState<SceneScreen> {
                         return switch (l.kind) {
                           'start' => _StartMark(key: ValueKey(l.id), text: l.text, accent: theme.accent),
                           'user' => _UserBlock(
-                              key: ValueKey(l.id), text: l.text, name: nickname, accent: theme.accent, narration: narration),
+                              key: ValueKey(l.id),
+                              id: l.id,
+                              text: l.text,
+                              name: nickname,
+                              accent: theme.accent,
+                              narration: narration,
+                              canResend: notifier.canResend(l.id),
+                              busy: scene.writing,
+                              onDelete: () => _deleteTurn(l.id, notifier),
+                              onResend: () => _resend(l.id, notifier)),
                           'story' => Padding(
                               key: ValueKey(l.id),
                               padding: const EdgeInsets.only(bottom: 22),
@@ -350,11 +398,40 @@ class _StartMark extends StatelessWidget {
 }
 
 class _UserBlock extends StatelessWidget {
-  const _UserBlock({super.key, required this.text, required this.name, required this.accent, required this.narration});
+  const _UserBlock({
+    super.key,
+    required this.id,
+    required this.text,
+    required this.name,
+    required this.accent,
+    required this.narration,
+    this.canResend = false,
+    this.busy = false,
+    required this.onDelete,
+    required this.onResend,
+  });
+  final String id;
   final String text;
   final String name;
   final Color accent;
   final Color narration;
+  final bool canResend;
+  final bool busy;
+  final VoidCallback onDelete;
+  final VoidCallback onResend;
+
+  Widget _button(String key, String tip, IconData icon, VoidCallback onTap) => Tooltip(
+        message: tip,
+        child: InkResponse(
+          key: ValueKey('${key}_$id'),
+          onTap: onTap,
+          radius: 16,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(icon, size: 17, color: AppColors.textSecondary),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -367,7 +444,12 @@ class _UserBlock extends StatelessWidget {
             border: Border(left: BorderSide(color: accent, width: 3)),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: AppTextStyles.speakerName.copyWith(color: accent)),
+            Row(children: [
+              Expanded(child: Text(name, style: AppTextStyles.speakerName.copyWith(color: accent))),
+              // 재전송(이 입력으로 장면 다시 받기, 맨 마지막만)·쓰레기통(입력+그 뒤 장면 지우기)
+              if (canResend) _button('scene_resend', '장면 다시 받기', Icons.refresh_rounded, onResend),
+              if (!busy) _button('scene_delete', '이 입력과 장면 지우기', Icons.delete_outline_rounded, onDelete),
+            ]),
             const SizedBox(height: 4),
             SelectableText.rich(
               sceneTextSpan(text, narration: narration, dialogue: AppColors.textPrimary),
