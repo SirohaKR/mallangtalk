@@ -545,6 +545,8 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
     _pendingUserBurstTexts.clear();
     _freeTurns = 0;
     _loreUptoId = null; // 비운 대화는 요약 위치도 처음부터 (로어북은 남김)
+    // 비운 시각을 남겨서, 다른 기기에 남은 비우기 전 (더 긴) 대화가 연동 때 새 대화를 덮지 않게
+    _resetAt = DateTime.now().millisecondsSinceEpoch;
     if (_aiRoom) {
       // 자유대화 방·서비스 말랑이는 대화만 비움 (한 줄 기억은 남김)
       state = state.copyWith(
@@ -556,7 +558,6 @@ class ChatRoomNotifier extends FamilyNotifier<ChatRoomState, String> {
       return;
     }
     _replaySnapshot = null;
-    _resetAt = DateTime.now().millisecondsSinceEpoch;
     state = _freshRunState(unlockedCutscenes: state.unlockedCutsceneEventIds)
         .copyWith(memories: state.memories);
     _saveRun(cleared: false);

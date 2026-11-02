@@ -489,4 +489,6 @@ NAS 접속 수단은 현재 연결되어 있지 않으므로 원격 배포를 �
   - 서버 DB 마이그레이션 3: `user_state_history` + 트리거. 값이 바뀌거나 지워지기 직전 값을 키마다 최근 30개 보관(같은 값으로 다시 쓰면 안 남김). SQLite(개발용)에는 없음.
   - `deploy/restore-user-state.sh`: 한 사람 user_state만 백업 파일(dump) 또는 기록(history) 시각으로 비교·되돌리기. `--apply` 전에 backup.sh. 되돌린 값은 지금 시각으로 저장. 사용법은 docs/OPERATIONS.md.
 - 검증: `flutter analyze`·`dart analyze` 문제 없음, `flutter test` 149개 통과(accounts_test에 새 기기·빈 값 덮기·물어보기 시나리오 추가). 서버 테스트는 로컬 PostgreSQL 16으로 postgres_test까지 통과(기록 트리거 확인). 되돌리기 스크립트는 로컬 PostgreSQL에서 list·dump·history·--apply 확인(docker compose 경로는 NAS에서 처음 돌려 봄).
+- 추가 원인(쨋뀨 확인: 자유대화에서 /비우기 씀): 자유대화방 /비우기는 대화만 비우고 reset_at을 안 남겨서, 연동 때 PC에 남은 비우기 전 더 긴 대화가 '더 진행됨'으로 이겨 새 대화를 덮음(자유대화가 이전으로 롤백). → AI 방 /비우기도 reset_at 기록, 첫 말풍선이 다른 두 대화는 길이보다 마지막 톡 시각이 최근인 쪽 우선(test/sync_run_test.dart).
+- 복구 결과: 백업(10/28 22:32)이 지금 서버 값보다 오래돼 되돌리지 않음. 폰에서 비운 뒤 새로 한 자유대화는 되살리지 못함. 쨋뀨 결정: 복구는 그만, 앞으로 안 생기게 + 매일 밤 백업.
 - 다음: 쨋뀨 NAS `data/backups`에 사라지기 전 백업이 있으면 dump로 되돌리기. 없으면 이 버전 배포 후 폰을 열어 '데이터 많은 쪽 지키기'. 배포 전에는 폰에서 말랑톡을 열지 않기.

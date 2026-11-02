@@ -248,6 +248,10 @@ int _compareRunProgress(String localJson, String remoteJson) {
         if (lDone > 0 && rDone == 0 && rMsgs.length <= 6) return 1;
         if (rDone > 0 && lDone == 0 && lMsgs.length <= 6) return -1;
         if (lDone != rDone) return lDone.compareTo(rDone);
+        // 서로 다른 대화(예: 한쪽에서 비우고 새로 시작): 길이보다 마지막 톡이 더 최근인 쪽
+        final lLast = _lastMessageAt(lMsgs);
+        final rLast = _lastMessageAt(rMsgs);
+        if (lLast != null && rLast != null && lLast != rLast) return lLast.compareTo(rLast);
         if ((lMsgs.length - rMsgs.length).abs() >= 4) return lMsgs.length.compareTo(rMsgs.length);
         return 0;
       }
@@ -268,6 +272,11 @@ int _compareRunProgress(String localJson, String remoteJson) {
   } catch (_) {
     return 0;
   }
+}
+
+DateTime? _lastMessageAt(List msgs) {
+  final last = msgs.isEmpty ? null : msgs.last;
+  return last is Map ? DateTime.tryParse('${last['timestamp'] ?? ''}') : null;
 }
 
 /// 바뀐 키들의 지금 값을 서버로
