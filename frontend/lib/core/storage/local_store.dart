@@ -270,7 +270,8 @@ class LocalStore {
     'freetalk_',
     'romance_',
     'ai_room_',
-    'userinfo_'
+    'userinfo_',
+    'scene_'
   ];
   static const _syncTimesKey = 'sync_ts_v1';
 
@@ -381,6 +382,11 @@ class LocalStore {
 
   Future<void> clearRun(String characterId) =>
       _write(_runKey(characterId), null);
+
+  /// 현실 장면 방 기록 (톡 방 ID마다 하나. JSON 글자, 없으면 null)
+  String? loadScene(String roomId) => _getString('scene_$roomId');
+
+  Future<void> saveScene(String roomId, String? json) => _write('scene_$roomId', json);
 
   List<String> loadAlbum(String characterId) =>
       _getStringList(_albumKey(characterId)) ?? const [];
@@ -527,6 +533,8 @@ class LocalStore {
 
   /// 캐릭터를 지울 때 진행 기록과 앨범도 같이 지움
   Future<void> forgetCharacter(String characterId) async {
+    await _write('scene_$characterId', null); // 현실 장면 방
+    await _write('scene_$characterId#free', null);
     await clearRun(characterId);
     await clearRun('$characterId#free'); // 자유대화 방
     await _write(_albumKey(characterId), null);
@@ -546,6 +554,8 @@ class LocalStore {
 
   /// 말랑이 찾기에서 새 친구로 추가할 때 혹시 남아 있던 이전 기록·별명을 깨끗이 비움 (대화 속도 설정만 유지)
   Future<void> resetCharacterOnAdd(String characterId) async {
+    await _write('scene_$characterId', null); // 현실 장면 방
+    await _write('scene_$characterId#free', null);
     await clearRun(characterId);
     await clearRun('$characterId#free');
     await _write(_albumKey(characterId), null);

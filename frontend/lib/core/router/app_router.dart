@@ -9,6 +9,7 @@ import '../../features/help/welcome_screen.dart';
 import '../../features/home/home_shell.dart';
 import '../../features/my/my_mallang_screen.dart';
 import '../../features/relations/relation_map_screen.dart';
+import '../../features/scene/scene_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/studio/studio_screen.dart';
 
@@ -22,6 +23,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 /// - 설정 안쪽: /settings/account(계정 · 프로필), /settings/ai(AI 연결)
 /// - 내가 만든 캐릭터끼리 관계도: /relations
 /// - 대화방은 탭 위에 전체 화면으로: /chat/캐릭터ID(스토리), /free/캐릭터ID(자유대화), 앨범은 /chat/캐릭터ID/album
+/// - 현실 장면 방(톡 말풍선 꾹 → 현실 장면으로): /scene/캐릭터ID(스토리 톡에서), /scene/캐릭터ID?free=1(자유대화 톡에서)
 /// 옛 주소(/friends, /add)로 들어오면 새 탭으로 보내요.
 final appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
@@ -120,6 +122,14 @@ final appRouter = GoRouter(
               AlbumScreen(characterId: state.pathParameters['id']!),
         ),
       ],
+    ),
+    // 현실 장면 방 (톡 방마다 하나, 로어북은 톡 방과 같이 씀)
+    GoRoute(
+      path: '/scene/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => SceneRoomPage(
+          characterId: state.pathParameters['id']!,
+          free: state.uri.queryParameters['free'] == '1'),
     ),
     // 자유대화 방 (스토리 방과 따로)
     GoRoute(

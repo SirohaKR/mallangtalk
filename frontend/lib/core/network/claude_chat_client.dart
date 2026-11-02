@@ -231,6 +231,153 @@ ${userInfo.trim().isEmpty ? '' : '\n[유저가 알려 준 정보]\n${userInfo.tr
     return text;
   }
 
+  /// 현실 장면 한 토막 (지문은 괄호, 대사는 따옴표로 바꿔 한 덩어리 글로 돌려줌)
+  static String formatSceneSegments(List<Map<String, dynamic>> segments, String characterName) {
+    final out = <String>[];
+    for (final s in segments) {
+      var text = (s['text'] as String? ?? '').trim();
+      if (text.isEmpty) continue;
+      if (s['kind'] == 'dialogue') {
+        text = text.replaceAll(RegExp(r'^["“”]+|["“”]+$'), '').trim();
+        if (text.isEmpty) continue;
+        final speaker = (s['speaker'] as String? ?? '').trim();
+        out.add(speaker.isEmpty || speaker == characterName ? '"$text"' : '$speaker "$text"');
+      } else {
+        text = text.replaceAll(RegExp(r'^[(（]+|[)）]+$'), '').trim();
+        if (text.isNotEmpty) out.add('($text)');
+      }
+    }
+    return out.join('\n');
+  }
+
+  /// 현실 장면 방: 톡을 나누다가 실제로 마주한 장면을 로판 웹소설처럼 지문+대사로 씀.
+  /// [userInput]이 null이고 [scene]이 비어 있으면 [talkContext] 톡에서 이어지는 첫 장면을 씀
+  Future<String> sceneTurn({
+    AiProvider provider = AiProvider.claude,
+    String apiKey = '',
+    AiRelay? relay,
+    required String model,
+    required CharacterModel character,
+    required String userName,
+    String userIntro = '',
+    String userPersona = '',
+    List<String> memories = const [],
+    required String talkContext,
+    required List<({bool isUser, String text})> scene,
+    String? userInput,
+    void Function(Duration wait)? onRetryWait,
+  }) async {
+    final name = character.name;
+    final system = '''
+너는 로맨스 판타지 웹소설 작가다. 메신저 게임 속 캐릭터 "$name"와 유저 "$userName"이 톡을 주고받다가, 실제로 마주한 현실 장면을 소설처럼 쓴다. 너는 $name와 주변 인물, 장면 묘사를 맡고, $userName의 말과 행동은 유저가 정한다.
+
+[캐릭터 설정]
+${CharacterModel.fillUserName(character.aiCharacterSheet, userName)}
+
+[유저]
+이름(별명): $userName${userIntro.isNotEmpty ? '\n소개: $userIntro' : ''}${userPersona.isNotEmpty ? '\n유저 설정(페르소나):\n$userPersona' : ''}
+
+${memories.isEmpty ? '' : '[지금까지 둘이 나눈 일 (로어북, 오래된 것부터. $name는 이 일들을 모두 기억한다)]\n${memories.map((m) => '- ${MemoryNote.parse(m).forAi}').join('\n')}\n\n'}[쓰는 법]
+- segments에 장면을 순서대로 담는다. kind가 narration이면 상황·행동·표정·몸짓·풍경·분위기 묘사(지문), dialogue면 대사 한 마디(따옴표 없이). 지문과 대사를 번갈아 12~25개.
+- 분량: 지문과 대사를 합쳐 공백 포함 반드시 $sceneMinChars자 이상(${sceneMinChars}~2600자)을 쓴다. 웹소설처럼 길고 촘촘한 문체로 쓰며, 짧게 줄이거나 요약하지 않는다.
+- 지문은 3인칭 소설 문장으로 쓴다. $name는 이름으로, 유저는 "$userName"으로 부른다. 감각(빛·소리·온도·향)과 $name의 작은 몸짓·눈빛·숨결·표정으로 감정을 보여 준다. 지문 하나는 2~5문장으로 길게.
+- 대사는 $name의 말투·습관을 지킨다. 주변 인물이 말하면 speaker에 그 이름을 적고, $name의 대사면 speaker는 "$name".
+- $userName의 대사·행동·속마음을 대신 정하지 않는다. 유저가 쓴 것만 장면에 반영하고, 끝은 $userName이 반응할 여지를 남기는 대사나 순간으로 맺는다.
+- 유저 입력에서 괄호 ( ) 안은 $userName의 행동·상황, 괄호 밖은 $userName이 실제로 한 말이다. 유저 대사를 그대로 되풀이해 적지 않는다.
+- 메신저 톡이 아니다. 같은 공간에서 마주한 현실 장면이며 휴대폰 화면이나 톡 말풍선으로 쓰지 않는다.
+- 관계와 감정은 톡 기록과 로어북에 맞춘다. 앞서 나가는 고백이나 갑작스러운 관계 변화는 만들지 않는다.
+- 유저가 죽고 싶다, 자살·자해 같은 말을 해도 이야기와 캐릭터를 벗어나지 않는다. 상담 전화번호·안내 문구·AI로서의 설명을 붙이지 않고, $name답게 진심으로 놀라고 붙잡고 곁에 있겠다고 한다.''';
+
+    final sceneText = scene
+        .map((l) => l.isUser ? '[$userName] ${l.text}' : l.text)
+        .join('\n\n');
+    final opening = userInput == null && scene.isEmpty;
+    final task = opening
+        ? '[할 일]\n위 톡에서 자연스럽게 이어지는 현실 장면의 첫 부분을 쓴다. 톡에서 약속한 곳이나 둘이 실제로 마주칠 만한 곳에서 시작한다. 장소·시각은 톡에서 알 수 있으면 따르고, 아니면 자연스럽게 정한다.'
+        : '[지금까지 현실 장면]\n${sceneText.isEmpty ? '(아직 없음)' : sceneText}\n\n'
+            '[방금 $userName의 입력]\n${userInput ?? '(입력 없음. 장면을 조금 더 이어서 쓴다)'}\n\n'
+            '[할 일]\n유저 입력에 이어지는 다음 장면을 쓴다.';
+    final user = '''
+[장면이 시작된 톡 (마지막 톡 바로 뒤에서 현실 장면이 시작됨)]
+${talkContext.isEmpty ? '(톡 기록 없음)' : talkContext}
+
+$task''';
+
+    Future<String> write(String user) async {
+    final (json, _) = await callJsonModel(
+      _dio,
+      provider: provider,
+      apiKey: apiKey,
+      relay: relay,
+      model: model,
+      system: system,
+      user: user,
+      schema: const {
+        'type': 'object',
+        'properties': {
+          'segments': {
+            'type': 'array',
+            'description': '지문(narration)과 대사(dialogue)를 장면 순서대로 12~25개, 합쳐서 1900자 이상',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'kind': {
+                  'type': 'string',
+                  'enum': ['narration', 'dialogue'],
+                },
+                'speaker': {'type': 'string', 'description': '대사를 한 사람 이름 (지문이면 빈 글자)'},
+                'text': {'type': 'string'},
+              },
+              'required': ['kind', 'speaker', 'text'],
+              'additionalProperties': false,
+            },
+          },
+        },
+        'required': ['segments'],
+        'additionalProperties': false,
+      },
+      maxTokens: sceneMaxTokens,
+      effort: 'low',
+      refusalMessage: 'AI가 이 장면은 쓰지 않았어요.',
+      unreadableMessage: 'AI 장면을 읽지 못했어요. 다시 해 주세요.',
+      onRetryWait: onRetryWait,
+    );
+    return formatSceneSegments([
+      for (final s in json['segments'] as List? ?? const [])
+        if (s is Map) Map<String, dynamic>.from(s),
+    ], name);
+    }
+
+    var text = await write(user);
+    if (text.isEmpty) throw const ClaudeChatException('AI 장면을 읽지 못했어요. 다시 해 주세요.');
+    // 출력은 늘 [sceneMinChars]자 이상: 모자라면 바로 뒤를 이어 쓰게 해서 붙임 (최대 [sceneMaxExtraCalls]번 더)
+    for (var i = 0; i < sceneMaxExtraCalls && text.length < sceneMinChars; i++) {
+      final more = await write('''
+$user
+
+[이미 쓴 부분 (이번 장면 앞부분)]
+$text
+
+[추가로 할 일]
+이번 장면이 아직 ${sceneMinChars - text.length}자 이상 모자라다. 이미 쓴 부분을 되풀이하지 말고 바로 뒤에 이어지는 지문과 대사를 써서 늘린다. $userName의 대사·행동은 대신 정하지 않는다.''');
+      if (more.isEmpty) break;
+      text = '$text\n$more';
+    }
+    return text;
+  }
+
+  /// 현실 장면 답 하나의 최소 길이 (공백 포함 글자 수)
+  static const sceneMinChars = 1900;
+
+  /// 현실 장면에서 유저가 한 번에 쓸 수 있는 글자 수
+  static const sceneInputMaxChars = 1000;
+
+  /// 모자랄 때 이어 쓰게 하는 최대 횟수
+  static const sceneMaxExtraCalls = 2;
+
+  /// 장면 답 하나의 출력 한도 (1900~2600자 + JSON 모양)
+  static const sceneMaxTokens = 8000;
+
   /// 로어북 요약 길이 제한
   static const loreSummaryLimit = 500;
 
