@@ -227,4 +227,63 @@ void main() {
     expect(container.read(favoritesProvider), isEmpty);
     expect(server.state['token-1']?['album_$dohaId']?.value, ['e1', 'e2', 'e3']); // 원래 계정 값은 그대로
   });
+
+  testWidgets('새로 들어온 기기(PC)는 서버 데이터를 덮지 않고, 비어 있는 값이 덮으려 하면 먼저 물어봄', (tester) async {
+    const login = {'auth_token': 'token-1', 'auth_user': '{"username":"jjaet","nickname":"쨋뀨"}'};
+    const phoneProfile = '{"nickname":"쨋뀨","intro":"폰에서 쓰던 소개"}';
+    server.state['token-1'] = {
+      'my_profile': const SyncedValue(phoneProfile, 1000),
+      'favorites_v1': const SyncedValue(['doha'], 1000),
+    };
+
+    // PC: 로그인 전에 빈 값이 더 최근 시각으로 쓰여 있었음 (예전에는 이게 서버 값을 덮었음)
+    SharedPreferences.setMockInitialValues({
+      ...login,
+      'my_profile': '{}',
+      'favorites_v1': <String>[],
+      'sync_ts_v1': '{"my_profile":5000,"favorites_v1":5000}',
+    });
+    await openApp(tester);
+    expect(server.state['token-1']?['my_profile']?.value, phoneProfile);
+    expect(server.state['token-1']?['favorites_v1']?.value, ['doha']);
+    var prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('my_profile'), phoneProfile);
+    expect(prefs.getString('sync_base_v1'), 'jjaet');
+
+    // 예전 버전 PC가 이미 서버를 빈 값으로 덮은 상태에서 폰(예전부터 연동하던 기기)을 열면
+    server.state['token-1'] = {'my_profile': const SyncedValue('{}', 5000)};
+    SharedPreferences.setMockInitialValues({
+      ...login,
+      'sync_user': 'jjaet',
+      'my_profile': phoneProfile,
+      'sync_ts_v1': '{"my_profile":1000}',
+    });
+    await openApp(tester);
+    // 바로 덮지 않고 물어봄 → 데이터 많은 쪽 지키기
+    expect(find.byKey(const Key('sync_keep_bigger')), findsOneWidget);
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('my_profile'), phoneProfile);
+    await tester.tap(find.byKey(const Key('sync_keep_bigger')));
+    await settle(tester);
+    expect(find.byKey(const Key('sync_keep_bigger')), findsNothing);
+    expect(server.state['token-1']?['my_profile']?.value, phoneProfile);
+    expect(server.state['token-1']!['my_profile']!.updatedAt, greaterThan(5000));
+
+    // 연동하던 기기의 빈 값이 더 최근이어도 서버의 많은 데이터를 바로 덮지 않음
+    SharedPreferences.setMockInitialValues({
+      ...login,
+      'sync_user': 'jjaet',
+      'sync_base_v1': 'jjaet',
+      'my_profile': '{}',
+      'sync_ts_v1': '{"my_profile":${DateTime.now().millisecondsSinceEpoch + 100000}}',
+    });
+    await openApp(tester);
+    expect(find.byKey(const Key('sync_keep_bigger')), findsOneWidget);
+    expect(server.state['token-1']?['my_profile']?.value, phoneProfile);
+    await tester.tap(find.byKey(const Key('sync_keep_bigger')));
+    await settle(tester);
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('my_profile'), phoneProfile);
+    expect(server.state['token-1']?['my_profile']?.value, phoneProfile);
+  });
 }

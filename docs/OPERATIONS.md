@@ -63,6 +63,21 @@ sh deploy/verify-backup.sh data/backups/postgres-YYYYMMDD-HHMMSS.dump
 이번 이전에서 외부 파일 저장소로 동시에 옮기지는 않는다. 이후 용량 때문에 옮길 경우 별도
 마이그레이션·복구 검증으로 진행한다. 대화 저장값도 원본을 그대로 보존한다.
 
+### 한 사람의 앱 데이터만 되돌리기
+
+다른 기기 값에 덮여 채팅방·캐릭터 목록·대화 기록이 사라졌을 때 그 사람 user_state만 되돌린다.
+`--apply` 없이 실행하면 비교만 보여 주고, `--apply`는 먼저 backup.sh로 전체 백업을 만든다.
+
+```sh
+sh deploy/restore-user-state.sh list <아이디>
+sh deploy/restore-user-state.sh dump <아이디> data/backups/postgres-YYYYMMDD-HHMMSS.dump [--apply]
+sh deploy/restore-user-state.sh history <아이디> "2026-11-02 12:00" [--apply]
+# 일부만: 맨 뒤에 --only=run_char_xxx,album_char_xxx
+```
+
+user_state 값이 바뀌거나 지워지면 바뀌기 직전 값이 user_state_history에 키마다 최근 30개 남는다
+(DB 마이그레이션 3번, 2026-11-02). 되돌린 값은 지금 시각으로 저장되어 다음에 여는 기기가 받아 간다.
+
 DSM 작업 스케줄러에서 매일 backup.sh를 실행하고, 백업을 다른 장치에도 복사한다.
 복구 검증은 격리된 임시 DB에만 수행한다. 보관 기간/삭제는 운영자가 정하며 스크립트는 자동 삭제하지 않는다.
 PostgreSQL 볼륨의 실행 중 파일을 직접 압축하는 방식 대신 pg_dump를 사용한다.
