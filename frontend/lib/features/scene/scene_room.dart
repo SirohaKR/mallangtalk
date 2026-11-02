@@ -94,7 +94,10 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
   int _seq = 0;
 
   /// 몇 번 주고받을 때마다 장면을 요약해 로어북에 넣을지
-  static const loreEveryTurns = 6;
+  static const loreEveryTurns = 3;
+
+  /// AI에게 그대로 넘기는 지난 장면 줄 수 (내 입력·AI 장면 합쳐서). 그보다 앞은 로어북 요약으로 넘어감
+  static const recentLines = 4;
 
   String get _sourceRoom => arg;
   String get _characterId => characterIdOfRoom(arg);
@@ -134,7 +137,7 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
 
   CharacterModel get _character => ref.read(chatRoomProvider(_sourceRoom)).character;
   String get _nickname => ref.read(chatNicknameProvider(_characterId));
-  ByokSettings get _byok => ref.read(roomByokProvider(_sourceRoom));
+  ByokSettings get _byok => ref.read(roomByokProvider(sceneAiRoom(_sourceRoom)));
 
   /// 톡 방 로어북 (같이 씀)
   List<String> get sharedMemories => ref.read(chatRoomProvider(_sourceRoom)).memories;
@@ -191,10 +194,14 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
     final s = state.lines.lastIndexWhere((l) => l.isStart);
     if (s < 0) return (start: null, scene: const [], input: null);
     final after = state.lines.skip(s + 1).where((l) => l.isUser || l.isStory).toList();
-    if (after.isNotEmpty && after.last.isUser) {
-      return (start: state.lines[s], scene: after.sublist(0, after.length - 1), input: after.last.text);
-    }
-    return (start: state.lines[s], scene: after, input: null);
+    final input = after.isNotEmpty && after.last.isUser ? after.removeLast().text : null;
+    // 장면이 길어질수록 다시 보내는 글이 불어나서 비용이 커짐: 로어북에 요약된 앞부분은 빼고, 최근 [recentLines]줄만
+    final upto = after.indexWhere((l) => l.id == _loreUptoId);
+    var recent = after.skip(upto + 1).toList();
+    // 방금 요약했어도 바로 앞 장면(내 입력+AI 장면)은 그대로 넘겨 이어지게
+    if (recent.length < 2) recent = after.length > 2 ? after.sublist(after.length - 2) : after;
+    final scene = recent.length > recentLines ? recent.sublist(recent.length - recentLines) : recent;
+    return (start: state.lines[s], scene: scene, input: input);
   }
 
   Future<void> _write() async {
@@ -293,26 +300,34 @@ class SceneRoomNotifier extends FamilyNotifier<SceneState, String> {
   }
 
   /// 다음에 보낼 때 드는 어림 비용. 한글은 1글자 ≈ 1토큰으로 넉넉히 잡음
-  ({int inputTokens, int outputTokens, double? won}) estimate(String input) {
+  ({int inputTokens, int outputTokens, double? won, double? maxWon}) estimate(String input) {
     final cur = _current();
     final sheet = _character.aiCharacterSheet.length;
     final memories = sharedMemories.fold<int>(0, (n, m) => n + m.length + 4);
     final context = cur.start?.context.length ?? 0;
-    final scene = [
-      for (final l in state.lines.skip(state.lines.lastIndexWhere((l) => l.isStart) + 1))
-        if (l.isUser || l.isStory) l.text.length,
-    ].fold<int>(0, (a, b) => a + b);
+    final scene = cur.scene.fold<int>(0, (a, l) => a + l.text.length);
     final inputTokens = 1800 + sheet + memories + context + scene + _persona.length + input.trim().length;
     // 1900~2600자 + JSON 모양 ≈ 3천 토큰
     const outputTokens = 3000;
     final m = _byok.modelOption;
-    final won = m == null ? null : (inputTokens * m.inputUsdPerMTok + outputTokens * m.outputUsdPerMTok) / 1e6 * 1400;
-    return (inputTokens: inputTokens, outputTokens: outputTokens, won: won);
+    if (m == null) return (inputTokens: inputTokens, outputTokens: outputTokens, won: null, maxWon: null);
+    double won(int inTok, int outTok) => (inTok * m.inputUsdPerMTok + outTok * m.outputUsdPerMTok) / 1e6 * 1400;
+    // 짧게 와서 이어 쓰기를 2번 더 하면: 입력을 2번 더 보내고(앞에 쓴 글까지), 출력도 그만큼 더
+    final extra = ClaudeChatClient.sceneMaxExtraCalls;
+    return (
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      won: won(inputTokens, outputTokens),
+      maxWon: won(inputTokens * (1 + extra) + outputTokens * extra, outputTokens * (1 + extra)),
+    );
   }
 }
 
 final sceneRoomProvider =
     NotifierProvider.family<SceneRoomNotifier, SceneState, String>(SceneRoomNotifier.new);
+
+/// 현실 장면 방에서 쓸 AI를 따로 고를 때 쓰는 방 이름 (톡 방과 따로: ai_room_<톡 방>@scene)
+String sceneAiRoom(String sourceRoomId) => '$sourceRoomId@scene';
 
 /// 현실 장면 방 주소 (톡 방 ID에서)
 String sceneRoute(String sourceRoomId) => isFreeRoom(sourceRoomId)
