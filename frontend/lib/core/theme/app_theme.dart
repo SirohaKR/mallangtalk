@@ -17,7 +17,19 @@ class AppTheme {
         primary: AppColors.primaryPink,
         secondary: AppColors.primaryNavy,
         surface: AppColors.surfaceWhite,
+        // 팝업·아래 창·메뉴·드로어·카드 같은 '판'은 분홍 기운 없이 흰 바탕 (대화 속도 고르는 창처럼)
+        surfaceTint: Colors.transparent,
+        surfaceContainerLowest: AppColors.surfaceWhite,
+        surfaceContainerLow: AppColors.surfaceWhite,
+        surfaceContainer: AppColors.surfaceWhite,
+        surfaceContainerHigh: AppColors.surfaceWhite,
+        surfaceContainerHighest: AppColors.surfaceWhite,
       ),
+      drawerTheme: const DrawerThemeData(
+        backgroundColor: AppColors.surfaceWhite,
+        surfaceTintColor: Colors.transparent,
+      ),
+      cardTheme: const CardThemeData(color: AppColors.surfaceWhite, surfaceTintColor: Colors.transparent),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.surfaceWhite,
         foregroundColor: AppColors.textPrimary,
